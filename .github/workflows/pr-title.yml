@@ -1,0 +1,17 @@
+name: Check Pull Request Title
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: Slashgear/action-check-pr-title@v4.3.0
+        with:
+          regexp: "(Add|Remove|Refactor|Fix|Document) #\\d* .*" # Regex the title should match.
+          flags: "g"
+          helpMessage: "Example: 'Add #3 README.md'"
