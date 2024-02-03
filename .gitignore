@@ -10,8 +10,13 @@ buildNumber.properties
 # https://github.com/takari/maven-wrapper#usage-without-binary-jar
 .mvn/wrapper/maven-wrapper.jar
 
-# Eclipse m2e generated files
-# Eclipse Core
+# MacOS
+.DS_Store
+
+# Java & IDE
+.vscode/
+.idea/
+.settings
 .project
-# JDT-specific (Eclipse Java Development Tools)
 .classpath
+
