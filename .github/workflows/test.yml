@@ -16,8 +16,13 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         cache: maven
+
     - name: Test with Maven
       run: mvn test
+
+    - name: Generate report
+      run: mvn jacoco:report
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4-beta
       env:
