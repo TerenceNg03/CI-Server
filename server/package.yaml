@@ -1,7 +1,7 @@
 name:                server
 version:             0.1.0.0
 github:              "TerenceNg03/CI-Server"
-license:             None
+license:             BSD3
 author:              "Terence Ng"
 maintainer:          "terenceng03@outlook.com"
 copyright:           "2024 Terence Ng"
@@ -20,6 +20,7 @@ description:         Please see the README on GitHub at <https://github.com/Tere
 
 dependencies:
 - base >= 4.7 && < 5
+- hspec
 
 ghc-options:
 - -Wall

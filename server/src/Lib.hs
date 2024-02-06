@@ -1,6 +1,6 @@
-module Lib
-    ( someFunc
-    ) where
+module Lib (
+    add,
+) where
 
-someFunc :: IO ()
-someFunc = putStrLn "someFunc"
+add :: Int -> Int -> Int
+add = (+)
