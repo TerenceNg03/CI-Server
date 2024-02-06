@@ -28,3 +28,21 @@ jobs:
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  build-haskell:
+    runs-on: ubuntu-latest 
+
+    env:
+      working-directory: ./server
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: haskell/actions/setup@v2
+        with:
+          ghc-version: '9.4.7' # Exact version of ghc to use
+          # cabal-version: 'latest'. Omitted, but defaults to 'latest'
+          enable-stack: true
+          stack-version: 'latest'
+
+      - name: Test with Stack
+        run:  stack test
+      
