@@ -36,5 +36,5 @@ jobs:
       - id: stack
         uses: freckle/stack-action@v5
         with: 
-        working-directory: ./server
+          working-directory: ./server
 
