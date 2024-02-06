@@ -31,12 +31,9 @@ jobs:
   build-haskell:
     runs-on: ubuntu-latest 
 
-    env:
-      working-directory: ./server
-
     steps:
       - uses: actions/checkout@v3
-      - uses: haskell/actions/setup@v2
+      - uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.6.3' # Exact version of ghc to use
           # cabal-version: 'latest'. Omitted, but defaults to 'latest'
@@ -44,5 +41,5 @@ jobs:
           stack-version: 'latest'
 
       - name: Test with Stack
-        run:  stack test
+        run:  cd ./server && stack test
       
