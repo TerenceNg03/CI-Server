@@ -4,7 +4,7 @@ import Config (Config (logFile))
 import Data.Yaml (decodeFileThrow)
 import HandleLogger (withHandleLogger)
 import Server (runServer)
-import System.IO (IOMode (AppendMode), openFile, hClose)
+import System.IO (IOMode (AppendMode), hClose, openFile)
 
 main :: IO ()
 main = do
