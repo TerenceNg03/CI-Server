@@ -28,12 +28,3 @@ jobs:
         # Use fourmolu-0.13.0.0.  If you don't specify this, then the latest
         # release of fourmolu will be used.
         version: "0.13.0.0"
-
-        # Only check the format of .hs in the src/ directory
-        # except src/Main.hs.
-        pattern: |
-          server/src/**/*.hs
-          server/test/**/*.hs
-
-        # Don't follow symbolic links to .hs files.
-        follow-symbolic-links: false
