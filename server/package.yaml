@@ -21,6 +21,19 @@ description:         Please see the README on GitHub at <https://github.com/Tere
 dependencies:
 - base >= 4.7 && < 5
 - hspec
+- scotty
+- yaml
+- mtl
+- network
+- wai
+- filepath
+- optics
+- log-base
+- directory
+- text
+- aeson
+- http-types
+- fmt
 
 ghc-options:
 - -Wall

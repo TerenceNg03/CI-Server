@@ -1,0 +1,11 @@
+# Port number to be bind
+port-number: 8888
+
+# Secret for webhook
+# Change this when deploying
+web-secret: "12345"
+
+# Path to db file
+# Change this when deploying
+db-file: /tmp/ci.sqlite3
+

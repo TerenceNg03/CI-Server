@@ -1,6 +1,9 @@
 module Main (main) where
-
-import Lib (add)
+import Data.Yaml (decodeFileThrow)
+import Server (runServer)
+import Log.Backend.StandardOutput.Bulk (withBulkStdOutLogger)
 
 main :: IO ()
-main = print $ add 1 2
+main = do
+    config <- decodeFileThrow "./config.yaml"
+    withBulkStdOutLogger $ runServer config
