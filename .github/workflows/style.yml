@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+    - uses: actions/checkout@v3
     - uses: haskell-actions/run-fourmolu@v9
       with:
         # Use fourmolu-0.13.0.0.  If you don't specify this, then the latest
@@ -34,6 +36,7 @@ jobs:
         pattern: |
           server/src/**/*.hs
           server/test/**/*.hs
+          server/app/**/*.hs
 
         # Don't follow symbolic links to .hs files.
         follow-symbolic-links: false
