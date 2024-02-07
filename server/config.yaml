@@ -5,7 +5,10 @@ port-number: 8888
 # Change this when deploying
 web-secret: "12345"
 
-# Path to db file
+# Path to database file for history
 # Change this when deploying
 db-file: /tmp/ci.sqlite3
+
+# Path to log file for the server
+log-file: /tmp/ci.log
 
