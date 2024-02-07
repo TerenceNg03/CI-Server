@@ -27,7 +27,6 @@ library
       HandleLogger
       Lib
       Server
-
   other-modules:
       Paths_server
   hs-source-dirs:
@@ -50,7 +49,6 @@ library
     , unliftio-core
     , wai
     , yaml
-
   default-language: Haskell2010
 
 executable server-exe
@@ -78,7 +76,6 @@ executable server-exe
     , unliftio-core
     , wai
     , yaml
-
   default-language: Haskell2010
 
 test-suite server-test
@@ -107,5 +104,4 @@ test-suite server-test
     , unliftio-core
     , wai
     , yaml
-
   default-language: Haskell2010
