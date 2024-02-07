@@ -28,7 +28,7 @@ jobs:
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-build-haskell:
+  build-haskell:
     runs-on: ubuntu-latest 
 
     steps:
