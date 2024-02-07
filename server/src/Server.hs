@@ -10,16 +10,18 @@ import Fmt (format)
 import Log (LogT, defaultLogLevel, logInfo_, runLogT)
 import Log.Logger (Logger)
 import Network.Socket (Family (AF_INET), SockAddr (SockAddrInet), SocketType (Stream), bind, close, listen, socket, socketPort, tupleToHostAddress, withSocketsDo)
-import Network.Wai (Request (rawPathInfo), requestMethod)
+import Network.Wai (Request (rawPathInfo, remoteHost), requestMethod)
 import Web.Scotty.Trans (ScottyT, defaultOptions, function, matchAny, next, request, scottySocketT)
 
+-- | Dispatch requests based on patterns
 dispatch :: Config -> ScottyT (LogT IO) ()
 dispatch Config{} = do
     matchAny (function $ const $ Just []) $ do
         r <- request
-        logInfo_ $ format "{} {}" (show $ requestMethod r) (show $ rawPathInfo r)
+        logInfo_ $ format "{} {} {}" (show $ remoteHost r) (show $ requestMethod r) (show $ rawPathInfo r)
         next
 
+-- | Run web server with given config and logger
 runServer :: Config -> Logger -> IO ()
 runServer config@Config{..} logger = withSocketsDo $ bracketOnError newSocket close $ \sock -> do
     bind sock $ SockAddrInet (fromIntegral portNumber) $ tupleToHostAddress (0, 0, 0, 0)

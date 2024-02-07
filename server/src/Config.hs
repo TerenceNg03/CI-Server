@@ -12,6 +12,7 @@ import Data.Aeson (FromJSON (parseJSON), withObject, (.:))
 import Data.Text (Text)
 import GHC.Generics (Generic)
 
+-- | Configuration for web server
 data Config = Config
     { portNumber :: !Int
     , webSecret :: !Text
