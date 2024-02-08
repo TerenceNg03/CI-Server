@@ -1,6 +1,14 @@
 module Main (main) where
 
-import Lib (add)
+import Config (Config (logFile))
+import Data.Yaml (decodeFileThrow)
+import HandleLogger (withHandleLogger)
+import Server (runServer)
+import System.IO (IOMode (AppendMode), hClose, openFile)
 
 main :: IO ()
-main = print $ add 1 2
+main = do
+    config <- decodeFileThrow "./config.yaml"
+    handle <- openFile (logFile config) AppendMode
+    withHandleLogger handle $ runServer config
+    hClose handle
