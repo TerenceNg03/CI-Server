@@ -5,11 +5,17 @@ import java.io.*;
 /** Hello world! */
 public class App {
 
-
-    public String[] runBuild() throws Exception {
+    /**
+     * Builds and tests the repo with command mvn package
+     *
+     * @param dir the directory in which mvn package will execute
+     * @return String[], storing the build status at index 0 and build log at index 1
+     * @throws Exception
+     */
+    public String[] runBuild(String dir) throws Exception {
         String[] result = new String[2];
         final String mavenCmd = System.getProperty("os.name").toLowerCase().contains("windows") ? "mvn.cmd" : "mvn";
-        String[] command = {mavenCmd, "package"};
+        String[] command = {mavenCmd, "-f", dir, "package"};
         Process process = Runtime.getRuntime().exec(command);
         StringBuilder sb = new StringBuilder();
         new Thread(() -> {
@@ -20,7 +26,6 @@ public class App {
                     sb.append(line).append("\n");
                 }
             }catch (IOException e ) {
-                System.out.println("Faulty command: " + e.getMessage());
                 e.printStackTrace();
             }
         }).start();
@@ -48,7 +53,8 @@ public class App {
     public static void main(String[] args) throws Exception {
         System.out.println("Hello World!");
         App app = new App();
-        String[] log = app.runBuild();
+        String dirWithBuild = "./";
+        String[] log = app.runBuild(dirWithBuild);
         System.out.println("Result of build: " + log[0] + "\n " + log[1]);
     }
 }
