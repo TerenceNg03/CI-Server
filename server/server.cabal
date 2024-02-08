@@ -26,6 +26,7 @@ library
       Config
       HandleLogger
       Lib
+      Schema
       Server
   other-modules:
       Paths_server
@@ -36,6 +37,7 @@ library
       aeson
     , base >=4.7 && <5
     , directory
+    , esqueleto
     , filepath
     , fmt
     , hspec
@@ -44,6 +46,8 @@ library
     , mtl
     , network
     , optics
+    , persistent
+    , persistent-sqlite
     , scotty
     , text
     , unliftio-core
@@ -62,6 +66,7 @@ executable server-exe
       aeson
     , base >=4.7 && <5
     , directory
+    , esqueleto
     , filepath
     , fmt
     , hspec
@@ -70,6 +75,8 @@ executable server-exe
     , mtl
     , network
     , optics
+    , persistent
+    , persistent-sqlite
     , scotty
     , server
     , text
@@ -90,6 +97,7 @@ test-suite server-test
       aeson
     , base >=4.7 && <5
     , directory
+    , esqueleto
     , filepath
     , fmt
     , hspec
@@ -98,6 +106,8 @@ test-suite server-test
     , mtl
     , network
     , optics
+    , persistent
+    , persistent-sqlite
     , scotty
     , server
     , text
