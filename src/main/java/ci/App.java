@@ -6,7 +6,8 @@ import java.io.*;
 public class App {
 
 
-    public void runBuild() throws Exception {
+    public String[] runBuild() throws Exception {
+        String[] result = new String[2];
         final String mavenCmd = System.getProperty("os.name").toLowerCase().contains("windows") ? "mvn.cmd" : "mvn";
         String[] command = {mavenCmd, "package"};
         Process process = Runtime.getRuntime().exec(command);
@@ -27,22 +28,27 @@ public class App {
             process.waitFor();
             if (process.exitValue() != 0) {
                 String message = sb.toString();
-                System.out.println("Build failed \n" + process.exitValue()+ " " + message);
+                //System.out.println("Build failed \n" + process.exitValue()+ " " + message);
+                result[0] = "Fail";
+                result[1] = message;
             }
             else {
                 String message = sb.toString();
-                System.out.println("Build was successful \n" + message);
+                //System.out.println("Build was successful \n" + message);
+                result[0] = "Success";
+                result[1] = message;
             }
         } catch (InterruptedException e ) {
-            System.out.println(e.getMessage());
+
             e.printStackTrace();
         }
-
+        return result;
     }
 
     public static void main(String[] args) throws Exception {
         System.out.println("Hello World!");
         App app = new App();
-        app.runBuild();
+        String[] log = app.runBuild();
+        System.out.println("Result of build: " + log[0] + "\n " + log[1]);
     }
 }
