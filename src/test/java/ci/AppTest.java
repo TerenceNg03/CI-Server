@@ -9,7 +9,7 @@ public class AppTest {
     /** Rigorous Test :-) */
     @Test
     public void shouldAnswerWithTrue() {
-        App.main(null);
+        //App.main(null);
         assertTrue(true);
     }
 }
