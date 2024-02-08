@@ -1,29 +1,30 @@
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE QuasiQuotes                #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Schema where
 
-import           Data.Text (Text)
-import           Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), withObject)
-import           Data.Aeson.Types (Parser, Object, Pair)
+import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
+import Data.Aeson.Types (Object, Pair, Parser)
+import Data.Text (Text)
+import Database.Persist (Entity (..))
+import Database.Persist.Sql (fromSqlKey, toSqlKey)
 import qualified Database.Persist.TH as PTH
-import           Database.Persist (Entity(..), Entity)
-import           Database.Persist.Sql (fromSqlKey, toSqlKey)
-
 
 -- | Defines the schema for 'Build' entity with a unique identifier and build details.
-PTH.share [PTH.mkPersist PTH.sqlSettings, PTH.mkMigrate "migrateAll"] [PTH.persistLowerCase|
+PTH.share
+    [PTH.mkPersist PTH.sqlSettings, PTH.mkMigrate "migrateAll"]
+    [PTH.persistLowerCase|
   Build sql=builds
     timestamp Text
     status Text
@@ -31,8 +32,9 @@ PTH.share [PTH.mkPersist PTH.sqlSettings, PTH.mkMigrate "migrateAll"] [PTH.persi
 |]
 
 instance ToJSON (Entity Build) where
-    toJSON (Entity bid build) = object $
-        "id" .= (fromSqlKey bid) : buildPairs build
+    toJSON (Entity bid build) =
+        object $
+            "id" .= (fromSqlKey bid) : buildPairs build
 
 instance ToJSON Build where
     toJSON build = object (buildPairs build)
@@ -56,7 +58,8 @@ parseBuild :: Object -> Parser Build
 parseBuild o = do
     bTimestamp <- o .: "timestamp"
     bStatus <- o .: "status"
-    return Build
-        { buildTimestamp = bTimestamp
-        , buildStatus = bStatus
-        }
+    return
+        Build
+            { buildTimestamp = bTimestamp
+            , buildStatus = bStatus
+            }
