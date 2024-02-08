@@ -9,11 +9,9 @@ import org.json.simple.JSONObject;
 public class App {
 
     /**
-     *
      * @param file
      */
-    public static void readInput(File file) {
-    }
+    public static void readInput(File file) {}
 
     /**
      * Placeholder function for writing json to file
@@ -32,11 +30,12 @@ public class App {
     }
 
     public static void main(String[] args) {
-        //String input = args[1];
-        //System.out.println(input);
+        // String input = args[1];
+        // System.out.println(input);
         File file = new File(".\\exampleOutput.json");
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("compile", "true");
         writeToFile(file, jsonObject);
+        System.out.println(jsonObject);
     }
 }
