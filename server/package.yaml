@@ -35,7 +35,8 @@ dependencies:
 - http-types
 - fmt
 - unliftio-core
-
+- cryptohash-sha256
+- bytestring
 
 ghc-options:
 - -Wall
