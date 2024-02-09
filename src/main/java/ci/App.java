@@ -73,9 +73,9 @@ public class App {
         String dirWithBuild = "./";
         String[] log = app.runBuild(dirWithBuild);
         System.out.println("Result of build: " + log[0] + "\n " + log[1]);
-        File file = new File(".\\exampleOutput.json");
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.put("compile", "true");
-        writeToFile(file, jsonObject);
+        //        File file = new File(".\\exampleOutput.json");
+        //        JSONObject jsonObject = new JSONObject();
+        //        jsonObject.put("compile", "true");
+        //        writeToFile(file, jsonObject);
     }
 }
