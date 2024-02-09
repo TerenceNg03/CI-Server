@@ -1,17 +1,32 @@
 package ci;
 
 import java.io.*;
+import org.json.simple.JSONObject;
+
 
 /** Hello world! */
 public class App {
 
     /**
-     * Builds and tests the repo with command mvn package
-     *
-     * @param dir the directory in which mvn package will execute
-     * @return String[], storing the build status at index 0 and build log at index 1
-     * @throws IOException
+     * @param file
      */
+    public static void readInput(File file) {}
+
+    /**
+     * Placeholder function for writing json to file
+     *
+     * @param jsonObj
+     */
+    public static void writeToFile(File file, JSONObject jsonObj) {
+        try {
+            FileWriter fileWriter = new FileWriter(file);
+            fileWriter.write(jsonObj.toJSONString());
+            fileWriter.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
     public String[] runBuild(String dir) throws IOException {
         String[] result = new String[2];
         final String mavenCmd =
@@ -20,19 +35,19 @@ public class App {
         Process process = Runtime.getRuntime().exec(command);
         StringBuilder sb = new StringBuilder();
         new Thread(
-                        () -> {
-                            BufferedReader input =
-                                    new BufferedReader(
-                                            new InputStreamReader(process.getInputStream()));
-                            String line;
-                            try {
-                                while ((line = input.readLine()) != null) {
-                                    sb.append(line).append("\n");
-                                }
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                        })
+                () -> {
+                    BufferedReader input =
+                            new BufferedReader(
+                                    new InputStreamReader(process.getInputStream()));
+                    String line;
+                    try {
+                        while ((line = input.readLine()) != null) {
+                            sb.append(line).append("\n");
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                })
                 .start();
         try {
             process.waitFor();
@@ -52,10 +67,16 @@ public class App {
     }
 
     public static void main(String[] args) throws IOException {
-        System.out.println("Hello World!");
+        // String input = args[1];
+        // System.out.println(input);
         App app = new App();
         String dirWithBuild = "./";
         String[] log = app.runBuild(dirWithBuild);
         System.out.println("Result of build: " + log[0] + "\n " + log[1]);
+        File file = new File(".\\exampleOutput.json");
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("compile", "true");
+        writeToFile(file, jsonObject);
+        System.out.println(jsonObject);
     }
 }
