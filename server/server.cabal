@@ -35,6 +35,8 @@ library
   build-depends:
       aeson
     , base >=4.7 && <5
+    , bytestring
+    , cryptohash-sha256
     , directory
     , filepath
     , fmt
@@ -61,6 +63,8 @@ executable server-exe
   build-depends:
       aeson
     , base >=4.7 && <5
+    , bytestring
+    , cryptohash-sha256
     , directory
     , filepath
     , fmt
@@ -89,6 +93,8 @@ test-suite server-test
   build-depends:
       aeson
     , base >=4.7 && <5
+    , bytestring
+    , cryptohash-sha256
     , directory
     , filepath
     , fmt
