@@ -38,6 +38,8 @@ dependencies:
   - persistent
   - persistent-sqlite
   - esqueleto
+  - cryptohash-sha256
+  - bytestring
 
 ghc-options:
   - -Wall

@@ -26,9 +26,8 @@ library
       Config
       Database
       HandleLogger
-      Lib
-      Schema
       Server
+      WebHook
   other-modules:
       Paths_server
   hs-source-dirs:
@@ -37,6 +36,8 @@ library
   build-depends:
       aeson
     , base >=4.7 && <5
+    , bytestring
+    , cryptohash-sha256
     , directory
     , esqueleto
     , filepath
@@ -66,6 +67,8 @@ executable server-exe
   build-depends:
       aeson
     , base >=4.7 && <5
+    , bytestring
+    , cryptohash-sha256
     , directory
     , esqueleto
     , filepath
@@ -90,6 +93,8 @@ test-suite server-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      ServerSpec
+      WebHookSpec
       Paths_server
   hs-source-dirs:
       test
@@ -97,6 +102,8 @@ test-suite server-test
   build-depends:
       aeson
     , base >=4.7 && <5
+    , bytestring
+    , cryptohash-sha256
     , directory
     , esqueleto
     , filepath

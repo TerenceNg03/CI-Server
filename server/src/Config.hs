@@ -15,9 +15,13 @@ import GHC.Generics (Generic)
 -- | Configuration for web server
 data Config = Config
     { portNumber :: !Int
+    -- ^ port number of the server
     , webSecret :: !Text
+    -- ^ web secret for verify github push
     , dbFile :: !FilePath
+    -- ^ database file path
     , logFile :: !FilePath
+    -- ^ log file path
     }
     deriving (Generic)
 
