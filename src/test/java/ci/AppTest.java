@@ -10,18 +10,17 @@ public class AppTest extends App {
     /** Rigorous Test :-) */
     @Test
     public void shouldAnswerWithTrue() {
-        // App.main(null);
         assertTrue(true);
     }
 
     @Test
     public void runBuildShouldFailIfFaultyDirectory() throws IOException {
         String[] result = runBuild("...");
-        assertTrue(result[0].equals("Fail"));
+        assertTrue(result[0].equals("failure"));
     }
 
     // @Test
     public void runBuildAlwaysFailTest() {
-        assertTrue(false);
+        fail();
     }
 }
