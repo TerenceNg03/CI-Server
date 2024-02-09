@@ -1,2 +1,5 @@
+config.yaml
+*.log
+*.sqlite3
 .stack-work/
 *~
