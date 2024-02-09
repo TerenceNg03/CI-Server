@@ -25,8 +25,8 @@ library
   exposed-modules:
       Config
       HandleLogger
-      Lib
       Server
+      WebHook
   other-modules:
       Paths_server
   hs-source-dirs:
@@ -86,6 +86,8 @@ test-suite server-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      ServerSpec
+      WebHookSpec
       Paths_server
   hs-source-dirs:
       test

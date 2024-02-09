@@ -1,14 +1,19 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeApplications #-}
 
-module Server (runServer) where
+module Server (runServer, sha) where
 
 import Config (Config (..))
 import Crypto.Hash.SHA256 (hmac)
+import Data.Aeson (eitherDecode)
 import Data.ByteString (toStrict)
 import Data.ByteString.Builder (byteStringHex, toLazyByteString)
+import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (find)
+import Data.String (IsString (fromString))
+import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Text.Lazy (fromStrict)
 import Fmt (format)
@@ -30,6 +35,7 @@ import Web.Scotty.Trans (
     status,
     text,
  )
+import WebHook (Commit)
 
 -- | Dispatch requests based on patterns
 dispatch :: Config -> ScottyT (LogT IO) ()
@@ -50,15 +56,23 @@ dispatch Config{..} = do
     post "/" $ do
         h <- headers
         payload <- body
-        let sig = hmac (encodeUtf8 webSecret) $ toStrict payload
-            decodeHex = decodeUtf8 . toStrict . toLazyByteString . byteStringHex
-            verify = find (== ("X-Hub-Signature-256", fromStrict $ "sha256=" <> decodeHex sig)) h
+        let verify = find (== ("X-Hub-Signature-256", fromStrict $ sha webSecret payload)) h
         case verify of
             Nothing -> do
                 logInfo_ "Signature verification failed"
                 status status403
                 html "<h1>Invalid Signature</h1>"
-            Just _ -> text ""
+            Just _ -> do
+                let commit = eitherDecode @Commit payload
+                logInfo_ $ pack $ show commit
+                text "Accepted"
+
+-- | Calculate HMAC from secret and payload
+sha :: (IsString a) => Text -> ByteString -> a
+sha secret payload = fromString . unpack $ "sha256=" <> decodeHex signature
+  where
+    decodeHex = decodeUtf8 . toStrict . toLazyByteString . byteStringHex
+    signature = hmac (encodeUtf8 secret) $ toStrict payload
 
 -- | Run web server with given config and logger
 runServer :: Config -> Logger -> IO ()
