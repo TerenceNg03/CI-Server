@@ -6,7 +6,7 @@ import java.io.IOException;
 import org.junit.Test;
 
 /** Unit test for simple App. */
-public class AppTest extends App {
+public class AppTest {
     /** Rigorous Test :-) */
     @Test
     public void shouldAnswerWithTrue() {
@@ -15,8 +15,16 @@ public class AppTest extends App {
 
     @Test
     public void runBuildShouldFailIfFaultyDirectory() throws IOException {
-        String[] result = runBuild("...");
-        assertTrue(result[0].equals("failure"));
+        MavenHandler mavenHandler = MavenHandler.getInstance("...");
+
+        assertFalse(mavenHandler.compileProgram());
+    }
+
+    @Test
+    public void runTestShouldFailIfFaultyDirectory() throws IOException {
+        MavenHandler mavenHandler = MavenHandler.getInstance("...");
+
+        assertFalse(mavenHandler.runTests());
     }
 
     // @Test
