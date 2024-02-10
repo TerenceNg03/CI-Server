@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 
-module WebHook (Commit (..), Repo (..), runWebHook) where
+module WebHook (Commit (..), Repo (..), runWebHook, invokeMavenCommand) where
 
 import Config (Config (Config, domain, githubToken))
 import Control.Concurrent (forkIO)
@@ -30,6 +30,7 @@ import Fmt (format)
 import GHC.Generics (Generic)
 import Log (LogT, Logger, defaultLogLevel, logAttention_, logInfo_, runLogT)
 import Network.HTTP.Req (POST (POST), ReqBodyJson (ReqBodyJson), bsResponse, defaultHttpConfig, header, https, req, responseBody, runReq, (/:))
+import System.Process (callProcess)
 
 -- | Commit Info
 data Commit = Commit
@@ -91,6 +92,10 @@ instance Show State where
         Failure -> "failure"
         Pending -> "pending"
         Success -> "success"
+
+-- | Invoke Maven command
+invokeMavenCommand :: String -> IO ()
+invokeMavenCommand command = callProcess "mvn" [command]
 
 postStatus :: UUID -> Text -> Text -> Commit -> State -> Text -> LogT IO ()
 postStatus uuid token domain commit s desc = flip catchError (logInfo_ . pack . show) $ do

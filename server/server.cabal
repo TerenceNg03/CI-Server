@@ -49,6 +49,7 @@ library
     , network
     , persistent
     , persistent-sqlite
+    , process
     , req
     , scotty
     , text
@@ -81,6 +82,7 @@ executable server-exe
     , network
     , persistent
     , persistent-sqlite
+    , process
     , req
     , scotty
     , server
@@ -117,6 +119,7 @@ test-suite server-test
     , network
     , persistent
     , persistent-sqlite
+    , process
     , req
     , scotty
     , server

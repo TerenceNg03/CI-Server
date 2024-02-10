@@ -41,6 +41,7 @@ dependencies:
   - bytestring
   - req
   - uuid
+  - process
 
 ghc-options:
   - -Wall
