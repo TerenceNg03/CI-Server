@@ -6,6 +6,7 @@
 module Server (runServer, sha) where
 
 import Config (Config (..))
+import Control.Monad.Except (catchError)
 import Crypto.Hash.SHA256 (hmac)
 import Data.Aeson (eitherDecode)
 import Data.ByteString (toStrict)
@@ -17,7 +18,7 @@ import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Text.Lazy (fromStrict)
 import Fmt (format)
-import Log (LogT, defaultLogLevel, logInfo_, runLogT)
+import Log (LogT, LoggerEnv (leLogger), MonadLog (getLoggerEnv), defaultLogLevel, logInfo_, runLogT)
 import Log.Logger (Logger)
 import Network.HTTP.Types (status403)
 import Network.Wai (Request (rawPathInfo, remoteHost), requestMethod)
@@ -27,6 +28,7 @@ import Web.Scotty.Trans (
     function,
     headers,
     html,
+    liftIO,
     matchAny,
     next,
     post,
@@ -35,7 +37,7 @@ import Web.Scotty.Trans (
     status,
     text,
  )
-import WebHook (Commit)
+import WebHook (Commit, runWebHook)
 
 -- | Dispatch requests based on patterns
 dispatch :: Config -> ScottyT (LogT IO) ()
@@ -53,18 +55,24 @@ dispatch Config{..} = do
                 (show h)
                 (show b)
         next
-    post "/" $ do
+    post "/" $ flip catchError (logInfo_ . pack . show) $ do
         h <- headers
         payload <- body
         let verify = find (== ("X-Hub-Signature-256", fromStrict $ sha webSecret payload)) h
-        case verify of
-            Nothing -> do
+            commitRaw = eitherDecode @Commit payload
+        case (verify, commitRaw) of
+            (Nothing, _) -> do
                 logInfo_ "Signature verification failed"
                 status status403
                 html "<h1>Invalid Signature</h1>"
-            Just _ -> do
-                let commit = eitherDecode @Commit payload
+            (Just _, Left msg) -> do
+                logInfo_ $ format "Payload decoding failed: {}" msg
+                status status403
+                html "<h1>Invalid Payload</h1>"
+            (Just _, Right commit) -> do
                 logInfo_ $ pack $ show commit
+                logger <- leLogger <$> getLoggerEnv
+                liftIO $ runWebHook logger githubToken commit
                 text "Accepted"
 
 -- | Calculate HMAC from secret and payload
@@ -77,11 +85,11 @@ sha secret payload = fromString . unpack $ "sha256=" <> decodeHex signature
 -- | Run web server with given config and logger
 runServer :: Config -> Logger -> IO ()
 runServer config@Config{..} logger = do
-    runLog $
+    runLog "main" $
         do
             logInfo_ $ format "Running server on 0.0.0.0:{}" (show portNumber)
             logInfo_ $ format "Database file path: {}" dbFile
             logInfo_ $ format "Log file path: {}" logFile
-            scottyT portNumber runLog (dispatch config)
+            scottyT portNumber (runLog "worker") (dispatch config)
   where
-    runLog = runLogT "main" logger defaultLogLevel
+    runLog name = runLogT name logger defaultLogLevel

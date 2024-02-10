@@ -50,6 +50,7 @@ library
     , optics
     , persistent
     , persistent-sqlite
+    , req
     , scotty
     , text
     , unliftio-core
@@ -81,6 +82,7 @@ executable server-exe
     , optics
     , persistent
     , persistent-sqlite
+    , req
     , scotty
     , server
     , text
@@ -116,6 +118,7 @@ test-suite server-test
     , optics
     , persistent
     , persistent-sqlite
+    , req
     , scotty
     , server
     , text

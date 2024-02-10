@@ -2,13 +2,18 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Config (Config (..)) where
 
-import Data.Aeson (FromJSON (parseJSON), withObject, (.:))
+import Data.Aeson (
+    FromJSON (parseJSON),
+    Options (constructorTagModifier, fieldLabelModifier),
+    camelTo2,
+    defaultOptions,
+    genericParseJSON,
+ )
 import Data.Text (Text)
 import GHC.Generics (Generic)
 
@@ -22,13 +27,17 @@ data Config = Config
     -- ^ database file path
     , logFile :: !FilePath
     -- ^ log file path
+    , githubToken :: !Text
+    -- ^ github token ("<USERNAME> <TOKEN>")
     }
     deriving (Generic)
 
+jsonOptions :: Options
+jsonOptions =
+    defaultOptions
+        { fieldLabelModifier = camelTo2 '-'
+        , constructorTagModifier = camelTo2 '-'
+        }
+
 instance FromJSON Config where
-    parseJSON = withObject "Config" $ \v ->
-        Config
-            <$> v .: "port-number"
-            <*> v .: "web-secret"
-            <*> v .: "db-file"
-            <*> v .: "log-file"
+    parseJSON = genericParseJSON jsonOptions

@@ -40,6 +40,7 @@ dependencies:
   - esqueleto
   - cryptohash-sha256
   - bytestring
+  - req
 
 ghc-options:
   - -Wall
