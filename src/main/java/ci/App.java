@@ -71,8 +71,12 @@ public class App {
     public static void main(String[] args) throws IOException {
         App app = new App();
         String dirWithBuild = "./";
-        String[] log = app.runBuild(dirWithBuild);
-        System.out.println("Result of build: " + log[0] + "\n " + log[1]);
+
+        MavenHandler mavenHandler = MavenHandler.getInstance(dirWithBuild);
+        System.out.println("Result of compilation " + mavenHandler.compileProgram());
+        System.out.println("Result of tests: " + mavenHandler.runTests()); //mvn exev:java
+
+
         //        File file = new File(".\\exampleOutput.json");
         //        JSONObject jsonObject = new JSONObject();
         //        jsonObject.put("compile", "true");
