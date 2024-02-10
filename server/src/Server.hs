@@ -45,10 +45,6 @@ import Web.Scotty.Trans (
  )
 import WebHook (Commit, runWebHook)
 
--- Define a flag to enable/disable signature verification
-enableSignatureVerification :: Bool
-enableSignatureVerification = False
-
 -- | Dispatch requests based on patterns
 dispatch :: Config -> ScottyT (LogT IO) ()
 dispatch config@Config{..} = do
@@ -79,10 +75,7 @@ dispatch config@Config{..} = do
     post "/" $ flip catchError (logInfo_ . pack . show) $ do
         h <- headers
         payload <- body
-        let verify = if enableSignatureVerification
-            then find (== ("X-Hub-Signature-256", fromStrict $ sha webSecret payload)) h
-            else Just ("X-Hub-Signature-256", "<dummy>")
-        -- let verify = find (== ("X-Hub-Signature-256", fromStrict $ sha webSecret payload)) h
+        let verify = find (== ("X-Hub-Signature-256", fromStrict $ sha webSecret payload)) h
             commitRaw = eitherDecode @Commit payload
         case (verify, commitRaw) of
             (Nothing, _) -> do
