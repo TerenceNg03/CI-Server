@@ -140,6 +140,9 @@
                 </executions>
                 <configuration>
                     <mainClass>ci.App</mainClass>
+                    <arguments>
+                        <argument>./</argument>
+                    </arguments>
                 </configuration>
             </plugin>
         </plugins>

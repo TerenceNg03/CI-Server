@@ -1,85 +1,50 @@
 package ci;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import org.json.simple.JSONObject;
 
-/** Hello world! */
+/**
+ * A class for the App.
+ */
 public class App {
 
-    /**
-     * Placeholder function for writing json to file
-     *
-     * @param jsonObj
-     */
-    public static void writeToFile(File file, JSONObject jsonObj) {
-        try {
-            FileWriter fileWriter = new FileWriter(file);
-            fileWriter.write(jsonObj.toJSONString());
-            fileWriter.close();
+  /**
+   * Placeholder function for writing json to file.
+   *
+   * @param jsonObj the json object
+   */
+  public static void writeToFile(File file, JSONObject jsonObj) {
+    try {
+      FileWriter fileWriter = new FileWriter(file);
+      fileWriter.write(jsonObj.toJSONString());
+      fileWriter.close();
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    } catch (IOException e) {
+      e.printStackTrace();
     }
+  }
 
-    /**
-     * Builds and tests the repo with command mvn package
-     *
-     * @param dir the directory in which mvn package will execute
-     * @return String[], storing the build status at index 0 and build log at index 1
-     * @throws IOException
-     */
-    public String[] runBuild(String dir) throws IOException {
-        String[] result = new String[2];
-        final String mavenCmd =
-                System.getProperty("os.name").toLowerCase().contains("windows") ? "mvn.cmd" : "mvn";
-        String[] command = {mavenCmd, "-f", dir, "package"};
-        Process process = Runtime.getRuntime().exec(command);
-        StringBuilder sb = new StringBuilder();
-        new Thread(
-                        () -> {
-                            BufferedReader input =
-                                    new BufferedReader(
-                                            new InputStreamReader(process.getInputStream()));
-                            String line;
-                            try {
-                                while ((line = input.readLine()) != null) {
-                                    sb.append(line).append("\n");
-                                }
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                        })
-                .start();
-        try {
-            process.waitFor();
-            String message = sb.toString();
-            if (process.exitValue() != 0) {
-                result[0] = "failure";
-                result[1] = message;
-            } else {
-                result[0] = "success";
-                result[1] = message;
-            }
-        } catch (InterruptedException e) {
+  /**
+   * The main class of the app.
+   *
+   * @param args arguments for the program
+   * @throws IOException if the input fails
+   */
+  @SuppressWarnings("checkstyle:MagicNumber")
+  public static void main(String[] args) throws IOException {
+    String dirWithBuild = args[0];
 
-            e.printStackTrace();
-        }
-        return result;
-    }
+    MavenHandler mavenHandler = MavenHandler.getInstance(dirWithBuild);
+    System.out.println("Result of compilation: " + mavenHandler.compileProgram());
+    System.out.println(" " + mavenHandler.getCompileLog());
+    System.out.println("Result of tests: " + mavenHandler.runTests());
+    System.out.println(" " + mavenHandler.getTestLog());
 
-    public static void main(String[] args) throws IOException {
-        App app = new App();
-        String dirWithBuild = "./";
-
-        MavenHandler mavenHandler = MavenHandler.getInstance(dirWithBuild);
-        System.out.println("Result of compilation " + mavenHandler.compileProgram());
-        System.out.println("Result of tests: " + mavenHandler.runTests()); //mvn exev:java
-
-
-        //        File file = new File(".\\exampleOutput.json");
-        //        JSONObject jsonObject = new JSONObject();
-        //        jsonObject.put("compile", "true");
-        //        writeToFile(file, jsonObject);
-    }
+    //        File file = new File(".\\exampleOutput.json");
+    //        JSONObject jsonObject = new JSONObject();
+    //        jsonObject.put("compile", "true");
+    //        writeToFile(file, jsonObject);
+  }
 }
