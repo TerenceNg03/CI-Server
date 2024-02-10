@@ -1,13 +1,13 @@
-name:                server
-version:             0.1.0.0
-github:              "TerenceNg03/CI-Server"
-license:             BSD3
-author:              "Terence Ng"
-maintainer:          "terenceng03@outlook.com"
-copyright:           "2024 Terence Ng"
+name: server
+version: 0.1.0.0
+github: "TerenceNg03/CI-Server"
+license: BSD3
+author: "Terence Ng"
+maintainer: "terenceng03@outlook.com"
+copyright: "2024 Terence Ng"
 
 extra-source-files:
-- README.md
+  - README.md
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -16,61 +16,64 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/TerenceNg03/CI-Server#readme>
+description: Please see the README on GitHub at <https://github.com/TerenceNg03/CI-Server#readme>
 
 dependencies:
-- base >= 4.7 && < 5
-- hspec
-- scotty
-- yaml
-- mtl
-- network
-- wai
-- filepath
-- optics
-- log-base
-- directory
-- text
-- aeson
-- http-types
-- fmt
-- unliftio-core
-- cryptohash-sha256
-- bytestring
-- req
+  - base >= 4.7 && < 5
+  - hspec
+  - scotty
+  - yaml
+  - mtl
+  - network
+  - wai
+  - filepath
+  - optics
+  - log-base
+  - directory
+  - text
+  - aeson
+  - http-types
+  - fmt
+  - unliftio-core
+  - persistent
+  - persistent-sqlite
+  - esqueleto
+  - cryptohash-sha256
+  - bytestring
+  - req
 
 ghc-options:
-- -Wall
-- -Wcompat
-- -Widentities
-- -Wincomplete-record-updates
-- -Wincomplete-uni-patterns
-- -Wmissing-export-lists
-- -Wmissing-home-modules
-- -Wpartial-fields
-- -Wredundant-constraints
+  - -Wall
+  - -Wcompat
+  - -Widentities
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wmissing-export-lists
+  - -Wmissing-home-modules
+  - -Wpartial-fields
+  - -Wredundant-constraints
 
 library:
   source-dirs: src
 
 executables:
   server-exe:
-    main:                Main.hs
-    source-dirs:         app
+    main: Main.hs
+    source-dirs: app
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
     dependencies:
-    - server
+      - server
 
 tests:
   server-test:
-    main:                Spec.hs
-    source-dirs:         test
+    main: Spec.hs
+    source-dirs: test
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
     dependencies:
-    - server
+      - server
