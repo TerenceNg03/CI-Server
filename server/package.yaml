@@ -42,6 +42,7 @@ dependencies:
   - req
   - uuid
   - process
+  - time
 
 ghc-options:
   - -Wall

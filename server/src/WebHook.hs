@@ -5,9 +5,9 @@
 
 module WebHook (Commit (..), Repo (..), runWebHook, invokeMavenCommand) where
 
-import Config (Config (Config, domain, githubToken))
+import Config (Config (Config, dbFile, domain, githubToken))
 import Control.Concurrent (forkIO)
-import Control.Exception (SomeException, handle)
+import Control.Exception
 import Control.Monad (void)
 import Control.Monad.Error.Class (MonadError (catchError))
 import Control.Monad.Trans (lift)
@@ -25,12 +25,17 @@ import Data.Aeson (
 import Data.Foldable (foldl')
 import Data.Text (Text, pack, replace, splitOn)
 import Data.Text.Encoding (decodeUtf8)
+import Data.Time (defaultTimeLocale, formatTime, getCurrentTime)
 import Data.UUID (UUID, toText)
+import Database (Build (..), insertBuild)
+import Database.Persist.Sqlite (runSqlite)
 import Fmt (format)
 import GHC.Generics (Generic)
 import Log (LogT, Logger, defaultLogLevel, logAttention_, logInfo_, runLogT)
 import Network.HTTP.Req (POST (POST), ReqBodyJson (ReqBodyJson), bsResponse, defaultHttpConfig, header, https, req, responseBody, runReq, (/:))
-import System.Process (callProcess)
+import System.Directory (setCurrentDirectory)
+import System.IO
+import System.Process
 
 -- | Commit Info
 data Commit = Commit
@@ -93,9 +98,14 @@ instance Show State where
         Pending -> "pending"
         Success -> "success"
 
--- | Invoke Maven command
-invokeMavenCommand :: String -> IO ()
-invokeMavenCommand command = callProcess "mvn" [command]
+invokeMavenCommand :: String -> IO String
+invokeMavenCommand command = do
+    setCurrentDirectory ".."
+    (_, Just hout, _, ph) <- createProcess (proc "mvn -q" [command]){std_out = CreatePipe, std_err = NoStream}
+    output <- hGetContents hout
+    _ <- waitForProcess ph
+    setCurrentDirectory "server"
+    return output
 
 postStatus :: UUID -> Text -> Text -> Commit -> State -> Text -> LogT IO ()
 postStatus uuid token domain commit s desc = flip catchError (logInfo_ . pack . show) $ do
@@ -131,7 +141,16 @@ postStatus uuid token domain commit s desc = flip catchError (logInfo_ . pack . 
 
 -- | Run webhook jobs and post status to github
 runWebHook :: UUID -> Logger -> Config -> Commit -> IO ()
-runWebHook uuid logger Config{..} commit =
+runWebHook uuid logger Config{..} commit = do
+    compOutput <- invokeMavenCommand "compile"
+    currentTime <- getCurrentTime
+    runSql $
+        insertBuild $
+            Build
+                (toText uuid)
+                (after commit)
+                (pack $ formatTime defaultTimeLocale "%F %T %z" currentTime)
+                (pack compOutput)
     void
         $ forkIO
         $ runLogT
@@ -140,6 +159,7 @@ runWebHook uuid logger Config{..} commit =
             defaultLogLevel
         $ do
             postStatus' Pending "Working on checks..."
-            postStatus' Success "No checks implemented yet"
+            postStatus' Success $ pack compOutput
   where
     postStatus' = postStatus uuid githubToken domain commit
+    runSql = runSqlite $ pack dbFile

@@ -16,7 +16,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Database (migrateAll, insertBuild, getBuildByUUID, getBuilds) where
+module Database (migrateAll, insertBuild, getBuildByUUID, getBuilds, Build(..)) where
 
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO)
