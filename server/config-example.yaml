@@ -14,3 +14,6 @@ log-file: /tmp/ci.log
 
 # Github Token
 github-token: "<TOKEN>"
+
+# Server domain
+domain: https://example.com

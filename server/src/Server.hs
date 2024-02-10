@@ -17,20 +17,26 @@ import Data.String (IsString (fromString))
 import Data.Text (Text, pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Text.Lazy (fromStrict)
+import Data.UUID.V4 (nextRandom)
+import Database (getBuildByUUID, getBuilds, migrateAll)
+import Database.Persist.Sqlite (Entity (entityVal), runMigration, runSqlite)
 import Fmt (format)
 import Log (LogT, LoggerEnv (leLogger), MonadLog (getLoggerEnv), defaultLogLevel, logInfo_, runLogT)
 import Log.Logger (Logger)
-import Network.HTTP.Types (status403)
+import Network.HTTP.Types (status403, status404)
 import Network.Wai (Request (rawPathInfo, remoteHost), requestMethod)
 import Web.Scotty.Trans (
     ScottyT,
     body,
     function,
+    get,
     headers,
     html,
+    json,
     liftIO,
     matchAny,
     next,
+    pathParam,
     post,
     request,
     scottyT,
@@ -41,7 +47,7 @@ import WebHook (Commit, runWebHook)
 
 -- | Dispatch requests based on patterns
 dispatch :: Config -> ScottyT (LogT IO) ()
-dispatch Config{..} = do
+dispatch config@Config{..} = do
     matchAny (function $ const $ Just []) $ do
         r <- request
         h <- headers
@@ -55,6 +61,17 @@ dispatch Config{..} = do
                 (show h)
                 (show b)
         next
+    get "/build/:id" $ do
+        uuid <- pathParam "id"
+        build <- runSql $ getBuildByUUID uuid
+        case build of
+            Just b -> json $ entityVal b
+            Nothing -> do
+                status status404
+                html "<h1>Invalid build id</h1>"
+    get "/builds" $ do
+        builds <- runSql getBuilds
+        json $ entityVal <$> builds
     post "/" $ flip catchError (logInfo_ . pack . show) $ do
         h <- headers
         payload <- body
@@ -70,10 +87,13 @@ dispatch Config{..} = do
                 status status403
                 html "<h1>Invalid Payload</h1>"
             (Just _, Right commit) -> do
+                uuid <- liftIO nextRandom
                 logInfo_ $ pack $ show commit
                 logger <- leLogger <$> getLoggerEnv
-                liftIO $ runWebHook logger githubToken commit
+                liftIO $ runWebHook uuid logger config commit
                 text "Accepted"
+  where
+    runSql = runSqlite $ pack dbFile
 
 -- | Calculate HMAC from secret and payload
 sha :: (IsString a) => Text -> ByteString -> a
@@ -87,6 +107,7 @@ runServer :: Config -> Logger -> IO ()
 runServer config@Config{..} logger = do
     runLog "main" $
         do
+            runSqlite (pack dbFile) (runMigration migrateAll)
             logInfo_ $ format "Running server on 0.0.0.0:{}" (show portNumber)
             logInfo_ $ format "Database file path: {}" dbFile
             logInfo_ $ format "Log file path: {}" logFile

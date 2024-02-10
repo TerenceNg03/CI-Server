@@ -29,6 +29,8 @@ data Config = Config
     -- ^ log file path
     , githubToken :: !Text
     -- ^ github token ("<USERNAME> <TOKEN>")
+    , domain :: !Text
+    -- ^ domain name and protocol used by server ("https://yourdomain.com")
     }
     deriving (Generic)
 

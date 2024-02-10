@@ -27,7 +27,6 @@ dependencies:
   - network
   - wai
   - filepath
-  - optics
   - log-base
   - directory
   - text
@@ -41,6 +40,7 @@ dependencies:
   - cryptohash-sha256
   - bytestring
   - req
+  - uuid
 
 ghc-options:
   - -Wall
