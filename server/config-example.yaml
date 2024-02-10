@@ -12,3 +12,5 @@ db-file: /tmp/ci.sqlite3
 # Path to log file for the server
 log-file: /tmp/ci.log
 
+# Github Token
+github-token: "<TOKEN>"

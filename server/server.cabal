@@ -24,6 +24,7 @@ source-repository head
 library
   exposed-modules:
       Config
+      Database
       HandleLogger
       Server
       WebHook
@@ -38,6 +39,7 @@ library
     , bytestring
     , cryptohash-sha256
     , directory
+    , esqueleto
     , filepath
     , fmt
     , hspec
@@ -46,6 +48,9 @@ library
     , mtl
     , network
     , optics
+    , persistent
+    , persistent-sqlite
+    , req
     , scotty
     , text
     , unliftio-core
@@ -66,6 +71,7 @@ executable server-exe
     , bytestring
     , cryptohash-sha256
     , directory
+    , esqueleto
     , filepath
     , fmt
     , hspec
@@ -74,6 +80,9 @@ executable server-exe
     , mtl
     , network
     , optics
+    , persistent
+    , persistent-sqlite
+    , req
     , scotty
     , server
     , text
@@ -98,6 +107,7 @@ test-suite server-test
     , bytestring
     , cryptohash-sha256
     , directory
+    , esqueleto
     , filepath
     , fmt
     , hspec
@@ -106,6 +116,9 @@ test-suite server-test
     , mtl
     , network
     , optics
+    , persistent
+    , persistent-sqlite
+    , req
     , scotty
     , server
     , text
