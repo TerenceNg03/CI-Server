@@ -15,12 +15,13 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Database (migrateAll, insertBuild, getBuild, getBuildByHash, getBuilds) where
+module Database (migrateAll, insertBuild, getBuildByUUID, getBuilds) where
 
+import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO)
 import Data.Maybe (listToMaybe)
 import Data.Text (Text)
-import Database.Esqueleto.Experimental (Entity (..), PersistEntity (Key), from, get, insert, select, table, val, where_, (==.), (^.))
+import Database.Esqueleto.Experimental (Entity (..), from, insert, select, table, val, where_, (==.), (^.))
 import Database.Persist.Sqlite (SqlPersistT)
 import Database.Persist.TH (mkMigrate, mkPersist, persistLowerCase, share, sqlSettings)
 import GHC.Generics (Generic)
@@ -30,10 +31,11 @@ share
     [mkPersist sqlSettings, mkMigrate "migrateAll"]
     [persistLowerCase|
   Build sql=builds
+    uuid Text sqltype=UUID 
     commitHash Text
     date Text
     log Text
-    UniqueCommitHash commitHash
+    Primary uuid
     deriving Show Read Generic
 |]
 
@@ -41,17 +43,13 @@ share
 getBuilds :: (MonadIO m) => SqlPersistT m [Entity Build]
 getBuilds = select $ from $ table @Build
 
--- | Get a build from the database by its unique identifier
-getBuild :: (MonadIO m) => Key Build -> SqlPersistT m (Maybe Build)
-getBuild = get
-
 -- | Get a build from the database by its unique commit hash
-getBuildByHash :: (MonadIO m) => Text -> SqlPersistT m (Maybe (Entity Build))
-getBuildByHash hash = fmap listToMaybe $ select $ do
+getBuildByUUID :: (MonadIO m) => Text -> SqlPersistT m (Maybe (Entity Build))
+getBuildByUUID uuid = fmap listToMaybe $ select $ do
     builds <- from $ table @Build
-    where_ (builds ^. BuildCommitHash ==. val hash)
+    where_ (builds ^. BuildUuid ==. val uuid)
     pure builds
 
 -- | Insert a build into the database
-insertBuild :: (MonadIO m) => Build -> SqlPersistT m (Key Build)
-insertBuild = insert
+insertBuild :: (MonadIO m) => Build -> SqlPersistT m ()
+insertBuild build = void $ insert build
