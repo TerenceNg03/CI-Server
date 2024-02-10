@@ -1,9 +1,6 @@
 package ci;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
-import org.json.simple.JSONObject;
 
 /** A class for the App. */
 public class App {
@@ -24,6 +21,5 @@ public class App {
         ciResultWriter.addResult("compile", compileStatus, mavenHandler.getCompileLog());
         ciResultWriter.addResult("test", testStatus, mavenHandler.getTestLog());
         ciResultWriter.uploadFile();
-
     }
 }
