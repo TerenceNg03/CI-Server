@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 
 module WebHook (Commit (..), Repo (..), runWebHook) where
 
+import Config (Config (Config, domain, githubToken))
 import Control.Concurrent (forkIO)
 import Control.Exception (SomeException, handle)
 import Control.Monad (void)
@@ -23,6 +25,7 @@ import Data.Aeson (
 import Data.Foldable (foldl')
 import Data.Text (Text, pack, replace, splitOn)
 import Data.Text.Encoding (decodeUtf8)
+import Data.UUID (UUID, toText)
 import Fmt (format)
 import GHC.Generics (Generic)
 import Log (LogT, Logger, defaultLogLevel, logAttention_, logInfo_, runLogT)
@@ -89,8 +92,8 @@ instance Show State where
         Pending -> "pending"
         Success -> "success"
 
-postStatus :: Text -> Commit -> State -> Text -> LogT IO ()
-postStatus token commit s desc = flip catchError (logInfo_ . pack . show) $ do
+postStatus :: UUID -> Text -> Text -> Commit -> State -> Text -> LogT IO ()
+postStatus uuid token domain commit s desc = flip catchError (logInfo_ . pack . show) $ do
     logInfo_ $
         format
             "Sending commit status:\n    state: {}\n    url: {}\n    body: {}"
@@ -112,7 +115,7 @@ postStatus token commit s desc = flip catchError (logInfo_ . pack . show) $ do
     response =
         Response
             s
-            ""
+            (domain <> "/build/" <> toText uuid)
             desc
             "se-group9/ci-server"
     headers =
@@ -122,8 +125,16 @@ postStatus token commit s desc = flip catchError (logInfo_ . pack . show) $ do
             <> header "User-Agent" "se-group9-ci"
 
 -- | Run webhook jobs and post status to github
-runWebHook :: Logger -> Text -> Commit -> IO ()
-runWebHook logger token commit =
-    void $ forkIO $ runLogT "reporter" logger defaultLogLevel $ do
-        postStatus token commit Pending "Working on checks..."
-        postStatus token commit Success "No checks implemented yet"
+runWebHook :: UUID -> Logger -> Config -> Commit -> IO ()
+runWebHook uuid logger Config{..} commit =
+    void
+        $ forkIO
+        $ runLogT
+            (format "worker({})" $ toText uuid)
+            logger
+            defaultLogLevel
+        $ do
+            postStatus' Pending "Working on checks..."
+            postStatus' Success "No checks implemented yet"
+  where
+    postStatus' = postStatus uuid githubToken domain commit

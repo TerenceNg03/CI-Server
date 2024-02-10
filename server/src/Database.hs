@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -19,6 +20,7 @@ module Database (migrateAll, insertBuild, getBuildByUUID, getBuilds) where
 
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO)
+import Data.Aeson (ToJSON)
 import Data.Maybe (listToMaybe)
 import Data.Text (Text)
 import Database.Esqueleto.Experimental (Entity (..), from, insert, select, table, val, where_, (==.), (^.))
@@ -32,11 +34,11 @@ share
     [persistLowerCase|
   Build sql=builds
     uuid Text sqltype=UUID 
-    commitHash Text
+    commit Text
     date Text
     log Text
     Primary uuid
-    deriving Show Read Generic
+    deriving Show Generic ToJSON
 |]
 
 -- | Get all builds from the database
