@@ -170,11 +170,11 @@ runMaven uuid commit Config{..} command = do
     case result of
         Left errMsg -> do
             logAttention_ $ format "Failed to run {}: {}" command errMsg
-            postStatus' Error "Failed to compile!"
+            postStatus' Error $ format "Failed to run {}: {}" command errMsg
             return (pack errMsg)
         Right (exitCode, output) -> do
             logInfo_ $ format "{} succeeded with exit code: {}" command exitCode
-            postStatus' Success "Compilation succeeded!"
+            postStatus' Success $ format "Maven command '{}' succeeded" command
             return (pack output)
   where
     postStatus' = postStatus uuid githubToken domain commit
