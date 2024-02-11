@@ -35,6 +35,7 @@ share
   Build sql=builds
     uuid Text sqltype=UUID 
     commit Text
+    status Text
     date Text
     log Text
     Primary uuid

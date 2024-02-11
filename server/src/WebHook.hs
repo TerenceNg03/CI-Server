@@ -11,6 +11,7 @@ import Control.Exception
 import Control.Monad (void)
 import Control.Monad.Error.Class (MonadError (catchError))
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (MonadReader (ask), ReaderT (ReaderT))
 import Control.Monad.Trans (lift)
 import Data.Aeson (
     FromJSON,
@@ -98,6 +99,8 @@ instance Show State where
         Pending -> "pending"
         Success -> "success"
 
+type HookM = ReaderT (Config, Commit, UUID) (LogT IO)
+
 invokeMavenCommand :: [String] -> IO (Either String (Int, String))
 invokeMavenCommand args = do
     let mvnCommand = shell $ unwords ("mvn" : args)
@@ -106,8 +109,24 @@ invokeMavenCommand args = do
         (ExitSuccess, stdout, _) -> Right (0, stdout)
         (ExitFailure code, _, stderr) -> Left (stderr ++ "\nExit code: " ++ show code)
 
-postStatus :: UUID -> Text -> Text -> Commit -> State -> Text -> LogT IO ()
-postStatus uuid token domain commit s desc = flip catchError (logInfo_ . pack . show) $ do
+postStatus :: State -> Text -> HookM ()
+postStatus s desc = flip catchError (logInfo_ . pack . show) $ do
+    (Config{..}, Commit{..}, uuid) <- ask
+    let uri = replace "https://" "" $ replace "{sha}" after $ statusesUrl repository
+        uris = splitOn "/" uri
+        url = foldl' (/:) (https (head uris)) $ tail uris
+        response =
+            Response
+                s
+                (domain <> "/build/" <> toText uuid)
+                desc
+                "se-group9/ci-server"
+        headers =
+            header "Accept" "application/vnd.github+json"
+                <> header "Authorization" (format "token {}" githubToken)
+                <> header "X-GitHub-Api-Version" "2022-11-28"
+                <> header "User-Agent" "se-group9-ci"
+
     logInfo_ $
         format
             "Sending commit status:\n    state: {}\n    url: {}\n    body: {}"
@@ -116,65 +135,40 @@ postStatus uuid token domain commit s desc = flip catchError (logInfo_ . pack . 
             (show response)
     rsp <-
         lift
+            $ lift
             $ handle
                 (return . Left . pack . show @SomeException)
             $ Right <$> runReq defaultHttpConfig (req POST url (ReqBodyJson response) bsResponse headers)
     case rsp of
         Left err -> logAttention_ err
         Right resp -> logInfo_ $ decodeUtf8 $ responseBody resp
-  where
-    uri = replace "https://" "" $ replace "{sha}" (after commit) $ statusesUrl $ repository commit
-    uris = splitOn "/" uri
-    url = foldl' (/:) (https (head uris)) $ tail uris
-    response =
-        Response
-            s
-            (domain <> "/build/" <> toText uuid)
-            desc
-            "se-group9/ci-server"
-    headers =
-        header "Accept" "application/vnd.github+json"
-            <> header "Authorization" (format "token {}" token)
-            <> header "X-GitHub-Api-Version" "2022-11-28"
-            <> header "User-Agent" "se-group9-ci"
 
 -- | Run webhook jobs and post status to github
-runWebHook :: UUID -> Logger -> Config -> Commit -> IO ()
-runWebHook uuid logger config@Config{..} commit = do
-    void
-        $ forkIO
-        $ runLogT
-            (format "worker({})" $ toText uuid)
-            logger
-            defaultLogLevel
-        $ do
-            postStatus' Pending "Working on checks..."
-            compileResult <- runMaven uuid commit config ["-B", "-DskipTests", "compile"]
-            testResult <- runMaven uuid commit config ["-B", "test"]
-            currentTime <- liftIO getCurrentTime
-            liftIO $
-                runSql $
-                    insertBuild $
-                        Build
-                            (toText uuid)
-                            (after commit)
-                            (pack $ formatTime defaultTimeLocale "%F %T %z" currentTime)
-                            (compileResult <> testResult)
-  where
-    postStatus' = postStatus uuid githubToken domain commit
-    runSql = runSqlite $ pack dbFile
+runWebHook :: HookM ()
+runWebHook = do
+    (Config{..}, Commit{..}, uuid) <- ask
+    postStatus Pending "Working on checks..."
+    compileResult <- runMaven ["-B", "-DskipTests", "compile"]
+    testResult <- runMaven ["-B", "test"]
+    currentTime <- lift $ lift getCurrentTime
+    runSqlite (pack dbFile) $
+        insertBuild $
+            Build
+                (toText uuid)
+                after
+                "Success"
+                (pack $ formatTime defaultTimeLocale "%F %T %z" currentTime)
+                (compileResult <> testResult)
 
-runMaven :: UUID -> Commit -> Config -> [String] -> LogT IO (Text)
-runMaven uuid commit Config{..} command = do
+runMaven :: [String] -> HookM Text
+runMaven command = do
     result <- liftIO $ invokeMavenCommand command
     case result of
         Left errMsg -> do
             logAttention_ $ format "Failed to run {}: {}" command errMsg
-            postStatus' Error $ format "Failed to run {}: {}" command errMsg
+            postStatus Error $ format "Failed to run {}: {}" command errMsg
             return (pack errMsg)
         Right (exitCode, output) -> do
             logInfo_ $ format "{} succeeded with exit code: {}" command exitCode
-            postStatus' Success $ format "Maven command '{}' succeeded" command
+            postStatus Success $ format "Maven command '{}' succeeded" command
             return (pack output)
-  where
-    postStatus' = postStatus uuid githubToken domain commit
