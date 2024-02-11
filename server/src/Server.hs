@@ -23,6 +23,7 @@ import Data.Text.Lazy (fromStrict)
 import Data.UUID (toText)
 import Data.UUID.V4 (nextRandom)
 import Database (getBuildByUUID, getBuilds, migrateAll)
+import Database.Esqueleto.Experimental (Value (unValue))
 import Database.Persist.Sqlite (Entity (entityVal), runMigration, runSqlite)
 import Fmt (format)
 import Log (LogT, MonadLog (localDomain), defaultLogLevel, logInfo_, runLogT)
@@ -75,7 +76,7 @@ dispatch = do
                 html "<h1>Invalid build id</h1>"
     get "/builds" $ do
         builds <- runSql getBuilds
-        json $ entityVal <$> builds
+        json $ unValue <$> builds
     post "/" $ flip catchError (logInfo_ . pack . show) $ do
         h <- headers
         payload <- body
