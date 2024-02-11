@@ -98,9 +98,9 @@ instance Show State where
         Pending -> "pending"
         Success -> "success"
 
-invokeMavenCommand :: String -> IO (Either String (Int, String))
-invokeMavenCommand command = do
-    let mvnCommand = shell $ unwords ["mvn", "-q", command]
+invokeMavenCommand :: [String] -> IO (Either String (Int, String))
+invokeMavenCommand args = do
+    let mvnCommand = shell $ unwords ("mvn":args)
     result <- readCreateProcessWithExitCode mvnCommand{cwd = Just "../"} ""
     return $ case result of
         (ExitSuccess, stdout, _) -> Right (0, stdout)
@@ -157,7 +157,7 @@ runWebHook uuid logger config@Config{..} commit = do
 handleCompileResult :: UUID -> Commit -> Config -> LogT IO ()
 handleCompileResult uuid commit Config{..} = do
     postStatus' Pending "Compilation in progress..."
-    compileResult <- liftIO $ invokeMavenCommand "compile"
+    compileResult <- liftIO $ invokeMavenCommand ["-B", "-q", "-DskipTests", "compile"]
     case compileResult of
         Left errMsg -> do
             logAttention_ $ format "Failed to compile: {}" errMsg
@@ -181,7 +181,7 @@ handleCompileResult uuid commit Config{..} = do
 handleTestingResult :: UUID -> Commit -> Config -> LogT IO ()
 handleTestingResult uuid commit Config{..} = do
     postStatus' Pending "Testing in progress..."
-    testResult <- liftIO $ invokeMavenCommand "test"
+    testResult <- liftIO $ invokeMavenCommand ["-B", "test"]
     case testResult of
         Left errMsg -> do
             logAttention_ $ format "Failed to test: {}" errMsg
