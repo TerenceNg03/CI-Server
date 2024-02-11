@@ -49,9 +49,11 @@ library
     , network
     , persistent
     , persistent-sqlite
+    , process
     , req
     , scotty
     , text
+    , time
     , unliftio-core
     , uuid
     , wai
@@ -81,10 +83,12 @@ executable server-exe
     , network
     , persistent
     , persistent-sqlite
+    , process
     , req
     , scotty
     , server
     , text
+    , time
     , unliftio-core
     , uuid
     , wai
@@ -117,10 +121,12 @@ test-suite server-test
     , network
     , persistent
     , persistent-sqlite
+    , process
     , req
     , scotty
     , server
     , text
+    , time
     , unliftio-core
     , uuid
     , wai

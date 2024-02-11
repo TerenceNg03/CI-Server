@@ -3,13 +3,14 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 
-module WebHook (Commit (..), Repo (..), runWebHook) where
+module WebHook (Commit (..), Repo (..), runWebHook, invokeMavenCommand) where
 
-import Config (Config (Config, domain, githubToken))
+import Config (Config (Config, dbFile, domain, githubToken))
 import Control.Concurrent (forkIO)
-import Control.Exception (SomeException, handle)
+import Control.Exception
 import Control.Monad (void)
 import Control.Monad.Error.Class (MonadError (catchError))
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans (lift)
 import Data.Aeson (
     FromJSON,
@@ -25,11 +26,16 @@ import Data.Aeson (
 import Data.Foldable (foldl')
 import Data.Text (Text, pack, replace, splitOn)
 import Data.Text.Encoding (decodeUtf8)
+import Data.Time (defaultTimeLocale, formatTime, getCurrentTime)
 import Data.UUID (UUID, toText)
+import Database (Build (..), insertBuild)
+import Database.Persist.Sqlite (runSqlite)
 import Fmt (format)
 import GHC.Generics (Generic)
 import Log (LogT, Logger, defaultLogLevel, logAttention_, logInfo_, runLogT)
 import Network.HTTP.Req (POST (POST), ReqBodyJson (ReqBodyJson), bsResponse, defaultHttpConfig, header, https, req, responseBody, runReq, (/:))
+import System.Exit (ExitCode (..))
+import System.Process (cwd, readCreateProcessWithExitCode, shell)
 
 -- | Commit Info
 data Commit = Commit
@@ -92,6 +98,14 @@ instance Show State where
         Pending -> "pending"
         Success -> "success"
 
+invokeMavenCommand :: [String] -> IO (Either String (Int, String))
+invokeMavenCommand args = do
+    let mvnCommand = shell $ unwords ("mvn" : args)
+    result <- readCreateProcessWithExitCode mvnCommand{cwd = Just "../"} ""
+    return $ case result of
+        (ExitSuccess, stdout, _) -> Right (0, stdout)
+        (ExitFailure code, _, stderr) -> Left (stderr ++ "\nExit code: " ++ show code)
+
 postStatus :: UUID -> Text -> Text -> Commit -> State -> Text -> LogT IO ()
 postStatus uuid token domain commit s desc = flip catchError (logInfo_ . pack . show) $ do
     logInfo_ $
@@ -126,7 +140,7 @@ postStatus uuid token domain commit s desc = flip catchError (logInfo_ . pack . 
 
 -- | Run webhook jobs and post status to github
 runWebHook :: UUID -> Logger -> Config -> Commit -> IO ()
-runWebHook uuid logger Config{..} commit =
+runWebHook uuid logger config@Config{..} commit = do
     void
         $ forkIO
         $ runLogT
@@ -135,6 +149,32 @@ runWebHook uuid logger Config{..} commit =
             defaultLogLevel
         $ do
             postStatus' Pending "Working on checks..."
-            postStatus' Success "No checks implemented yet"
+            compileResult <- runMaven uuid commit config ["-B", "-DskipTests", "compile"]
+            testResult <- runMaven uuid commit config ["-B", "test"]
+            currentTime <- liftIO getCurrentTime
+            liftIO $
+                runSql $
+                    insertBuild $
+                        Build
+                            (toText uuid)
+                            (after commit)
+                            (pack $ formatTime defaultTimeLocale "%F %T %z" currentTime)
+                            (compileResult <> testResult)
+  where
+    postStatus' = postStatus uuid githubToken domain commit
+    runSql = runSqlite $ pack dbFile
+
+runMaven :: UUID -> Commit -> Config -> [String] -> LogT IO (Text)
+runMaven uuid commit Config{..} command = do
+    result <- liftIO $ invokeMavenCommand command
+    case result of
+        Left errMsg -> do
+            logAttention_ $ format "Failed to run {}: {}" command errMsg
+            postStatus' Error $ format "Failed to run {}: {}" command errMsg
+            return (pack errMsg)
+        Right (exitCode, output) -> do
+            logInfo_ $ format "{} succeeded with exit code: {}" command exitCode
+            postStatus' Success $ format "Maven command '{}' succeeded" command
+            return (pack output)
   where
     postStatus' = postStatus uuid githubToken domain commit
