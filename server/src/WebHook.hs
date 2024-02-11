@@ -100,7 +100,7 @@ instance Show State where
 
 invokeMavenCommand :: [String] -> IO (Either String (Int, String))
 invokeMavenCommand args = do
-    let mvnCommand = shell $ unwords ("mvn":args)
+    let mvnCommand = shell $ unwords ("mvn" : args)
     result <- readCreateProcessWithExitCode mvnCommand{cwd = Just "../"} ""
     return $ case result of
         (ExitSuccess, stdout, _) -> Right (0, stdout)
@@ -149,20 +149,8 @@ runWebHook uuid logger config@Config{..} commit = do
             defaultLogLevel
         $ do
             postStatus' Pending "Working on checks..."
-            handleCompileResult uuid commit config
-            handleTestingResult uuid commit config
-  where
-    postStatus' = postStatus uuid githubToken domain commit
-
-handleCompileResult :: UUID -> Commit -> Config -> LogT IO ()
-handleCompileResult uuid commit Config{..} = do
-    postStatus' Pending "Compilation in progress..."
-    compileResult <- liftIO $ invokeMavenCommand ["-B", "-q", "-DskipTests", "compile"]
-    case compileResult of
-        Left errMsg -> do
-            logAttention_ $ format "Failed to compile: {}" errMsg
-            postStatus' Error "Compilation failed!"
-        Right (exitCode, compileOutput) -> do
+            compileResult <- runMaven uuid commit config ["-B", "-DskipTests", "compile"]
+            testResult <- runMaven uuid commit config ["-B", "test"]
             currentTime <- liftIO getCurrentTime
             liftIO $
                 runSql $
@@ -171,23 +159,22 @@ handleCompileResult uuid commit Config{..} = do
                             (toText uuid)
                             (after commit)
                             (pack $ formatTime defaultTimeLocale "%F %T %z" currentTime)
-                            (pack compileOutput)
-            logInfo_ $ format "Compilation succeeded with exit code: {}" exitCode
-            postStatus' Success "Compilation succeeded!"
+                            (compileResult <> testResult)
   where
     postStatus' = postStatus uuid githubToken domain commit
     runSql = runSqlite $ pack dbFile
 
-handleTestingResult :: UUID -> Commit -> Config -> LogT IO ()
-handleTestingResult uuid commit Config{..} = do
-    postStatus' Pending "Testing in progress..."
-    testResult <- liftIO $ invokeMavenCommand ["-B", "test"]
-    case testResult of
+runMaven :: UUID -> Commit -> Config -> [String] -> LogT IO (Text)
+runMaven uuid commit Config{..} command = do
+    result <- liftIO $ invokeMavenCommand command
+    case result of
         Left errMsg -> do
-            logAttention_ $ format "Failed to test: {}" errMsg
-            postStatus' Error "Testing failed!"
-        Right (exitCode, _) -> do
-            logInfo_ $ format "Testing succeeded with exit code: {}" exitCode
-            postStatus' Success "Testing succeeded!"
+            logAttention_ $ format "Failed to run {}: {}" command errMsg
+            postStatus' Error "Failed to compile!"
+            return (pack errMsg)
+        Right (exitCode, output) -> do
+            logInfo_ $ format "{} succeeded with exit code: {}" command exitCode
+            postStatus' Success "Compilation succeeded!"
+            return (pack output)
   where
     postStatus' = postStatus uuid githubToken domain commit
