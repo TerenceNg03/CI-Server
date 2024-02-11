@@ -56,7 +56,7 @@ dispatch = do
         r <- request
         h <- headers
         b <- body
-        logInfo_ $
+        localDomain "request" . logInfo_ $
             format
                 "{} {} {}\n    Header: {}\n    Body: {}"
                 (show $ remoteHost r)
@@ -112,12 +112,13 @@ sha secret payload = fromString . unpack $ "sha256=" <> decodeHex signature
 -- | Run web server with given config and logger
 runServer :: Config -> Logger -> IO ()
 runServer config@Config{..} logger = do
-    runLog "main" $
-        do
-            runSqlite (pack dbFile) (runMigration migrateAll)
-            logInfo_ $ format "Running server on 0.0.0.0:{}" (show portNumber)
-            logInfo_ $ format "Database file path: {}" dbFile
-            logInfo_ $ format "Log file path: {}" logFile
-            scottyT portNumber (runLog "worker" . flip runReaderT config) dispatch
+    runLog $
+        localDomain "main" $
+            do
+                runSqlite (pack dbFile) (runMigration migrateAll)
+                logInfo_ $ format "Running server on 0.0.0.0:{}" (show portNumber)
+                logInfo_ $ format "Database file path: {}" dbFile
+                logInfo_ $ format "Log file path: {}" logFile
+                scottyT portNumber (runLog . flip runReaderT config) dispatch
   where
-    runLog name = runLogT name logger defaultLogLevel
+    runLog = runLogT "ci" logger defaultLogLevel

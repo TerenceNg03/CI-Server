@@ -6,12 +6,12 @@
 module WebHook (Commit (..), Repo (..), runWebHook, invokeMavenCommand) where
 
 import Config (Config (Config, dbFile, domain, githubToken))
-import Control.Concurrent (forkIO)
+import Control.Concurrent (ThreadId, forkIO)
 import Control.Exception
 import Control.Monad (void)
 import Control.Monad.Error.Class (MonadError (catchError))
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (MonadReader (ask), ReaderT (ReaderT))
+import Control.Monad.Reader (MonadReader (ask), ReaderT (runReaderT))
 import Control.Monad.Trans (lift)
 import Data.Aeson (
     FromJSON,
@@ -33,7 +33,7 @@ import Database (Build (..), insertBuild)
 import Database.Persist.Sqlite (runSqlite)
 import Fmt (format)
 import GHC.Generics (Generic)
-import Log (LogT, Logger, defaultLogLevel, logAttention_, logInfo_, runLogT)
+import Log (LogT, LoggerEnv (LoggerEnv, leComponent, leDomain, leLogger, leMaxLogLevel), MonadLog (getLoggerEnv, localDomain), logAttention_, logInfo_, runLogT)
 import Network.HTTP.Req (POST (POST), ReqBodyJson (ReqBodyJson), bsResponse, defaultHttpConfig, header, https, req, responseBody, runReq, (/:))
 import System.Exit (ExitCode (..))
 import System.Process (cwd, readCreateProcessWithExitCode, shell)
@@ -101,17 +101,32 @@ instance Show State where
 
 type HookM = ReaderT (Config, Commit, UUID) (LogT IO)
 
-invokeMavenCommand :: [String] -> IO (Either String (Int, String))
+-- | Run HookM in another thread
+forkHookIO :: HookM a -> HookM ThreadId
+forkHookIO a = do
+    context <- ask
+    LoggerEnv{..} <- getLoggerEnv
+    liftIO $
+        forkIO $
+            runLogT leComponent leLogger leMaxLogLevel $
+                flip runReaderT context $
+                    foldl
+                        (flip localDomain)
+                        (void a)
+                        leDomain
+
+invokeMavenCommand :: [String] -> IO (Either (Int, String) String)
 invokeMavenCommand args = do
     let mvnCommand = shell $ unwords ("mvn" : args)
     result <- readCreateProcessWithExitCode mvnCommand{cwd = Just "../"} ""
     return $ case result of
-        (ExitSuccess, stdout, _) -> Right (0, stdout)
-        (ExitFailure code, _, stderr) -> Left (stderr ++ "\nExit code: " ++ show code)
+        (ExitSuccess, stdout, _) -> Right stdout
+        (ExitFailure code, _, stderr) -> Left (code, stderr)
 
 postStatus :: State -> Text -> HookM ()
-postStatus s desc = flip catchError (logInfo_ . pack . show) $ do
+postStatus s desc = localDomain "postStatus" $ flip catchError (logInfo_ . pack . show) $ do
     (Config{..}, Commit{..}, uuid) <- ask
+
     let uri = replace "https://" "" $ replace "{sha}" after $ statusesUrl repository
         uris = splitOn "/" uri
         url = foldl' (/:) (https (head uris)) $ tail uris
@@ -145,30 +160,59 @@ postStatus s desc = flip catchError (logInfo_ . pack . show) $ do
 
 -- | Run webhook jobs and post status to github
 runWebHook :: HookM ()
-runWebHook = do
-    (Config{..}, Commit{..}, uuid) <- ask
+runWebHook = void $ forkHookIO $ do
+    (Config{..}, _, _) <- ask
     postStatus Pending "Working on checks..."
-    compileResult <- runMaven ["-B", "-DskipTests", "compile"]
-    testResult <- runMaven ["-B", "test"]
-    currentTime <- lift $ lift getCurrentTime
-    runSqlite (pack dbFile) $
-        insertBuild $
+    (status, build) <- runMaven
+    runSqlite (pack dbFile) $ insertBuild build
+    case status of
+        Left msg -> postStatus Failure msg
+        Right msg -> postStatus Success msg
+
+runMaven :: HookM (Either Text Text, Build)
+runMaven = do
+    (_, Commit{..}, uuid) <- ask
+    cr <- liftIO $ invokeMavenCommand ["-B", "-DskipTests", "compile"]
+    tr <- liftIO $ invokeMavenCommand ["-B", "test"]
+    time <- liftIO getCurrentTime
+    let (st, logs) = case (cr, tr) of
+            (Right m1, Right m2) ->
+                ( Right "All checks passed"
+                , combineLog m1 m2
+                )
+            (Left (code, m1), Right m2) ->
+                ( Left $ format "Compile failed with exit code {}" code
+                , combineLog m1 m2
+                )
+            (Right m1, Left (code, m2)) ->
+                ( Left $ format "Tests failed with exit code {}" code
+                , combineLog m1 m2
+                )
+            (Left (code1, m1), Left (code2, m2)) ->
+                ( Left $
+                    format
+                        "Compile failed with exit code {}\
+                        \and tests failed with exit code {}"
+                        code1
+                        code2
+                , combineLog m1 m2
+                )
+        build =
             Build
                 (toText uuid)
                 after
-                "Success"
-                (pack $ formatTime defaultTimeLocale "%F %T %z" currentTime)
-                (compileResult <> testResult)
-
-runMaven :: [String] -> HookM Text
-runMaven command = do
-    result <- liftIO $ invokeMavenCommand command
-    case result of
-        Left errMsg -> do
-            logAttention_ $ format "Failed to run {}: {}" command errMsg
-            postStatus Error $ format "Failed to run {}: {}" command errMsg
-            return (pack errMsg)
-        Right (exitCode, output) -> do
-            logInfo_ $ format "{} succeeded with exit code: {}" command exitCode
-            postStatus Success $ format "Maven command '{}' succeeded" command
-            return (pack output)
+                ( case st of
+                    Left s -> s
+                    Right s -> s
+                )
+                (pack $ formatTime defaultTimeLocale "%F %T %z" time)
+                (pack logs)
+    return (st, build)
+  where
+    combineLog a b =
+        ">>>>>>>> Compile Log >>>>>>>>\n"
+            <> a
+            <> "<<<<<<<< Compile Log <<<<<<<<\n\n"
+            <> ">>>>>>>> Test Log >>>>>>>>\n"
+            <> b
+            <> "<<<<<<<< Test Log <<<<<<<<\n"
