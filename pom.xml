@@ -33,9 +33,10 @@
         </dependency>
 
         <dependency>
+            <!-- https://central.sonatype.dev/artifact/org.eclipse.jgit/org.eclipse.jgit/ -->
             <groupId>org.eclipse.jgit</groupId>
             <artifactId>org.eclipse.jgit</artifactId>
-            <version>3.5.0.201409260305-r</version>
+            <version>6.4.0.202211300538-r</version>
         </dependency>
 
 
