@@ -5,6 +5,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 
+import org.eclipse.jgit.api.Git;
+
+import org.eclipse.jgit.api.errors.GitAPIException;
 import org.json.simple.JSONObject;
 
 /** A class for the App. */
@@ -26,11 +29,23 @@ public class App {
         }
     }
 
-    private String makeTemporaryDicrectory() throws IOException {
-        return Files.createTempDirectory("tmpDirPrefix").toFile().getAbsolutePath();
+    private String makeTemporaryGitDirectory(String cloneUrl, String commitName) throws IOException, GitAPIException {
+        File localPath = Files.createTempDirectory("tmpDirPrefix").toFile();
+
+        Git git = Git.cloneRepository()
+                .setURI(cloneUrl)
+                .setDirectory(localPath)
+                .setCloneAllBranches(true)
+                .call();
+
+        git.checkout()
+                .setCreateBranch(true)
+                .setName(commitName)
+                .call();
+
+        return localPath.getAbsolutePath();
     }
-
-
+    
     /**
      * The main class of the app.
      *
