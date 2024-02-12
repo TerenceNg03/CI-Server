@@ -32,6 +32,13 @@
             <version>1.1.1</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.eclipse.jgit</groupId>
+            <artifactId>org.eclipse.jgit</artifactId>
+            <version>3.5.0.201409260305-r</version>
+        </dependency>
+
+
     </dependencies>
 
     <build>
