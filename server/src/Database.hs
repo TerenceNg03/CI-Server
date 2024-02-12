@@ -23,7 +23,18 @@ import Control.Monad.IO.Class (MonadIO)
 import Data.Aeson (ToJSON)
 import Data.Maybe (listToMaybe)
 import Data.Text (Text)
-import Database.Esqueleto.Experimental (Entity (..), from, insert, select, table, val, where_, (==.), (^.))
+import Database.Esqueleto.Experimental (
+    Entity (..),
+    Value,
+    from,
+    insert,
+    select,
+    table,
+    val,
+    where_,
+    (==.),
+    (^.),
+ )
 import Database.Persist.Sqlite (SqlPersistT)
 import Database.Persist.TH (mkMigrate, mkPersist, persistLowerCase, share, sqlSettings)
 import GHC.Generics (Generic)
@@ -35,6 +46,7 @@ share
   Build sql=builds
     uuid Text sqltype=UUID 
     commit Text
+    status Text
     date Text
     log Text
     Primary uuid
@@ -42,8 +54,10 @@ share
 |]
 
 -- | Get all builds from the database
-getBuilds :: (MonadIO m) => SqlPersistT m [Entity Build]
-getBuilds = select $ from $ table @Build
+getBuilds :: (MonadIO m) => SqlPersistT m [Value Text]
+getBuilds = select $ do
+    b <- from $ table @Build
+    pure (b ^. BuildUuid)
 
 -- | Get a build from the database by its unique commit hash
 getBuildByUUID :: (MonadIO m) => Text -> SqlPersistT m (Maybe (Entity Build))
