@@ -40,6 +40,8 @@ public class App {
 
         git.checkout().setCreateBranch(true).setName(commitName).call();
 
+        git.close();
+
         return localPath.getAbsolutePath();
     }
 
