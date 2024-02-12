@@ -27,7 +27,7 @@ public class App {
         }
     }
 
-    private String makeTemporaryGitDirectory(String cloneUrl, String commitName)
+    private static String makeTemporaryGitDirectory(String cloneUrl, String commitName)
             throws IOException, GitAPIException {
         File localPath = Files.createTempDirectory("tmpDirPrefix").toFile();
 
@@ -49,8 +49,11 @@ public class App {
      * @param args arguments for the program
      * @throws IOException if the input fails
      */
-    public static void main(String[] args) throws IOException {
-        String dirWithBuild = args[0];
+    public static void main(String[] args) throws IOException, GitAPIException {
+        String cloneUrl = args[0];
+        String commitName = args[1];
+
+        String dirWithBuild = makeTemporaryGitDirectory(cloneUrl, commitName);
 
         MavenHandler mavenHandler = MavenHandler.getInstance(dirWithBuild);
         System.out.println("Result of compilation: " + mavenHandler.compileProgram());
