@@ -3,6 +3,8 @@ package ci;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+
 import org.json.simple.JSONObject;
 
 /** A class for the App. */
@@ -23,6 +25,11 @@ public class App {
             e.printStackTrace();
         }
     }
+
+    private String makeTemporaryDicrectory() throws IOException {
+        return Files.createTempDirectory("tmpDirPrefix").toFile().getAbsolutePath();
+    }
+
 
     /**
      * The main class of the app.
