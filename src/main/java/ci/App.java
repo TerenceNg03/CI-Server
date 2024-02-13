@@ -1,21 +1,24 @@
 package ci;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import org.json.simple.JSONObject;
+import org.apache.commons.io.FileUtils;
 
 /** A class for the App. */
 public class App {
 
     /**
-     * A function to stop the execution with a certain code. If the exit status is 1 the compilation
-     * failed and the tests couldn't build. If the exit status is 2 the tests failed. If the exit
+     * A function to stop the execution with a certain code. If the exit status is 1
+     * the compilation
+     * failed and the tests couldn't build. If the exit status is 2 the tests
+     * failed. If the exit
      * status is 0 everything is OK.
      *
      * @param compileStatus the status of the compilation
-     * @param testStatus the status of the test
+     * @param testStatus    the status of the test
      */
     public static void exitSystem(final boolean compileStatus, final boolean testStatus) {
         if (!compileStatus) {
@@ -29,16 +32,19 @@ public class App {
 
     private static String makeTemporaryGitDirectory(String cloneUrl, String commitName)
             throws IOException, GitAPIException {
-        File localPath = Files.createTempDirectory("tmpDirPrefix").toFile();
+        File localPath = Files.createTempDirectory("CI").toFile();
 
-        Git git =
-                Git.cloneRepository()
-                        .setURI(cloneUrl)
-                        .setDirectory(localPath)
-                        .setCloneAllBranches(true)
-                        .call();
+        Git git = Git.cloneRepository()
+                .setURI(cloneUrl)
+                .setDirectory(localPath)
+                .setCloneAllBranches(true)
+                .call();
 
-        git.checkout().setCreateBranch(true).setName(commitName).call();
+        git.checkout()
+                .setCreateBranch(true)
+                .setName(commitName)
+                .setStartPoint(commitName)
+                .call();
 
         git.close();
 
@@ -62,6 +68,8 @@ public class App {
         boolean testStatus = mavenHandler.runTests();
 
         System.out.println(mavenHandler.getTestLog());
+
+        FileUtils.deleteDirectory(new File(dirWithBuild));
 
         exitSystem(compileStatus, testStatus);
     }
