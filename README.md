@@ -23,7 +23,7 @@ $ sudo apt install maven
 
 ### Running the Server
 
-The server needs a config file to run (an example file can be found at `/server/config-example.yaml`). With Stack installed and your working directory set to `/server`, the following commands can be run:
+The server needs a config file to run (an example config file can be found at `/server/config-example.yaml`). With Stack installed and your working directory set to `/server`, the following commands can be run:
 
 ```sh
 $ stack test # Run tests
@@ -110,7 +110,8 @@ Contributions to the projected is stated below.
 
 ### Angelica Engström
 
-- Lorem Ipsum
+- Implement CI Feature for Automatic Testing
+- Implement Output of CI Features
 
 ### Celina Tjärnström
 
