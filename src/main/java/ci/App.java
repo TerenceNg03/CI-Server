@@ -1,10 +1,11 @@
 package ci;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import org.apache.commons.io.FileUtils;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import org.json.simple.JSONObject;
 
 /** A class for the App. */
 public class App {
@@ -29,7 +30,7 @@ public class App {
 
     private static String makeTemporaryGitDirectory(String cloneUrl, String commitName)
             throws IOException, GitAPIException {
-        File localPath = Files.createTempDirectory("tmpDirPrefix").toFile();
+        File localPath = Files.createTempDirectory("CI").toFile();
 
         Git git =
                 Git.cloneRepository()
@@ -38,7 +39,7 @@ public class App {
                         .setCloneAllBranches(true)
                         .call();
 
-        git.checkout().setCreateBranch(true).setName(commitName).call();
+        git.checkout().setCreateBranch(true).setName(commitName).setStartPoint(commitName).call();
 
         git.close();
 
@@ -62,6 +63,8 @@ public class App {
         boolean testStatus = mavenHandler.runTests();
 
         System.out.println(mavenHandler.getTestLog());
+
+        FileUtils.deleteDirectory(new File(dirWithBuild));
 
         exitSystem(compileStatus, testStatus);
     }
