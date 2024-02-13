@@ -20,6 +20,17 @@ jobs:
     - name: Build Docs with Maven
       run: mvn site
 
+    - id: stack
+        uses: freckle/stack-action@v5
+        with: 
+          working-directory: ./server
+        
+    - name: Build Docs with haddock
+      run: cd server && stack haddock
+
+    - name: Copy Docs to site
+      run: cd server && cp -r "$(stack path --local-doc-root)" ../target/site
+
     - name: Deploy Docs
       uses: peaceiris/actions-gh-pages@v3
       with:
