@@ -120,11 +120,12 @@ Contributions to the projected is stated below.
 
 ### Tobias Hansson
 
-- Lorem Ipsum
+- Implement Git Cloning of Related Repository
 
 ### John Söderholm
 
-- Lorem Ipsum
+- Implement Build History Database
+- Implement SQLite Queries to Save and Read Build History
 
 ### Tianxing Wu
 
