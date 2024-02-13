@@ -3,22 +3,20 @@ package ci;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import org.apache.commons.io.FileUtils;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import org.apache.commons.io.FileUtils;
 
 /** A class for the App. */
 public class App {
 
     /**
-     * A function to stop the execution with a certain code. If the exit status is 1
-     * the compilation
-     * failed and the tests couldn't build. If the exit status is 2 the tests
-     * failed. If the exit
+     * A function to stop the execution with a certain code. If the exit status is 1 the compilation
+     * failed and the tests couldn't build. If the exit status is 2 the tests failed. If the exit
      * status is 0 everything is OK.
      *
      * @param compileStatus the status of the compilation
-     * @param testStatus    the status of the test
+     * @param testStatus the status of the test
      */
     public static void exitSystem(final boolean compileStatus, final boolean testStatus) {
         if (!compileStatus) {
@@ -34,17 +32,14 @@ public class App {
             throws IOException, GitAPIException {
         File localPath = Files.createTempDirectory("CI").toFile();
 
-        Git git = Git.cloneRepository()
-                .setURI(cloneUrl)
-                .setDirectory(localPath)
-                .setCloneAllBranches(true)
-                .call();
+        Git git =
+                Git.cloneRepository()
+                        .setURI(cloneUrl)
+                        .setDirectory(localPath)
+                        .setCloneAllBranches(true)
+                        .call();
 
-        git.checkout()
-                .setCreateBranch(true)
-                .setName(commitName)
-                .setStartPoint(commitName)
-                .call();
+        git.checkout().setCreateBranch(true).setName(commitName).setStartPoint(commitName).call();
 
         git.close();
 
