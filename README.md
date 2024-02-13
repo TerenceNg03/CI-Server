@@ -23,7 +23,7 @@ $ sudo apt install maven
 
 ### Running the Server
 
-With Stack installed and your working directory set to `CI-server/server`, the following commands can be run:
+The server needs a config file to run (an example file can be found at `/server/config-example.yaml`). With Stack installed and your working directory set to `/server`, the following commands can be run:
 
 ```sh
 $ stack test # Run tests
@@ -38,13 +38,13 @@ With Maven installed, the following commands can be run from the root directory:
 $ mvn package # Build the project and run unit tests
 $ mvn test # Only run the tests without rebuild
 $ mvn exec:java # Run the main function
-$ mvn javadoc:javadoc # Generate documentation
+$ mvn site # Generate documentation
 ```
 
 ### Further Dependencies
 
 - Maven 3.6+ requires JDK 8 or above to execute.
-- Additional dependencies for Maven are configured in `pom.xml`, while those for Stack are specified in `/server/package.yaml`.
+- Additional dependencies for Maven are configured in `pom.xml`, while those for Stack are specified in `/server/package.yaml` and `/server/stack.yaml`.
 
 ## Coding Standard
 
@@ -114,7 +114,7 @@ Contributions to the projected is stated below.
 
 ### Celina Tjärnström
 
-- Implement functionality for compiling and testing branch
+- Implement Functionality for Compiling and Testing Branch
 
 ### Tobias Hansson
 

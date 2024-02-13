@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 
-module WebHook (Commit (..), Repo (..), runWebHook, invokeMavenCommand) where
+module WebHook (Commit (..), Repo (..), runWebHook) where
 
 import Config (Config (Config, dbFile, domain, githubToken))
 import Control.Concurrent (ThreadId, forkIO)
