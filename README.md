@@ -114,7 +114,7 @@ Contributions to the projected is stated below.
 
 ### Celina Tjärnström
 
-- Lorem Ipsum
+- Implement functionality for compiling and testing branch
 
 ### Tobias Hansson
 
