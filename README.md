@@ -128,4 +128,6 @@ Contributions to the projected is stated below.
 
 ### Tianxing Wu
 
-- Lorem Ipsum
+- Implement Web Request Handling
+- Implement POST Commit Status
+- Set Up Project
