@@ -32,6 +32,19 @@
             <version>1.1.1</version>
         </dependency>
 
+        <dependency>
+            <!-- https://central.sonatype.dev/artifact/org.eclipse.jgit/org.eclipse.jgit/ -->
+            <groupId>org.eclipse.jgit</groupId>
+            <artifactId>org.eclipse.jgit</artifactId>
+            <version>6.4.0.202211300538-r</version>
+        </dependency>
+
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.13.0</version>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -140,9 +153,6 @@
                 </executions>
                 <configuration>
                     <mainClass>ci.App</mainClass>
-                    <arguments>
-                        <argument>./</argument>
-                    </arguments>
                 </configuration>
             </plugin>
         </plugins>

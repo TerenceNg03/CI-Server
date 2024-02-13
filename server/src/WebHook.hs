@@ -115,13 +115,13 @@ forkHookIO a = do
                         (void a)
                         leDomain
 
-invokeMavenCommand :: [String] -> IO (Either (Int, String) String)
+invokeMavenCommand :: [String] -> IO (String, Maybe Int)
 invokeMavenCommand args = do
     let mvnCommand = shell $ unwords ("mvn" : args)
     result <- readCreateProcessWithExitCode mvnCommand{cwd = Just "../"} ""
     return $ case result of
-        (ExitSuccess, stdout, _) -> Right stdout
-        (ExitFailure code, _, stderr) -> Left (code, stderr)
+        (ExitSuccess, stdout, _) -> (stdout, Nothing)
+        (ExitFailure code, stdout, _) -> (stdout, Just code)
 
 postStatus :: State -> Text -> HookM ()
 postStatus s desc = localDomain "postStatus" $ flip catchError (logInfo_ . pack . show) $ do
@@ -172,31 +172,14 @@ runWebHook = void $ forkHookIO $ do
 runMaven :: HookM (Either Text Text, Build)
 runMaven = do
     (_, Commit{..}, uuid) <- ask
-    cr <- liftIO $ invokeMavenCommand ["-B", "-DskipTests", "compile"]
-    tr <- liftIO $ invokeMavenCommand ["-B", "test"]
+    let args = format "-Dexec.args=\"'{}' '{}'\"" (cloneUrl repository) after
+    result <- liftIO $ invokeMavenCommand ["-q", "exec:java", args]
     time <- liftIO getCurrentTime
-    let (st, logs) = case (cr, tr) of
-            (Right m1, Right m2) ->
-                ( Right "All checks passed"
-                , combineLog m1 m2
-                )
-            (Left (code, m1), Right m2) ->
-                ( Left $ format "Compile failed with exit code {}" code
-                , combineLog m1 m2
-                )
-            (Right m1, Left (code, m2)) ->
-                ( Left $ format "Tests failed with exit code {}" code
-                , combineLog m1 m2
-                )
-            (Left (code1, m1), Left (code2, m2)) ->
-                ( Left $
-                    format
-                        "Compile failed with exit code {}\
-                        \and tests failed with exit code {}"
-                        code1
-                        code2
-                , combineLog m1 m2
-                )
+    let st =
+            case snd result of
+                Nothing -> Right "Check succeeded"
+                Just c -> Left $ format "Check failed with exit code {}" c
+
         build =
             Build
                 (toText uuid)
@@ -206,13 +189,5 @@ runMaven = do
                     Right s -> s
                 )
                 (pack $ formatTime defaultTimeLocale "%F %T %z" time)
-                (pack logs)
+                (pack $ fst result)
     return (st, build)
-  where
-    combineLog a b =
-        ">>>>>>>> Compile Log >>>>>>>>\n"
-            <> a
-            <> "<<<<<<<< Compile Log <<<<<<<<\n\n"
-            <> ">>>>>>>> Test Log >>>>>>>>\n"
-            <> b
-            <> "<<<<<<<< Test Log <<<<<<<<\n"
