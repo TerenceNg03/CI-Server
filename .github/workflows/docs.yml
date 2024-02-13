@@ -21,8 +21,8 @@ jobs:
       run: mvn site
 
     - id: stack
-        uses: freckle/stack-action@v5
-        with: 
+      uses: freckle/stack-action@v5
+      with: 
           working-directory: ./server
         
     - name: Build Docs with haddock
