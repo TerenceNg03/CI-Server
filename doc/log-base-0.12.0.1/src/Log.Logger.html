@@ -1,0 +1,595 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">-- | The 'Logger' type of logging back-ends.</span></span><span>
+</span><span id="line-2"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Log.Logger</span><span>
+</span><span id="line-3"></span><span>  </span><span class="hs-special">(</span><span> </span><span class="annot"><a href="Log.Logger.html#LoggerEnv"><span class="hs-identifier">LoggerEnv</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-4"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier">Logger</span></a></span><span>
+</span><span id="line-5"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Logger.html#mkLogger"><span class="hs-identifier">mkLogger</span></a></span><span>
+</span><span id="line-6"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Logger.html#mkLogger%27"><span class="hs-identifier">mkLogger'</span></a></span><span>
+</span><span id="line-7"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Logger.html#mkBulkLogger"><span class="hs-identifier">mkBulkLogger</span></a></span><span>
+</span><span id="line-8"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Logger.html#mkBulkLogger%27"><span class="hs-identifier">mkBulkLogger'</span></a></span><span>
+</span><span id="line-9"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#execLogger"><span class="hs-identifier">execLogger</span></a></span><span>
+</span><span id="line-10"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#waitForLogger"><span class="hs-identifier">waitForLogger</span></a></span><span>
+</span><span id="line-11"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#shutdownLogger"><span class="hs-identifier">shutdownLogger</span></a></span><span>
+</span><span id="line-12"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-13"></span><span>
+</span><span id="line-14"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Concurrent</span></span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Concurrent.STM</span></span><span>
+</span><span id="line-16"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Exception</span></span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad</span></span><span>
+</span><span id="line-18"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson.Types</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">A</span></span><span>
+</span><span id="line-19"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-20"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.IO</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-21"></span><span>
+</span><span id="line-22"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Log.Data.html"><span class="hs-identifier">Log.Data</span></a></span><span>
+</span><span id="line-23"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html"><span class="hs-identifier">Log.Internal.Logger</span></a></span><span>
+</span><span id="line-24"></span><span>
+</span><span id="line-25"></span><span class="annot"><span class="hs-comment">-- | The state that every 'LogT' carries around.</span></span><span>
+</span><span id="line-26"></span><span class="hs-keyword">data</span><span> </span><span id="LoggerEnv"><span class="annot"><a href="Log.Logger.html#LoggerEnv"><span class="hs-identifier hs-var">LoggerEnv</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="LoggerEnv"><span class="annot"><a href="Log.Logger.html#LoggerEnv"><span class="hs-identifier hs-var">LoggerEnv</span></a></span></span><span>
+</span><span id="line-27"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="leLogger"><span class="annot"><span class="annottext">LoggerEnv -&gt; Logger
+</span><a href="Log.Logger.html#leLogger"><span class="hs-identifier hs-var hs-var">leLogger</span></a></span></span><span>    </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span>   </span><span class="annot"><span class="hs-comment">-- ^ The 'Logger' to use.</span></span><span>
+</span><span id="line-28"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="leComponent"><span class="annot"><span class="annottext">LoggerEnv -&gt; Text
+</span><a href="Log.Logger.html#leComponent"><span class="hs-identifier hs-var hs-var">leComponent</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">T.Text</span></span><span>   </span><span class="annot"><span class="hs-comment">-- ^ Current application component.</span></span><span>
+</span><span id="line-29"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="leDomain"><span class="annot"><span class="annottext">LoggerEnv -&gt; [Text]
+</span><a href="Log.Logger.html#leDomain"><span class="hs-identifier hs-var hs-var">leDomain</span></a></span></span><span>    </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">T.Text</span></span><span class="hs-special">]</span><span> </span><span class="annot"><span class="hs-comment">-- ^ Current application domain.</span></span><span>
+</span><span id="line-30"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="leData"><span class="annot"><span class="annottext">LoggerEnv -&gt; [Pair]
+</span><a href="Log.Logger.html#leData"><span class="hs-identifier hs-var hs-var">leData</span></a></span></span><span>      </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">A.Pair</span></span><span class="hs-special">]</span><span> </span><span class="hs-comment">-- ^ Additional data to be merged with the log</span><span>
+</span><span id="line-31"></span><span>                             </span><span class="hs-comment">-- message\'s data.</span><span>
+</span><span id="line-32"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="leMaxLogLevel"><span class="annot"><span class="annottext">LoggerEnv -&gt; LogLevel
+</span><a href="Log.Logger.html#leMaxLogLevel"><span class="hs-identifier hs-var hs-var">leMaxLogLevel</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Data.html#LogLevel"><span class="hs-identifier hs-type">LogLevel</span></a></span><span> </span><span class="annot"><span class="hs-comment">-- ^ The maximum log level allowed to be logged.</span></span><span>
+</span><span id="line-33"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-34"></span><span>
+</span><span id="line-35"></span><span class="hs-comment">-- | Start a logger thread that consumes one queued message at a time.</span><span>
+</span><span id="line-36"></span><span class="hs-comment">--</span><span>
+</span><span id="line-37"></span><span class="hs-comment">-- /Note:/ a bounded queue of size 1000000 is used internally to avoid</span><span>
+</span><span id="line-38"></span><span class="hs-comment">-- unrestricted memory consumption.</span><span>
+</span><span id="line-39"></span><span class="annot"><a href="Log.Logger.html#mkLogger"><span class="hs-identifier hs-type">mkLogger</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">T.Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Data.html#LogMessage"><span class="hs-identifier hs-type">LogMessage</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span>
+</span><span id="line-40"></span><span id="mkLogger"><span class="annot"><span class="annottext">mkLogger :: Text -&gt; (LogMessage -&gt; IO ()) -&gt; IO Logger
+</span><a href="Log.Logger.html#mkLogger"><span class="hs-identifier hs-var hs-var">mkLogger</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Text -&gt; (LogMessage -&gt; IO ()) -&gt; IO Logger
+</span><a href="Log.Logger.html#mkLogger%27"><span class="hs-identifier hs-var">mkLogger'</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="Log.Logger.html#defaultQueueCapacity"><span class="hs-identifier hs-var">defaultQueueCapacity</span></a></span><span>
+</span><span id="line-41"></span><span>
+</span><span id="line-42"></span><span class="hs-comment">-- | Like 'mkBulkLogger', but with configurable queue size.</span><span>
+</span><span id="line-43"></span><span class="hs-comment">--</span><span>
+</span><span id="line-44"></span><span class="hs-comment">-- @since 0.9.0.0</span><span>
+</span><span id="line-45"></span><span class="annot"><a href="Log.Logger.html#mkLogger%27"><span class="hs-identifier hs-type">mkLogger'</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">T.Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Data.html#LogMessage"><span class="hs-identifier hs-type">LogMessage</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span>
+</span><span id="line-46"></span><span id="mkLogger%27"><span class="annot"><span class="annottext">mkLogger' :: Int -&gt; Text -&gt; (LogMessage -&gt; IO ()) -&gt; IO Logger
+</span><a href="Log.Logger.html#mkLogger%27"><span class="hs-identifier hs-var hs-var">mkLogger'</span></a></span></span><span> </span><span id="local-6989586621679094948"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094948"><span class="hs-identifier hs-var">cap</span></a></span></span><span> </span><span id="local-6989586621679094949"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679094949"><span class="hs-identifier hs-var">name</span></a></span></span><span> </span><span id="local-6989586621679094950"><span class="annot"><span class="annottext">LogMessage -&gt; IO ()
+</span><a href="#local-6989586621679094950"><span class="hs-identifier hs-var">exec</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO (TBQueue LogMessage)
+-&gt; (TBQueue LogMessage -&gt; STM Bool)
+-&gt; (TBQueue LogMessage -&gt; STM LogMessage)
+-&gt; (TBQueue LogMessage -&gt; LogMessage -&gt; STM ())
+-&gt; IO ()
+-&gt; Text
+-&gt; (LogMessage -&gt; IO ())
+-&gt; IO ()
+-&gt; IO Logger
+forall queue msgs.
+IO queue
+-&gt; (queue -&gt; STM Bool)
+-&gt; (queue -&gt; STM msgs)
+-&gt; (queue -&gt; LogMessage -&gt; STM ())
+-&gt; IO ()
+-&gt; Text
+-&gt; (msgs -&gt; IO ())
+-&gt; IO ()
+-&gt; IO Logger
+</span><a href="Log.Logger.html#mkLoggerImpl"><span class="hs-identifier hs-var">mkLoggerImpl</span></a></span><span>
+</span><span id="line-47"></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Natural -&gt; IO (TBQueue LogMessage)
+forall a. Natural -&gt; IO (TBQueue a)
+</span><span class="hs-identifier hs-var">newTBQueueIO</span></span><span> </span><span class="annot"><span class="annottext">(Natural -&gt; IO (TBQueue LogMessage))
+-&gt; Natural -&gt; IO (TBQueue LogMessage)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Natural
+forall a b. (Integral a, Num b) =&gt; a -&gt; b
+</span><span class="hs-identifier hs-var">fromIntegral</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094948"><span class="hs-identifier hs-var">cap</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">TBQueue LogMessage -&gt; STM Bool
+forall a. TBQueue a -&gt; STM Bool
+</span><span class="hs-identifier hs-var">isEmptyTBQueue</span></span><span> </span><span class="annot"><span class="annottext">TBQueue LogMessage -&gt; STM LogMessage
+forall a. TBQueue a -&gt; STM a
+</span><span class="hs-identifier hs-var">readTBQueue</span></span><span> </span><span class="annot"><span class="annottext">TBQueue LogMessage -&gt; LogMessage -&gt; STM ()
+forall a. TBQueue a -&gt; a -&gt; STM ()
+</span><span class="hs-identifier hs-var">writeTBQueue</span></span><span>
+</span><span id="line-48"></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="annottext">() -&gt; IO ()
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679094949"><span class="hs-identifier hs-var">name</span></a></span><span> </span><span class="annot"><span class="annottext">LogMessage -&gt; IO ()
+</span><a href="#local-6989586621679094950"><span class="hs-identifier hs-var">exec</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">() -&gt; IO ()
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-49"></span><span>
+</span><span id="line-50"></span><span class="hs-comment">-- | Start an asynchronous logger thread that consumes all queued messages once</span><span>
+</span><span id="line-51"></span><span class="hs-comment">-- per second.</span><span>
+</span><span id="line-52"></span><span class="hs-comment">--</span><span>
+</span><span id="line-53"></span><span class="hs-comment">-- /Note:/ a bounded queue of size 1000000 is used internally to avoid</span><span>
+</span><span id="line-54"></span><span class="hs-comment">-- unrestricted memory consumption.</span><span>
+</span><span id="line-55"></span><span class="hs-comment">--</span><span>
+</span><span id="line-56"></span><span class="hs-comment">-- To make sure that the messages get written out in the presence of exceptions,</span><span>
+</span><span id="line-57"></span><span class="hs-comment">-- use high-level wrappers like 'withLogger',</span><span>
+</span><span id="line-58"></span><span class="hs-comment">-- 'Log.Backend.ElasticSearch.withElasticSearchLogger' or</span><span>
+</span><span id="line-59"></span><span class="hs-comment">-- 'Log.Backend.StandardOutput.Bulk.withBulkStdOutLogger' instead of this</span><span>
+</span><span id="line-60"></span><span class="hs-comment">-- function directly.</span><span>
+</span><span id="line-61"></span><span class="hs-comment">--</span><span>
+</span><span id="line-62"></span><span class="hs-comment">-- /Note:/ some messages can be lost when the main thread shuts down</span><span>
+</span><span id="line-63"></span><span class="hs-comment">-- without making sure that all logger threads have written out all</span><span>
+</span><span id="line-64"></span><span class="hs-comment">-- messages, because in that case child threads are not given a chance</span><span>
+</span><span id="line-65"></span><span class="hs-comment">-- to clean up by the RTS. This is apparently a feature:</span><span>
+</span><span id="line-66"></span><span class="hs-comment">-- &lt;https://mail.haskell.org/pipermail/haskell-cafe/2014-February/112754.html&gt;</span><span>
+</span><span id="line-67"></span><span class="hs-comment">--</span><span>
+</span><span id="line-68"></span><span class="hs-comment">-- To work around this issue, make sure that the main thread doesn't</span><span>
+</span><span id="line-69"></span><span class="hs-comment">-- exit until all its children have terminated. The 'async' package</span><span>
+</span><span id="line-70"></span><span class="hs-comment">-- makes this easy.</span><span>
+</span><span id="line-71"></span><span class="hs-comment">--</span><span>
+</span><span id="line-72"></span><span class="hs-comment">-- Problematic example:</span><span>
+</span><span id="line-73"></span><span class="hs-comment">--</span><span>
+</span><span id="line-74"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-75"></span><span class="hs-comment">-- import Control.Concurrent.Async</span><span>
+</span><span id="line-76"></span><span class="hs-comment">--</span><span>
+</span><span id="line-77"></span><span class="hs-comment">-- main :: IO ()</span><span>
+</span><span id="line-78"></span><span class="hs-comment">-- main = do</span><span>
+</span><span id="line-79"></span><span class="hs-comment">--    logger \&lt;- 'Log.Backend.ElasticSearch.elasticSearchLogger'</span><span>
+</span><span id="line-80"></span><span class="hs-comment">--    a \&lt;- 'Control.Concurrent.Async.async' ('Log.Backend.ElasticSearch.withElasticSearchLogger' $ \\logger -&gt;</span><span>
+</span><span id="line-81"></span><span class="hs-comment">--                'Log.Monad.runLogT' &quot;main&quot; logger defaultLogLevel $ 'Log.Class.logTrace_' &quot;foo&quot;)</span><span>
+</span><span id="line-82"></span><span class="hs-comment">--    -- Main thread exits without waiting for the child</span><span>
+</span><span id="line-83"></span><span class="hs-comment">--    -- to finish and without giving the child a chance</span><span>
+</span><span id="line-84"></span><span class="hs-comment">--    -- to do proper cleanup.</span><span>
+</span><span id="line-85"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-86"></span><span class="hs-comment">--</span><span>
+</span><span id="line-87"></span><span class="hs-comment">-- Fixed example:</span><span>
+</span><span id="line-88"></span><span class="hs-comment">--</span><span>
+</span><span id="line-89"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-90"></span><span class="hs-comment">-- import Control.Concurrent.Async</span><span>
+</span><span id="line-91"></span><span class="hs-comment">--</span><span>
+</span><span id="line-92"></span><span class="hs-comment">-- main :: IO ()</span><span>
+</span><span id="line-93"></span><span class="hs-comment">-- main = do</span><span>
+</span><span id="line-94"></span><span class="hs-comment">--    logger \&lt;- 'Log.Backend.ElasticSearch.elasticSearchLogger'</span><span>
+</span><span id="line-95"></span><span class="hs-comment">--    a \&lt;- 'Control.Concurrent.Async.async' ('Log.Backend.ElasticSearch.withElasticSearchLogger' $ \\logger -&gt;</span><span>
+</span><span id="line-96"></span><span class="hs-comment">--                'Log.Monad.runLogT' &quot;main&quot; logger defaultLogLevel $ 'Log.Class.logTrace_' &quot;foo&quot;)</span><span>
+</span><span id="line-97"></span><span class="hs-comment">--    'Control.Concurrent.Async.wait' a</span><span>
+</span><span id="line-98"></span><span class="hs-comment">--    -- Main thread waits for the child to finish, giving</span><span>
+</span><span id="line-99"></span><span class="hs-comment">--    -- it a chance to shut down properly. This works even</span><span>
+</span><span id="line-100"></span><span class="hs-comment">--    -- in the presence of exceptions in the child thread.</span><span>
+</span><span id="line-101"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-102"></span><span class="annot"><a href="Log.Logger.html#mkBulkLogger"><span class="hs-identifier hs-type">mkBulkLogger</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">T.Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="annot"><a href="Log.Data.html#LogMessage"><span class="hs-identifier hs-type">LogMessage</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span>
+</span><span id="line-103"></span><span id="mkBulkLogger"><span class="annot"><span class="annottext">mkBulkLogger :: Text -&gt; ([LogMessage] -&gt; IO ()) -&gt; IO () -&gt; IO Logger
+</span><a href="Log.Logger.html#mkBulkLogger"><span class="hs-identifier hs-var hs-var">mkBulkLogger</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Text -&gt; ([LogMessage] -&gt; IO ()) -&gt; IO () -&gt; IO Logger
+</span><a href="Log.Logger.html#mkBulkLogger%27"><span class="hs-identifier hs-var">mkBulkLogger'</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="Log.Logger.html#defaultQueueCapacity"><span class="hs-identifier hs-var">defaultQueueCapacity</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1000000</span></span><span>
+</span><span id="line-104"></span><span>
+</span><span id="line-105"></span><span class="hs-comment">-- | Like 'mkBulkLogger', but with configurable queue size and thread delay.</span><span>
+</span><span id="line-106"></span><span class="hs-comment">--</span><span>
+</span><span id="line-107"></span><span class="hs-comment">-- @since 0.7.4.0</span><span>
+</span><span id="line-108"></span><span class="annot"><a href="Log.Logger.html#mkBulkLogger%27"><span class="hs-identifier hs-type">mkBulkLogger'</span></a></span><span>
+</span><span id="line-109"></span><span>    </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>                      </span><span class="annot"><span class="hs-comment">-- ^ queue capacity (default 1000000)</span></span><span>
+</span><span id="line-110"></span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>                      </span><span class="annot"><span class="hs-comment">-- ^ thread delay (microseconds, default 1000000)</span></span><span>
+</span><span id="line-111"></span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">T.Text</span></span><span>                   </span><span class="annot"><span class="hs-comment">-- ^ logger name</span></span><span>
+</span><span id="line-112"></span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="annot"><a href="Log.Data.html#LogMessage"><span class="hs-identifier hs-type">LogMessage</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>  </span><span class="annot"><span class="hs-comment">-- ^ write</span></span><span>
+</span><span id="line-113"></span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>                    </span><span class="annot"><span class="hs-comment">-- ^ flush</span></span><span>
+</span><span id="line-114"></span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span>
+</span><span id="line-115"></span><span id="mkBulkLogger%27"><span class="annot"><span class="annottext">mkBulkLogger' :: Int -&gt; Int -&gt; Text -&gt; ([LogMessage] -&gt; IO ()) -&gt; IO () -&gt; IO Logger
+</span><a href="Log.Logger.html#mkBulkLogger%27"><span class="hs-identifier hs-var hs-var">mkBulkLogger'</span></a></span></span><span> </span><span id="local-6989586621679094957"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094957"><span class="hs-identifier hs-var">cap</span></a></span></span><span> </span><span id="local-6989586621679094958"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094958"><span class="hs-identifier hs-var">dur</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO (SBQueue LogMessage)
+-&gt; (SBQueue LogMessage -&gt; STM Bool)
+-&gt; (SBQueue LogMessage -&gt; STM [LogMessage])
+-&gt; (SBQueue LogMessage -&gt; LogMessage -&gt; STM ())
+-&gt; IO ()
+-&gt; Text
+-&gt; ([LogMessage] -&gt; IO ())
+-&gt; IO ()
+-&gt; IO Logger
+forall queue msgs.
+IO queue
+-&gt; (queue -&gt; STM Bool)
+-&gt; (queue -&gt; STM msgs)
+-&gt; (queue -&gt; LogMessage -&gt; STM ())
+-&gt; IO ()
+-&gt; Text
+-&gt; (msgs -&gt; IO ())
+-&gt; IO ()
+-&gt; IO Logger
+</span><a href="Log.Logger.html#mkLoggerImpl"><span class="hs-identifier hs-var">mkLoggerImpl</span></a></span><span>
+</span><span id="line-116"></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int -&gt; IO (SBQueue LogMessage)
+forall a. Int -&gt; IO (SBQueue a)
+</span><a href="Log.Logger.html#newSBQueueIO"><span class="hs-identifier hs-var">newSBQueueIO</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094957"><span class="hs-identifier hs-var">cap</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">SBQueue LogMessage -&gt; STM Bool
+forall a. SBQueue a -&gt; STM Bool
+</span><a href="Log.Logger.html#isEmptySBQueue"><span class="hs-identifier hs-var">isEmptySBQueue</span></a></span><span> </span><span class="annot"><span class="annottext">SBQueue LogMessage -&gt; STM [LogMessage]
+forall a. SBQueue a -&gt; STM [a]
+</span><a href="Log.Logger.html#readSBQueue"><span class="hs-identifier hs-var">readSBQueue</span></a></span><span> </span><span class="annot"><span class="annottext">SBQueue LogMessage -&gt; LogMessage -&gt; STM ()
+forall a. SBQueue a -&gt; a -&gt; STM ()
+</span><a href="Log.Logger.html#writeSBQueue"><span class="hs-identifier hs-var">writeSBQueue</span></a></span><span>
+</span><span id="line-117"></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int -&gt; IO ()
+</span><span class="hs-identifier hs-var">threadDelay</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094958"><span class="hs-identifier hs-var">dur</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-118"></span><span>
+</span><span id="line-119"></span><span class="hs-comment">----------------------------------------</span><span>
+</span><span id="line-120"></span><span>
+</span><span id="line-121"></span><span class="hs-comment">-- | Default capacity of log queues (TBQueue for regular logger, 'SBQueue' for</span><span>
+</span><span id="line-122"></span><span class="hs-comment">-- bulk loggers). This corresponds to approximately 200 MiB memory residency</span><span>
+</span><span id="line-123"></span><span class="hs-comment">-- when the queue is full.</span><span>
+</span><span id="line-124"></span><span class="annot"><a href="Log.Logger.html#defaultQueueCapacity"><span class="hs-identifier hs-type">defaultQueueCapacity</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-125"></span><span id="defaultQueueCapacity"><span class="annot"><span class="annottext">defaultQueueCapacity :: Int
+</span><a href="Log.Logger.html#defaultQueueCapacity"><span class="hs-identifier hs-var hs-var">defaultQueueCapacity</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1000000</span></span><span>
+</span><span id="line-126"></span><span>
+</span><span id="line-127"></span><span class="annot"><span class="hs-comment">-- | A simple STM based bounded queue.</span></span><span>
+</span><span id="line-128"></span><span class="hs-keyword">data</span><span> </span><span id="SBQueue"><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-var">SBQueue</span></a></span></span><span> </span><span id="local-6989586621679094883"><span class="annot"><a href="#local-6989586621679094883"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="SBQueue"><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-var">SBQueue</span></a></span></span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">TVar</span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="#local-6989586621679094883"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">TVar</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-129"></span><span>
+</span><span id="line-130"></span><span class="annot"><span class="hs-comment">-- | Create an instance of 'SBQueue' with a given capacity.</span></span><span>
+</span><span id="line-131"></span><span id="local-6989586621679094877"><span class="annot"><a href="Log.Logger.html#newSBQueueIO"><span class="hs-identifier hs-type">newSBQueueIO</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-type">SBQueue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679094877"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-132"></span><span id="newSBQueueIO"><span class="annot"><span class="annottext">newSBQueueIO :: forall a. Int -&gt; IO (SBQueue a)
+</span><a href="Log.Logger.html#newSBQueueIO"><span class="hs-identifier hs-var hs-var">newSBQueueIO</span></a></span></span><span> </span><span id="local-6989586621679094973"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094973"><span class="hs-identifier hs-var">capacity</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">TVar [a] -&gt; TVar Int -&gt; Int -&gt; SBQueue a
+forall a. TVar [a] -&gt; TVar Int -&gt; Int -&gt; SBQueue a
+</span><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-var">SBQueue</span></a></span><span> </span><span class="annot"><span class="annottext">(TVar [a] -&gt; TVar Int -&gt; Int -&gt; SBQueue a)
+-&gt; IO (TVar [a]) -&gt; IO (TVar Int -&gt; Int -&gt; SBQueue a)
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">[a] -&gt; IO (TVar [a])
+forall a. a -&gt; IO (TVar a)
+</span><span class="hs-identifier hs-var">newTVarIO</span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">IO (TVar Int -&gt; Int -&gt; SBQueue a)
+-&gt; IO (TVar Int) -&gt; IO (Int -&gt; SBQueue a)
+forall a b. IO (a -&gt; b) -&gt; IO a -&gt; IO b
+forall (f :: * -&gt; *) a b. Applicative f =&gt; f (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;*&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; IO (TVar Int)
+forall a. a -&gt; IO (TVar a)
+</span><span class="hs-identifier hs-var">newTVarIO</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span> </span><span class="annot"><span class="annottext">IO (Int -&gt; SBQueue a) -&gt; IO Int -&gt; IO (SBQueue a)
+forall a b. IO (a -&gt; b) -&gt; IO a -&gt; IO b
+forall (f :: * -&gt; *) a b. Applicative f =&gt; f (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;*&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; IO Int
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094973"><span class="hs-identifier hs-var">capacity</span></a></span><span>
+</span><span id="line-133"></span><span>
+</span><span id="line-134"></span><span class="annot"><span class="hs-comment">-- | Check if an 'SBQueue' is empty.</span></span><span>
+</span><span id="line-135"></span><span id="local-6989586621679094878"><span class="annot"><a href="Log.Logger.html#isEmptySBQueue"><span class="hs-identifier hs-type">isEmptySBQueue</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-type">SBQueue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679094878"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">STM</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span></span><span>
+</span><span id="line-136"></span><span id="isEmptySBQueue"><span class="annot"><span class="annottext">isEmptySBQueue :: forall a. SBQueue a -&gt; STM Bool
+</span><a href="Log.Logger.html#isEmptySBQueue"><span class="hs-identifier hs-var hs-var">isEmptySBQueue</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-type">SBQueue</span></a></span><span> </span><span id="local-6989586621679094992"><span class="annot"><span class="annottext">TVar [a]
+</span><a href="#local-6989586621679094992"><span class="hs-identifier hs-var">queue</span></a></span></span><span> </span><span id="local-6989586621679094993"><span class="annot"><span class="annottext">TVar Int
+</span><a href="#local-6989586621679094993"><span class="hs-identifier hs-var">count</span></a></span></span><span> </span><span id="local-6989586621679094994"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094994"><span class="hs-identifier hs-var">_capacity</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-137"></span><span>  </span><span id="local-6989586621679094995"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679094995"><span class="hs-identifier hs-var">isEmpty</span></a></span></span><span>  </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">[a] -&gt; Bool
+forall a. [a] -&gt; Bool
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Bool
+</span><span class="hs-identifier hs-var">null</span></span><span> </span><span class="annot"><span class="annottext">([a] -&gt; Bool) -&gt; STM [a] -&gt; STM Bool
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">TVar [a] -&gt; STM [a]
+forall a. TVar a -&gt; STM a
+</span><span class="hs-identifier hs-var">readTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar [a]
+</span><a href="#local-6989586621679094992"><span class="hs-identifier hs-var">queue</span></a></span><span>
+</span><span id="line-138"></span><span>  </span><span id="local-6989586621679094998"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094998"><span class="hs-identifier hs-var">numElems</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">TVar Int -&gt; STM Int
+forall a. TVar a -&gt; STM a
+</span><span class="hs-identifier hs-var">readTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar Int
+</span><a href="#local-6989586621679094993"><span class="hs-identifier hs-var">count</span></a></span><span>
+</span><span id="line-139"></span><span>  </span><span class="annot"><span class="annottext">Bool -&gt; STM Bool -&gt; STM Bool
+forall a. (?callStack::CallStack) =&gt; Bool -&gt; a -&gt; a
+</span><span class="hs-identifier hs-var hs-var">assert</span></span><span> </span><span class="hs-special">(</span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679094995"><span class="hs-identifier hs-var">isEmpty</span></a></span><span> </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094998"><span class="hs-identifier hs-var">numElems</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span> </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679094998"><span class="hs-identifier hs-var">numElems</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(STM Bool -&gt; STM Bool) -&gt; STM Bool -&gt; STM Bool
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span>
+</span><span id="line-140"></span><span>    </span><span class="annot"><span class="annottext">Bool -&gt; STM Bool
+forall a. a -&gt; STM a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679094995"><span class="hs-identifier hs-var">isEmpty</span></a></span><span>
+</span><span id="line-141"></span><span>
+</span><span id="line-142"></span><span class="annot"><span class="hs-comment">-- | Read all the values stored in an 'SBQueue'.</span></span><span>
+</span><span id="line-143"></span><span id="local-6989586621679094879"><span class="annot"><a href="Log.Logger.html#readSBQueue"><span class="hs-identifier hs-type">readSBQueue</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-type">SBQueue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679094879"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">STM</span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="#local-6989586621679094879"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">]</span></span><span>
+</span><span id="line-144"></span><span id="readSBQueue"><span class="annot"><span class="annottext">readSBQueue :: forall a. SBQueue a -&gt; STM [a]
+</span><a href="Log.Logger.html#readSBQueue"><span class="hs-identifier hs-var hs-var">readSBQueue</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-type">SBQueue</span></a></span><span> </span><span id="local-6989586621679095009"><span class="annot"><span class="annottext">TVar [a]
+</span><a href="#local-6989586621679095009"><span class="hs-identifier hs-var">queue</span></a></span></span><span> </span><span id="local-6989586621679095010"><span class="annot"><span class="annottext">TVar Int
+</span><a href="#local-6989586621679095010"><span class="hs-identifier hs-var">count</span></a></span></span><span> </span><span id="local-6989586621679095011"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679095011"><span class="hs-identifier hs-var">_capacity</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-145"></span><span>  </span><span id="local-6989586621679095012"><span class="annot"><span class="annottext">[a]
+</span><a href="#local-6989586621679095012"><span class="hs-identifier hs-var">elems</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">TVar [a] -&gt; STM [a]
+forall a. TVar a -&gt; STM a
+</span><span class="hs-identifier hs-var">readTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar [a]
+</span><a href="#local-6989586621679095009"><span class="hs-identifier hs-var">queue</span></a></span><span>
+</span><span id="line-146"></span><span>  </span><span class="annot"><span class="annottext">Bool -&gt; STM () -&gt; STM ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[a] -&gt; Bool
+forall a. [a] -&gt; Bool
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Bool
+</span><span class="hs-identifier hs-var">null</span></span><span> </span><span class="annot"><span class="annottext">[a]
+</span><a href="#local-6989586621679095012"><span class="hs-identifier hs-var">elems</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">STM ()
+forall a. STM a
+</span><span class="hs-identifier hs-var">retry</span></span><span>
+</span><span id="line-147"></span><span>  </span><span class="annot"><span class="annottext">TVar [a] -&gt; [a] -&gt; STM ()
+forall a. TVar a -&gt; a -&gt; STM ()
+</span><span class="hs-identifier hs-var">writeTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar [a]
+</span><a href="#local-6989586621679095009"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-148"></span><span>  </span><span class="annot"><span class="annottext">TVar Int -&gt; Int -&gt; STM ()
+forall a. TVar a -&gt; a -&gt; STM ()
+</span><span class="hs-identifier hs-var">writeTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar Int
+</span><a href="#local-6989586621679095010"><span class="hs-identifier hs-var">count</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-149"></span><span>  </span><span class="annot"><span class="annottext">[a] -&gt; STM [a]
+forall a. a -&gt; STM a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><span class="annottext">([a] -&gt; STM [a]) -&gt; [a] -&gt; STM [a]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[a] -&gt; [a]
+forall a. [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">reverse</span></span><span> </span><span class="annot"><span class="annottext">[a]
+</span><a href="#local-6989586621679095012"><span class="hs-identifier hs-var">elems</span></a></span><span>
+</span><span id="line-150"></span><span>
+</span><span id="line-151"></span><span class="annot"><span class="hs-comment">-- | Write a value to an 'SBQueue'.</span></span><span>
+</span><span id="line-152"></span><span id="local-6989586621679094880"><span class="annot"><a href="Log.Logger.html#writeSBQueue"><span class="hs-identifier hs-type">writeSBQueue</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-type">SBQueue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679094880"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679094880"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">STM</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-153"></span><span id="writeSBQueue"><span class="annot"><span class="annottext">writeSBQueue :: forall a. SBQueue a -&gt; a -&gt; STM ()
+</span><a href="Log.Logger.html#writeSBQueue"><span class="hs-identifier hs-var hs-var">writeSBQueue</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Logger.html#SBQueue"><span class="hs-identifier hs-type">SBQueue</span></a></span><span> </span><span id="local-6989586621679095023"><span class="annot"><span class="annottext">TVar [a]
+</span><a href="#local-6989586621679095023"><span class="hs-identifier hs-var">queue</span></a></span></span><span> </span><span id="local-6989586621679095024"><span class="annot"><span class="annottext">TVar Int
+</span><a href="#local-6989586621679095024"><span class="hs-identifier hs-var">count</span></a></span></span><span> </span><span id="local-6989586621679095025"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679095025"><span class="hs-identifier hs-var">capacity</span></a></span></span><span class="hs-special">)</span><span> </span><span id="local-6989586621679095026"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679095026"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-154"></span><span>  </span><span id="local-6989586621679095027"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679095027"><span class="hs-identifier hs-var">numElems</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">TVar Int -&gt; STM Int
+forall a. TVar a -&gt; STM a
+</span><span class="hs-identifier hs-var">readTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar Int
+</span><a href="#local-6989586621679095024"><span class="hs-identifier hs-var">count</span></a></span><span>
+</span><span id="line-155"></span><span>  </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679095027"><span class="hs-identifier hs-var">numElems</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679095025"><span class="hs-identifier hs-var">capacity</span></a></span><span>
+</span><span id="line-156"></span><span>    </span><span class="hs-keyword">then</span><span> </span><span class="hs-keyword">do</span><span> </span><span class="annot"><span class="annottext">TVar [a] -&gt; ([a] -&gt; [a]) -&gt; STM ()
+forall a. TVar a -&gt; (a -&gt; a) -&gt; STM ()
+</span><span class="hs-identifier hs-var">modifyTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar [a]
+</span><a href="#local-6989586621679095023"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679095026"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">a -&gt; [a] -&gt; [a]
+forall a. a -&gt; [a] -&gt; [a]
+</span><span class="hs-glyph hs-var">:</span></span><span class="hs-special">)</span><span>
+</span><span id="line-157"></span><span>            </span><span class="hs-comment">-- Strict modification of the queue size to avoid space leak</span><span>
+</span><span id="line-158"></span><span>            </span><span class="annot"><span class="annottext">TVar Int -&gt; (Int -&gt; Int) -&gt; STM ()
+forall a. TVar a -&gt; (a -&gt; a) -&gt; STM ()
+</span><span class="hs-identifier hs-var">modifyTVar'</span></span><span> </span><span class="annot"><span class="annottext">TVar Int
+</span><a href="#local-6989586621679095024"><span class="hs-identifier hs-var">count</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span>
+</span><span id="line-159"></span><span>    </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">() -&gt; STM ()
+forall a. a -&gt; STM a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-160"></span><span>
+</span><span id="line-161"></span><span class="hs-comment">----------------------------------------</span><span>
+</span><span id="line-162"></span><span>
+</span><span id="line-163"></span><span id="local-6989586621679094863"><span id="local-6989586621679094864"><span class="annot"><a href="Log.Logger.html#mkLoggerImpl"><span class="hs-identifier hs-type">mkLoggerImpl</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="#local-6989586621679094863"><span class="hs-identifier hs-type">queue</span></a></span><span>
+</span><span id="line-164"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679094863"><span class="hs-identifier hs-type">queue</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">STM</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span class="hs-special">)</span><span>
+</span><span id="line-165"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679094863"><span class="hs-identifier hs-type">queue</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">STM</span></span><span> </span><span class="annot"><a href="#local-6989586621679094864"><span class="hs-identifier hs-type">msgs</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-166"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679094863"><span class="hs-identifier hs-type">queue</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Data.html#LogMessage"><span class="hs-identifier hs-type">LogMessage</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">STM</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-167"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-168"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">T.Text</span></span><span>
+</span><span id="line-169"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679094864"><span class="hs-identifier hs-type">msgs</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-170"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-171"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span></span></span><span>
+</span><span id="line-172"></span><span id="mkLoggerImpl"><span class="annot"><span class="annottext">mkLoggerImpl :: forall queue msgs.
+IO queue
+-&gt; (queue -&gt; STM Bool)
+-&gt; (queue -&gt; STM msgs)
+-&gt; (queue -&gt; LogMessage -&gt; STM ())
+-&gt; IO ()
+-&gt; Text
+-&gt; (msgs -&gt; IO ())
+-&gt; IO ()
+-&gt; IO Logger
+</span><a href="Log.Logger.html#mkLoggerImpl"><span class="hs-identifier hs-var hs-var">mkLoggerImpl</span></a></span></span><span> </span><span id="local-6989586621679095054"><span class="annot"><span class="annottext">IO queue
+</span><a href="#local-6989586621679095054"><span class="hs-identifier hs-var">newQueue</span></a></span></span><span> </span><span id="local-6989586621679095055"><span class="annot"><span class="annottext">queue -&gt; STM Bool
+</span><a href="#local-6989586621679095055"><span class="hs-identifier hs-var">isQueueEmpty</span></a></span></span><span> </span><span id="local-6989586621679095056"><span class="annot"><span class="annottext">queue -&gt; STM msgs
+</span><a href="#local-6989586621679095056"><span class="hs-identifier hs-var">readQueue</span></a></span></span><span> </span><span id="local-6989586621679095057"><span class="annot"><span class="annottext">queue -&gt; LogMessage -&gt; STM ()
+</span><a href="#local-6989586621679095057"><span class="hs-identifier hs-var">writeQueue</span></a></span></span><span> </span><span id="local-6989586621679095058"><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679095058"><span class="hs-identifier hs-var">afterExecDo</span></a></span></span><span>
+</span><span id="line-173"></span><span>  </span><span id="local-6989586621679095059"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679095059"><span class="hs-identifier hs-var">name</span></a></span></span><span> </span><span id="local-6989586621679095060"><span class="annot"><span class="annottext">msgs -&gt; IO ()
+</span><a href="#local-6989586621679095060"><span class="hs-identifier hs-var">exec</span></a></span></span><span> </span><span id="local-6989586621679095061"><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679095061"><span class="hs-identifier hs-var">sync</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-174"></span><span>  </span><span id="local-6989586621679095062"><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095062"><span class="hs-identifier hs-var">queue</span></a></span></span><span>      </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO queue
+</span><a href="#local-6989586621679095054"><span class="hs-identifier hs-var">newQueue</span></a></span><span>
+</span><span id="line-175"></span><span>  </span><span id="local-6989586621679095063"><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095063"><span class="hs-identifier hs-var">inProgress</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; IO (TVar Bool)
+forall a. a -&gt; IO (TVar a)
+</span><span class="hs-identifier hs-var">newTVarIO</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span>
+</span><span id="line-176"></span><span>  </span><span id="local-6989586621679095064"><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095064"><span class="hs-identifier hs-var">isRunning</span></a></span></span><span>  </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; IO (TVar Bool)
+forall a. a -&gt; IO (TVar a)
+</span><span class="hs-identifier hs-var">newTVarIO</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span>
+</span><span id="line-177"></span><span>  </span><span id="local-6989586621679095065"><span class="annot"><span class="annottext">ThreadId
+</span><a href="#local-6989586621679095065"><span class="hs-identifier hs-var">tid</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO Any -&gt; (Either SomeException Any -&gt; IO ()) -&gt; IO ThreadId
+forall a. IO a -&gt; (Either SomeException a -&gt; IO ()) -&gt; IO ThreadId
+</span><span class="hs-identifier hs-var">forkFinally</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">IO () -&gt; IO Any
+forall (f :: * -&gt; *) a b. Applicative f =&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">forever</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO Any) -&gt; IO () -&gt; IO Any
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">queue -&gt; TVar Bool -&gt; IO ()
+</span><a href="#local-6989586621679095068"><span class="hs-identifier hs-var">loop</span></a></span><span> </span><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095062"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095063"><span class="hs-identifier hs-var">inProgress</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-178"></span><span>                     </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span class="annot"><span class="annottext">Either SomeException Any
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">queue -&gt; TVar Bool -&gt; IO ()
+</span><a href="#local-6989586621679095069"><span class="hs-identifier hs-var">cleanup</span></a></span><span> </span><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095062"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095063"><span class="hs-identifier hs-var">inProgress</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-179"></span><span>  </span><span class="annot"><span class="annottext">Logger -&gt; IO Logger
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span> </span><span class="hs-special">{</span><span>
+</span><span id="line-180"></span><span>    </span><span class="annot"><span class="annottext">loggerWriteMessage :: LogMessage -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-identifier hs-var">loggerWriteMessage</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679095071"><span class="annot"><span class="annottext">LogMessage
+</span><a href="#local-6989586621679095071"><span class="hs-identifier hs-var">msg</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">STM () -&gt; IO ()
+forall a. STM a -&gt; IO a
+</span><span class="hs-identifier hs-var">atomically</span></span><span> </span><span class="annot"><span class="annottext">(STM () -&gt; IO ()) -&gt; STM () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-181"></span><span>        </span><span class="annot"><span class="annottext">TVar Bool -&gt; STM ()
+</span><a href="#local-6989586621679095073"><span class="hs-identifier hs-var">checkIsRunning</span></a></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095064"><span class="hs-identifier hs-var">isRunning</span></a></span><span>
+</span><span id="line-182"></span><span>        </span><span class="annot"><span class="annottext">queue -&gt; LogMessage -&gt; STM ()
+</span><a href="#local-6989586621679095057"><span class="hs-identifier hs-var">writeQueue</span></a></span><span> </span><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095062"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="annot"><span class="annottext">LogMessage
+</span><a href="#local-6989586621679095071"><span class="hs-identifier hs-var">msg</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-183"></span><span>    </span><span class="annot"><span class="annottext">loggerWaitForWrite :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerWaitForWrite"><span class="hs-identifier hs-var">loggerWaitForWrite</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-184"></span><span>        </span><span class="annot"><span class="annottext">STM () -&gt; IO ()
+forall a. STM a -&gt; IO a
+</span><span class="hs-identifier hs-var">atomically</span></span><span> </span><span class="annot"><span class="annottext">(STM () -&gt; IO ()) -&gt; STM () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">queue -&gt; TVar Bool -&gt; STM ()
+</span><a href="#local-6989586621679095075"><span class="hs-identifier hs-var">waitForWrite</span></a></span><span> </span><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095062"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095063"><span class="hs-identifier hs-var">inProgress</span></a></span><span>
+</span><span id="line-185"></span><span>        </span><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679095061"><span class="hs-identifier hs-var">sync</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-186"></span><span>    </span><span class="annot"><span class="annottext">loggerShutdown :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerShutdown"><span class="hs-identifier hs-var">loggerShutdown</span></a></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-187"></span><span>        </span><span class="annot"><span class="annottext">ThreadId -&gt; IO ()
+</span><span class="hs-identifier hs-var">killThread</span></span><span> </span><span class="annot"><span class="annottext">ThreadId
+</span><a href="#local-6989586621679095065"><span class="hs-identifier hs-var">tid</span></a></span><span>
+</span><span id="line-188"></span><span>        </span><span class="annot"><span class="annottext">STM () -&gt; IO ()
+forall a. STM a -&gt; IO a
+</span><span class="hs-identifier hs-var">atomically</span></span><span> </span><span class="annot"><span class="annottext">(STM () -&gt; IO ()) -&gt; STM () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">TVar Bool -&gt; Bool -&gt; STM ()
+forall a. TVar a -&gt; a -&gt; STM ()
+</span><span class="hs-identifier hs-var">writeTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095064"><span class="hs-identifier hs-var">isRunning</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span>
+</span><span id="line-189"></span><span>    </span><span class="hs-special">}</span><span>
+</span><span id="line-190"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-191"></span><span>    </span><span id="local-6989586621679095073"><span class="annot"><span class="annottext">checkIsRunning :: TVar Bool -&gt; STM ()
+</span><a href="#local-6989586621679095073"><span class="hs-identifier hs-var hs-var">checkIsRunning</span></a></span></span><span> </span><span id="local-6989586621679095086"><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095086"><span class="hs-identifier hs-var">isRunning'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-192"></span><span>      </span><span id="local-6989586621679095087"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679095087"><span class="hs-identifier hs-var">isRunning</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">TVar Bool -&gt; STM Bool
+forall a. TVar a -&gt; STM a
+</span><span class="hs-identifier hs-var">readTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095086"><span class="hs-identifier hs-var">isRunning'</span></a></span><span>
+</span><span id="line-193"></span><span>      </span><span class="annot"><span class="annottext">Bool -&gt; STM () -&gt; STM ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; Bool
+</span><span class="hs-identifier hs-var">not</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679095087"><span class="hs-identifier hs-var">isRunning</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(STM () -&gt; STM ()) -&gt; STM () -&gt; STM ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span>
+</span><span id="line-194"></span><span>        </span><span class="annot"><span class="annottext">AssertionFailed -&gt; STM ()
+forall e a. Exception e =&gt; e -&gt; STM a
+</span><span class="hs-identifier hs-var">throwSTM</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char] -&gt; AssertionFailed
+</span><span class="hs-identifier hs-var">AssertionFailed</span></span><span> </span><span class="annot"><span class="annottext">([Char] -&gt; AssertionFailed) -&gt; [Char] -&gt; AssertionFailed
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;Log.Logger.mkLoggerImpl: &quot;</span></span><span>
+</span><span id="line-195"></span><span>                   </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;attempt to write to a shut down logger&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-196"></span><span>
+</span><span id="line-197"></span><span>    </span><span id="local-6989586621679095068"><span class="annot"><span class="annottext">loop :: queue -&gt; TVar Bool -&gt; IO ()
+</span><a href="#local-6989586621679095068"><span class="hs-identifier hs-var hs-var">loop</span></a></span></span><span> </span><span id="local-6989586621679095091"><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095091"><span class="hs-identifier hs-var">queue</span></a></span></span><span> </span><span id="local-6989586621679095092"><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095092"><span class="hs-identifier hs-var">inProgress</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-198"></span><span>      </span><span class="annot"><span class="annottext">queue -&gt; TVar Bool -&gt; IO ()
+</span><a href="#local-6989586621679095093"><span class="hs-identifier hs-var">step</span></a></span><span> </span><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095091"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095092"><span class="hs-identifier hs-var">inProgress</span></a></span><span>
+</span><span id="line-199"></span><span>      </span><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679095058"><span class="hs-identifier hs-var">afterExecDo</span></a></span><span>
+</span><span id="line-200"></span><span>
+</span><span id="line-201"></span><span>    </span><span id="local-6989586621679095093"><span class="annot"><span class="annottext">step :: queue -&gt; TVar Bool -&gt; IO ()
+</span><a href="#local-6989586621679095093"><span class="hs-identifier hs-var hs-var">step</span></a></span></span><span> </span><span id="local-6989586621679095094"><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095094"><span class="hs-identifier hs-var">queue</span></a></span></span><span> </span><span id="local-6989586621679095095"><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095095"><span class="hs-identifier hs-var">inProgress</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-202"></span><span>      </span><span id="local-6989586621679095096"><span class="annot"><span class="annottext">msgs
+</span><a href="#local-6989586621679095096"><span class="hs-identifier hs-var">msgs</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">STM msgs -&gt; IO msgs
+forall a. STM a -&gt; IO a
+</span><span class="hs-identifier hs-var">atomically</span></span><span> </span><span class="annot"><span class="annottext">(STM msgs -&gt; IO msgs) -&gt; STM msgs -&gt; IO msgs
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-203"></span><span>        </span><span class="annot"><span class="annottext">TVar Bool -&gt; Bool -&gt; STM ()
+forall a. TVar a -&gt; a -&gt; STM ()
+</span><span class="hs-identifier hs-var">writeTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095095"><span class="hs-identifier hs-var">inProgress</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span>
+</span><span id="line-204"></span><span>        </span><span class="annot"><span class="annottext">queue -&gt; STM msgs
+</span><a href="#local-6989586621679095056"><span class="hs-identifier hs-var">readQueue</span></a></span><span> </span><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095094"><span class="hs-identifier hs-var">queue</span></a></span><span>
+</span><span id="line-205"></span><span>      </span><span class="annot"><span class="annottext">msgs -&gt; IO ()
+</span><a href="#local-6989586621679095060"><span class="hs-identifier hs-var">exec</span></a></span><span> </span><span class="annot"><span class="annottext">msgs
+</span><a href="#local-6989586621679095096"><span class="hs-identifier hs-var">msgs</span></a></span><span>
+</span><span id="line-206"></span><span>      </span><span class="annot"><span class="annottext">STM () -&gt; IO ()
+forall a. STM a -&gt; IO a
+</span><span class="hs-identifier hs-var">atomically</span></span><span> </span><span class="annot"><span class="annottext">(STM () -&gt; IO ()) -&gt; STM () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">TVar Bool -&gt; Bool -&gt; STM ()
+forall a. TVar a -&gt; a -&gt; STM ()
+</span><span class="hs-identifier hs-var">writeTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095095"><span class="hs-identifier hs-var">inProgress</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span>
+</span><span id="line-207"></span><span>
+</span><span id="line-208"></span><span>    </span><span id="local-6989586621679095069"><span class="annot"><span class="annottext">cleanup :: queue -&gt; TVar Bool -&gt; IO ()
+</span><a href="#local-6989586621679095069"><span class="hs-identifier hs-var hs-var">cleanup</span></a></span></span><span> </span><span id="local-6989586621679095097"><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095097"><span class="hs-identifier hs-var">queue</span></a></span></span><span> </span><span id="local-6989586621679095098"><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095098"><span class="hs-identifier hs-var">inProgress</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-209"></span><span>      </span><span class="annot"><span class="annottext">queue -&gt; TVar Bool -&gt; IO ()
+</span><a href="#local-6989586621679095093"><span class="hs-identifier hs-var">step</span></a></span><span> </span><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095097"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095098"><span class="hs-identifier hs-var">inProgress</span></a></span><span>
+</span><span id="line-210"></span><span>      </span><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679095061"><span class="hs-identifier hs-var">sync</span></a></span><span>
+</span><span id="line-211"></span><span>      </span><span class="hs-comment">-- Don't call afterExecDo, since it's either a no-op or a</span><span>
+</span><span id="line-212"></span><span>      </span><span class="hs-comment">-- threadDelay.</span><span>
+</span><span id="line-213"></span><span>      </span><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679095099"><span class="hs-identifier hs-var">printLoggerTerminated</span></a></span><span>
+</span><span id="line-214"></span><span>
+</span><span id="line-215"></span><span>    </span><span id="local-6989586621679095075"><span class="annot"><span class="annottext">waitForWrite :: queue -&gt; TVar Bool -&gt; STM ()
+</span><a href="#local-6989586621679095075"><span class="hs-identifier hs-var hs-var">waitForWrite</span></a></span></span><span> </span><span id="local-6989586621679095100"><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095100"><span class="hs-identifier hs-var">queue</span></a></span></span><span> </span><span id="local-6989586621679095101"><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095101"><span class="hs-identifier hs-var">inProgress</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-216"></span><span>      </span><span id="local-6989586621679095102"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679095102"><span class="hs-identifier hs-var">isEmpty</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">queue -&gt; STM Bool
+</span><a href="#local-6989586621679095055"><span class="hs-identifier hs-var">isQueueEmpty</span></a></span><span> </span><span class="annot"><span class="annottext">queue
+</span><a href="#local-6989586621679095100"><span class="hs-identifier hs-var">queue</span></a></span><span>
+</span><span id="line-217"></span><span>      </span><span id="local-6989586621679095103"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679095103"><span class="hs-identifier hs-var">isInProgress</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">TVar Bool -&gt; STM Bool
+forall a. TVar a -&gt; STM a
+</span><span class="hs-identifier hs-var">readTVar</span></span><span> </span><span class="annot"><span class="annottext">TVar Bool
+</span><a href="#local-6989586621679095101"><span class="hs-identifier hs-var">inProgress</span></a></span><span>
+</span><span id="line-218"></span><span>      </span><span class="annot"><span class="annottext">Bool -&gt; STM () -&gt; STM ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; Bool
+</span><span class="hs-identifier hs-var">not</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679095102"><span class="hs-identifier hs-var">isEmpty</span></a></span><span> </span><span class="annot"><span class="annottext">Bool -&gt; Bool -&gt; Bool
+</span><span class="hs-operator hs-var">||</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679095103"><span class="hs-identifier hs-var">isInProgress</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">STM ()
+forall a. STM a
+</span><span class="hs-identifier hs-var">retry</span></span><span>
+</span><span id="line-219"></span><span>
+</span><span id="line-220"></span><span>    </span><span id="local-6989586621679095099"><span class="annot"><span class="annottext">printLoggerTerminated :: IO ()
+</span><a href="#local-6989586621679095099"><span class="hs-identifier hs-var hs-var">printLoggerTerminated</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; IO ()
+</span><span class="hs-identifier hs-var">T.putStrLn</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; IO ()) -&gt; Text -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679095059"><span class="hs-identifier hs-var">name</span></a></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; Text
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;: logger thread terminated&quot;</span></span><span>
+</span><span id="line-221"></span><span class="hs-comment">-- Prevent GHC from inlining this function so its callers are small and</span><span>
+</span><span id="line-222"></span><span class="hs-comment">-- considered for inlining instead (as they will be generalized to MonadIO or</span><span>
+</span><span id="line-223"></span><span class="hs-comment">-- MonadUnliftIO).</span><span>
+</span><span id="line-224"></span><span class="hs-pragma">{-# NOINLINE</span><span> </span><span class="annot"><a href="Log.Logger.html#mkLoggerImpl"><span class="hs-pragma hs-type">mkLoggerImpl</span></a></span><span> </span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-225"></span></pre></body></html>

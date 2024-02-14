@@ -1,0 +1,99 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-comment">-- | A logger that produces in-memory 'Text' values. Mainly useful for</span><span>
+</span><span id="line-2"></span><span class="hs-comment">-- testing.</span><span>
+</span><span id="line-3"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Log.Backend.Text</span><span> </span><span class="hs-special">(</span><span> </span><span class="annot"><a href="Log.Backend.Text.html#withSimpleTextLogger"><span class="hs-identifier">withSimpleTextLogger</span></a></span><span> </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-4"></span><span>
+</span><span id="line-5"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.IO.Unlift</span></span><span>
+</span><span id="line-6"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.IORef</span></span><span>
+</span><span id="line-7"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-8"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">L</span></span><span>
+</span><span id="line-9"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy.Builder</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">B</span></span><span>
+</span><span id="line-10"></span><span>
+</span><span id="line-11"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Log.Data.html"><span class="hs-identifier">Log.Data</span></a></span><span>
+</span><span id="line-12"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html"><span class="hs-identifier">Log.Internal.Logger</span></a></span><span>
+</span><span id="line-13"></span><span>
+</span><span id="line-14"></span><span class="hs-comment">-- | Create an in-memory logger for the duration of the given action,</span><span>
+</span><span id="line-15"></span><span class="hs-comment">-- returning both the result of the action and the logger's output as</span><span>
+</span><span id="line-16"></span><span class="hs-comment">-- a 'Text' value afterwards.</span><span>
+</span><span id="line-17"></span><span id="local-6989586621679094666"><span id="local-6989586621679094669"><span class="annot"><a href="Log.Backend.Text.html#withSimpleTextLogger"><span class="hs-identifier hs-type">withSimpleTextLogger</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679094666"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679094666"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679094669"><span class="hs-identifier hs-type">r</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679094666"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">T.Text</span></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="#local-6989586621679094669"><span class="hs-identifier hs-type">r</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-18"></span><span id="withSimpleTextLogger"><span class="annot"><span class="annottext">withSimpleTextLogger :: forall (m :: * -&gt; *) r.
+MonadUnliftIO m =&gt;
+(Logger -&gt; m r) -&gt; m (Text, r)
+</span><a href="Log.Backend.Text.html#withSimpleTextLogger"><span class="hs-identifier hs-var hs-var">withSimpleTextLogger</span></a></span></span><span> </span><span id="local-6989586621679094717"><span class="annot"><span class="annottext">Logger -&gt; m r
+</span><a href="#local-6989586621679094717"><span class="hs-identifier hs-var">act</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">((forall a. m a -&gt; IO a) -&gt; IO (Text, r)) -&gt; m (Text, r)
+forall b. ((forall a. m a -&gt; IO a) -&gt; IO b) -&gt; m b
+forall (m :: * -&gt; *) b.
+MonadUnliftIO m =&gt;
+((forall a. m a -&gt; IO a) -&gt; IO b) -&gt; m b
+</span><span class="hs-identifier hs-var">withRunInIO</span></span><span> </span><span class="annot"><span class="annottext">(((forall a. m a -&gt; IO a) -&gt; IO (Text, r)) -&gt; m (Text, r))
+-&gt; ((forall a. m a -&gt; IO a) -&gt; IO (Text, r)) -&gt; m (Text, r)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679094719"><span class="annot"><span class="annottext">forall a. m a -&gt; IO a
+</span><a href="#local-6989586621679094719"><span class="hs-identifier hs-var">unlift</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-19"></span><span>  </span><span id="local-6989586621679094720"><span class="annot"><span class="annottext">IORef Builder
+</span><a href="#local-6989586621679094720"><span class="hs-identifier hs-var">builderRef</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; IO (IORef Builder)
+forall a. a -&gt; IO (IORef a)
+</span><span class="hs-identifier hs-var">newIORef</span></span><span> </span><span class="annot"><span class="annottext">Builder
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span>
+</span><span id="line-20"></span><span>  </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679094722"><span class="annot"><span class="annottext">logger :: Logger
+</span><a href="#local-6989586621679094722"><span class="hs-identifier hs-var hs-var">logger</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span>
+</span><span id="line-21"></span><span>        </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">loggerWriteMessage :: LogMessage -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-identifier hs-var">loggerWriteMessage</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679094725"><span class="annot"><span class="annottext">LogMessage
+</span><a href="#local-6989586621679094725"><span class="hs-identifier hs-var">msg</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-22"></span><span>            </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679094726"><span class="annot"><span class="annottext">msg' :: Builder
+</span><a href="#local-6989586621679094726"><span class="hs-identifier hs-var hs-var">msg'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+</span><span class="hs-identifier hs-var">B.fromText</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Builder) -&gt; Text -&gt; Builder
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Maybe UTCTime -&gt; LogMessage -&gt; Text
+</span><a href="Log.Data.html#showLogMessage"><span class="hs-identifier hs-var">showLogMessage</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe UTCTime
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="annot"><span class="annottext">LogMessage
+</span><a href="#local-6989586621679094725"><span class="hs-identifier hs-var">msg</span></a></span><span>
+</span><span id="line-23"></span><span>            </span><span class="annot"><span class="annottext">IORef Builder -&gt; (Builder -&gt; Builder) -&gt; IO ()
+forall a. IORef a -&gt; (a -&gt; a) -&gt; IO ()
+</span><span class="hs-identifier hs-var">modifyIORef'</span></span><span> </span><span class="annot"><span class="annottext">IORef Builder
+</span><a href="#local-6989586621679094720"><span class="hs-identifier hs-var">builderRef</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Builder -&gt; Builder -&gt; Builder
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><a href="#local-6989586621679094726"><span class="hs-identifier hs-var">msg'</span></a></span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Builder -&gt; Builder
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+</span><span class="hs-identifier hs-var">B.fromText</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;\n&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-24"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">loggerWaitForWrite :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerWaitForWrite"><span class="hs-identifier hs-var">loggerWaitForWrite</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">() -&gt; IO ()
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-25"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">loggerShutdown :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerShutdown"><span class="hs-identifier hs-var">loggerShutdown</span></a></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">() -&gt; IO ()
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-26"></span><span>        </span><span class="hs-special">}</span><span>
+</span><span id="line-27"></span><span>  </span><span id="local-6989586621679094732"><span class="annot"><span class="annottext">r
+</span><a href="#local-6989586621679094732"><span class="hs-identifier hs-var">r</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">m r -&gt; IO r
+forall a. m a -&gt; IO a
+</span><a href="#local-6989586621679094719"><span class="hs-identifier hs-var">unlift</span></a></span><span> </span><span class="annot"><span class="annottext">(m r -&gt; IO r) -&gt; m r -&gt; IO r
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Logger -&gt; m r
+</span><a href="#local-6989586621679094717"><span class="hs-identifier hs-var">act</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094722"><span class="hs-identifier hs-var">logger</span></a></span><span>
+</span><span id="line-28"></span><span>  </span><span id="local-6989586621679094733"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679094733"><span class="hs-identifier hs-var">txt</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">L.toStrict</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Text) -&gt; (Builder -&gt; Text) -&gt; Builder -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Text
+</span><span class="hs-identifier hs-var">B.toLazyText</span></span><span> </span><span class="annot"><span class="annottext">(Builder -&gt; Text) -&gt; IO Builder -&gt; IO Text
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">IORef Builder -&gt; IO Builder
+forall a. IORef a -&gt; IO a
+</span><span class="hs-identifier hs-var">readIORef</span></span><span> </span><span class="annot"><span class="annottext">IORef Builder
+</span><a href="#local-6989586621679094720"><span class="hs-identifier hs-var">builderRef</span></a></span><span>
+</span><span id="line-29"></span><span>  </span><span class="annot"><span class="annottext">(Text, r) -&gt; IO (Text, r)
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679094733"><span class="hs-identifier hs-var">txt</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">r
+</span><a href="#local-6989586621679094732"><span class="hs-identifier hs-var">r</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-30"></span></pre></body></html>

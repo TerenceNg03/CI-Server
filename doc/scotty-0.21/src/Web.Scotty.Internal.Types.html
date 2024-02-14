@@ -1,0 +1,1001 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE DeriveDataTypeable #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE DerivingStrategies #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances #-}</span><span>
+</span><span id="line-4"></span><span class="hs-pragma">{-# LANGUAGE GeneralizedNewtypeDeriving #-}</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# LANGUAGE MultiParamTypeClasses #-}</span><span>
+</span><span id="line-6"></span><span class="hs-pragma">{-# language ScopedTypeVariables #-}</span><span>
+</span><span id="line-7"></span><span class="hs-pragma">{-# LANGUAGE TypeFamilies #-}</span><span>
+</span><span id="line-8"></span><span class="hs-pragma">{-# LANGUAGE UndecidableInstances #-}</span><span>
+</span><span id="line-9"></span><span class="hs-pragma">{-# LANGUAGE RecordWildCards #-}</span><span>
+</span><span id="line-10"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Web.Scotty.Internal.Types</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-11"></span><span>
+</span><span id="line-12"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Blaze.ByteString.Builder</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Builder</span></span><span class="hs-special">)</span><span>
+</span><span id="line-13"></span><span>
+</span><span id="line-14"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Applicative</span></span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Concurrent.MVar</span></span><span>
+</span><span id="line-16"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Concurrent.STM</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">TVar</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">atomically</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">readTVarIO</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">modifyTVar'</span></span><span class="hs-special">)</span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Exception</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">E</span></span><span>
+</span><span id="line-18"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadPlus</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-19"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Base</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadBase</span></span><span class="hs-special">)</span><span>
+</span><span id="line-20"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Catch</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadCatch</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">MonadThrow</span></span><span class="hs-special">)</span><span>
+</span><span id="line-21"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Error.Class</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadError</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-22"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.IO.Class</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadIO</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-23"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">UnliftIO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadUnliftIO</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-24"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Reader</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadReader</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">ReaderT</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">asks</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">mapReaderT</span></span><span class="hs-special">)</span><span>
+</span><span id="line-25"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.State.Strict</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">State</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">StateT</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-26"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Trans.Class</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadTrans</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-27"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Trans.Control</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadBaseControl</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">MonadTransControl</span></span><span class="hs-special">)</span><span>
+</span><span id="line-28"></span><span>
+</span><span id="line-29"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BS</span></span><span>
+</span><span id="line-30"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Lazy.Char8</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">LBS8</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">ByteString</span></span><span class="hs-special">)</span><span>
+</span><span id="line-31"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Default.Class</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Default</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">def</span></span><span class="hs-special">)</span><span>
+</span><span id="line-32"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.String</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">IsString</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-33"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">pack</span></span><span class="hs-special">)</span><span>
+</span><span id="line-34"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Typeable</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Typeable</span></span><span class="hs-special">)</span><span>
+</span><span id="line-35"></span><span>
+</span><span id="line-36"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Network.HTTP.Types</span></span><span>
+</span><span id="line-37"></span><span>
+</span><span id="line-38"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Network.Wai</span></span><span> </span><span class="hs-keyword">hiding</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Middleware</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">Application</span></span><span class="hs-special">)</span><span>
+</span><span id="line-39"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Network.Wai</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Wai</span></span><span>
+</span><span id="line-40"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Network.Wai.Handler.Warp</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Settings</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">defaultSettings</span></span><span class="hs-special">)</span><span>
+</span><span id="line-41"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Network.Wai.Parse</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">FileInfo</span></span><span class="hs-special">)</span><span>
+</span><span id="line-42"></span><span>
+</span><span id="line-43"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">UnliftIO.Exception</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Handler</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">catch</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">catches</span></span><span class="hs-special">)</span><span>
+</span><span id="line-44"></span><span>
+</span><span id="line-45"></span><span>
+</span><span id="line-46"></span><span class="hs-comment">--------------------- Options -----------------------</span><span>
+</span><span id="line-47"></span><span class="hs-keyword">data</span><span> </span><span id="Options"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier hs-var">Options</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Options"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier hs-var">Options</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="verbose"><span class="annot"><span class="annottext">Options -&gt; Int
+</span><a href="Web.Scotty.Internal.Types.html#verbose"><span class="hs-identifier hs-var hs-var">verbose</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ 0 = silent, 1(def) = startup banner</span></span><span>
+</span><span id="line-48"></span><span>                       </span><span class="hs-special">,</span><span> </span><span id="settings"><span class="annot"><span class="annottext">Options -&gt; Settings
+</span><a href="Web.Scotty.Internal.Types.html#settings"><span class="hs-identifier hs-var hs-var">settings</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Settings</span></span><span> </span><span class="hs-comment">-- ^ Warp 'Settings'</span><span>
+</span><span id="line-49"></span><span>                                              </span><span class="hs-comment">-- Note: to work around an issue in warp,</span><span>
+</span><span id="line-50"></span><span>                                              </span><span class="hs-comment">-- the default FD cache duration is set to 0</span><span>
+</span><span id="line-51"></span><span>                                              </span><span class="hs-comment">-- so changes to static files are always picked</span><span>
+</span><span id="line-52"></span><span>                                              </span><span class="hs-comment">-- up. This likely has performance implications,</span><span>
+</span><span id="line-53"></span><span>                                              </span><span class="hs-comment">-- so you may want to modify this for production</span><span>
+</span><span id="line-54"></span><span>                                              </span><span class="hs-comment">-- servers using `setFdCacheDuration`.</span><span>
+</span><span id="line-55"></span><span>                       </span><span class="hs-special">}</span><span>
+</span><span id="line-56"></span><span>
+</span><span id="line-57"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Default</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier hs-type">Options</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-58"></span><span>  </span><span id="local-6989586621679119711"><span class="annot"><span class="annottext">def :: Options
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">def</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Options
+</span><a href="Web.Scotty.Internal.Types.html#defaultOptions"><span class="hs-identifier hs-var">defaultOptions</span></a></span><span>
+</span><span id="line-59"></span><span>
+</span><span id="line-60"></span><span class="annot"><a href="Web.Scotty.Internal.Types.html#defaultOptions"><span class="hs-identifier hs-type">defaultOptions</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier hs-type">Options</span></a></span><span>
+</span><span id="line-61"></span><span id="defaultOptions"><span class="annot"><span class="annottext">defaultOptions :: Options
+</span><a href="Web.Scotty.Internal.Types.html#defaultOptions"><span class="hs-identifier hs-var hs-var">defaultOptions</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Settings -&gt; Options
+</span><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier hs-var">Options</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span> </span><span class="annot"><span class="annottext">Settings
+</span><span class="hs-identifier hs-var">defaultSettings</span></span><span>
+</span><span id="line-62"></span><span>
+</span><span id="line-63"></span><span class="hs-keyword">newtype</span><span> </span><span id="RouteOptions"><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-var">RouteOptions</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="RouteOptions"><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-var">RouteOptions</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="maxRequestBodySize"><span class="annot"><span class="annottext">RouteOptions -&gt; Maybe Int
+</span><a href="Web.Scotty.Internal.Types.html#maxRequestBodySize"><span class="hs-identifier hs-var hs-var">maxRequestBodySize</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Kilobytes"><span class="hs-identifier hs-type">Kilobytes</span></a></span><span> </span><span class="hs-comment">-- max allowed request size in KB</span><span>
+</span><span id="line-64"></span><span>                                    </span><span class="hs-special">}</span><span>
+</span><span id="line-65"></span><span>
+</span><span id="line-66"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Default</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-type">RouteOptions</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-67"></span><span>    </span><span id="local-6989586621679119718"><span class="annot"><span class="annottext">def :: RouteOptions
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">def</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RouteOptions
+</span><a href="Web.Scotty.Internal.Types.html#defaultRouteOptions"><span class="hs-identifier hs-var">defaultRouteOptions</span></a></span><span>
+</span><span id="line-68"></span><span>
+</span><span id="line-69"></span><span class="annot"><a href="Web.Scotty.Internal.Types.html#defaultRouteOptions"><span class="hs-identifier hs-type">defaultRouteOptions</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-type">RouteOptions</span></a></span><span>
+</span><span id="line-70"></span><span id="defaultRouteOptions"><span class="annot"><span class="annottext">defaultRouteOptions :: RouteOptions
+</span><a href="Web.Scotty.Internal.Types.html#defaultRouteOptions"><span class="hs-identifier hs-var hs-var">defaultRouteOptions</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Maybe Int -&gt; RouteOptions
+</span><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-var">RouteOptions</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe Int
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span>
+</span><span id="line-71"></span><span>
+</span><span id="line-72"></span><span class="hs-keyword">type</span><span> </span><span id="Kilobytes"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Kilobytes"><span class="hs-identifier hs-var">Kilobytes</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-73"></span><span class="hs-comment">----- Transformer Aware Applications/Middleware -----</span><span>
+</span><span id="line-74"></span><span class="hs-keyword">type</span><span> </span><span id="Middleware"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Middleware"><span class="hs-identifier hs-var">Middleware</span></a></span></span><span> </span><span id="local-6989586621679119720"><span class="annot"><a href="#local-6989586621679119720"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Application"><span class="hs-identifier hs-type">Application</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119720"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Application"><span class="hs-identifier hs-type">Application</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119720"><span class="hs-identifier hs-type">m</span></a></span><span>
+</span><span id="line-75"></span><span class="hs-keyword">type</span><span> </span><span id="Application"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Application"><span class="hs-identifier hs-var">Application</span></a></span></span><span> </span><span id="local-6989586621679119722"><span class="annot"><a href="#local-6989586621679119722"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Request</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679119722"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Response</span></span><span>
+</span><span id="line-76"></span><span>
+</span><span id="line-77"></span><span class="hs-comment">------------------ Scotty Request Body --------------------</span><span>
+</span><span id="line-78"></span><span>
+</span><span id="line-79"></span><span class="hs-keyword">data</span><span> </span><span id="BodyChunkBuffer"><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier hs-var">BodyChunkBuffer</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="BodyChunkBuffer"><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier hs-var">BodyChunkBuffer</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="hasFinishedReadingChunks"><span class="annot"><span class="annottext">BodyChunkBuffer -&gt; Bool
+</span><a href="Web.Scotty.Internal.Types.html#hasFinishedReadingChunks"><span class="hs-identifier hs-var hs-var">hasFinishedReadingChunks</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ whether we've reached the end of the stream yet</span></span><span>
+</span><span id="line-80"></span><span>                                       </span><span class="hs-special">,</span><span> </span><span id="chunksReadSoFar"><span class="annot"><span class="annottext">BodyChunkBuffer -&gt; [ByteString]
+</span><a href="Web.Scotty.Internal.Types.html#chunksReadSoFar"><span class="hs-identifier hs-var hs-var">chunksReadSoFar</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span class="hs-special">]</span><span>
+</span><span id="line-81"></span><span>                                       </span><span class="hs-special">}</span><span>
+</span><span id="line-82"></span><span class="hs-comment">-- | The key part of having two MVars is that we can &quot;clone&quot; the BodyInfo to create a copy where the index is reset to 0, but the chunk cache is the same. Passing a cloned BodyInfo into each matched route allows them each to start from the first chunk if they call bodyReader.</span><span>
+</span><span id="line-83"></span><span class="hs-comment">--</span><span>
+</span><span id="line-84"></span><span class="hs-comment">-- Introduced in (#308)</span><span>
+</span><span id="line-85"></span><span class="hs-keyword">data</span><span> </span><span id="BodyInfo"><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-var">BodyInfo</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="BodyInfo"><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-var">BodyInfo</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="bodyInfoReadProgress"><span class="annot"><span class="annottext">BodyInfo -&gt; MVar Int
+</span><a href="Web.Scotty.Internal.Types.html#bodyInfoReadProgress"><span class="hs-identifier hs-var hs-var">bodyInfoReadProgress</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MVar</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ index into the stream read so far</span></span><span>
+</span><span id="line-86"></span><span>                         </span><span class="hs-special">,</span><span> </span><span id="bodyInfoChunkBuffer"><span class="annot"><span class="annottext">BodyInfo -&gt; MVar BodyChunkBuffer
+</span><a href="Web.Scotty.Internal.Types.html#bodyInfoChunkBuffer"><span class="hs-identifier hs-var hs-var">bodyInfoChunkBuffer</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MVar</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier hs-type">BodyChunkBuffer</span></a></span><span>
+</span><span id="line-87"></span><span>                         </span><span class="hs-special">,</span><span> </span><span id="bodyInfoDirectChunkRead"><span class="annot"><span class="annottext">BodyInfo -&gt; IO ByteString
+</span><a href="Web.Scotty.Internal.Types.html#bodyInfoDirectChunkRead"><span class="hs-identifier hs-var hs-var">bodyInfoDirectChunkRead</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ can be called to get more chunks</span></span><span>
+</span><span id="line-88"></span><span>                         </span><span class="hs-special">}</span><span>
+</span><span id="line-89"></span><span>
+</span><span id="line-90"></span><span class="hs-comment">--------------- Scotty Applications -----------------</span><span>
+</span><span id="line-91"></span><span>
+</span><span id="line-92"></span><span class="hs-keyword">data</span><span> </span><span id="ScottyState"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-var">ScottyState</span></a></span></span><span> </span><span id="local-6989586621679119342"><span class="annot"><a href="#local-6989586621679119342"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-93"></span><span>    </span><span id="ScottyState"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-var">ScottyState</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="middlewares"><span class="annot"><span class="annottext">forall (m :: * -&gt; *). ScottyState m -&gt; [Middleware]
+</span><a href="Web.Scotty.Internal.Types.html#middlewares"><span class="hs-identifier hs-var hs-var">middlewares</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Wai.Middleware</span></span><span class="hs-special">]</span><span>
+</span><span id="line-94"></span><span>                </span><span class="hs-special">,</span><span> </span><span id="routes"><span class="annot"><span class="annottext">forall (m :: * -&gt; *). ScottyState m -&gt; [BodyInfo -&gt; Middleware m]
+</span><a href="Web.Scotty.Internal.Types.html#routes"><span class="hs-identifier hs-var hs-var">routes</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Middleware"><span class="hs-identifier hs-type">Middleware</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119342"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-95"></span><span>                </span><span class="hs-special">,</span><span> </span><span id="handler"><span class="annot"><span class="annottext">forall (m :: * -&gt; *). ScottyState m -&gt; Maybe (ErrorHandler m)
+</span><a href="Web.Scotty.Internal.Types.html#handler"><span class="hs-identifier hs-var hs-var">handler</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ErrorHandler"><span class="hs-identifier hs-type">ErrorHandler</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119342"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-96"></span><span>                </span><span class="hs-special">,</span><span> </span><span id="routeOptions"><span class="annot"><span class="annottext">forall (m :: * -&gt; *). ScottyState m -&gt; RouteOptions
+</span><a href="Web.Scotty.Internal.Types.html#routeOptions"><span class="hs-identifier hs-var hs-var">routeOptions</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-type">RouteOptions</span></a></span><span>
+</span><span id="line-97"></span><span>                </span><span class="hs-special">}</span><span>
+</span><span id="line-98"></span><span>
+</span><span id="line-99"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119352"><span class="annot"><span class="hs-identifier hs-type">Default</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119352"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-100"></span><span>  </span><span id="local-6989586621679119738"><span class="annot"><span class="annottext">def :: ScottyState m
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">def</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ScottyState m
+forall (m :: * -&gt; *). ScottyState m
+</span><a href="Web.Scotty.Internal.Types.html#defaultScottyState"><span class="hs-identifier hs-var">defaultScottyState</span></a></span><span>
+</span><span id="line-101"></span><span>
+</span><span id="line-102"></span><span id="local-6989586621679119740"><span class="annot"><a href="Web.Scotty.Internal.Types.html#defaultScottyState"><span class="hs-identifier hs-type">defaultScottyState</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119740"><span class="hs-identifier hs-type">m</span></a></span></span><span>
+</span><span id="line-103"></span><span id="defaultScottyState"><span class="annot"><span class="annottext">defaultScottyState :: forall (m :: * -&gt; *). ScottyState m
+</span><a href="Web.Scotty.Internal.Types.html#defaultScottyState"><span class="hs-identifier hs-var hs-var">defaultScottyState</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[Middleware]
+-&gt; [BodyInfo -&gt; Middleware m]
+-&gt; Maybe (ErrorHandler m)
+-&gt; RouteOptions
+-&gt; ScottyState m
+forall (m :: * -&gt; *).
+[Middleware]
+-&gt; [BodyInfo -&gt; Middleware m]
+-&gt; Maybe (ErrorHandler m)
+-&gt; RouteOptions
+-&gt; ScottyState m
+</span><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-var">ScottyState</span></a></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">Maybe (ErrorHandler m)
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="annot"><span class="annottext">RouteOptions
+</span><a href="Web.Scotty.Internal.Types.html#defaultRouteOptions"><span class="hs-identifier hs-var">defaultRouteOptions</span></a></span><span>
+</span><span id="line-104"></span><span>
+</span><span id="line-105"></span><span id="local-6989586621679119354"><span class="annot"><a href="Web.Scotty.Internal.Types.html#addMiddleware"><span class="hs-identifier hs-type">addMiddleware</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Wai.Middleware</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119354"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119354"><span class="hs-identifier hs-type">m</span></a></span></span><span>
+</span><span id="line-106"></span><span id="addMiddleware"><span class="annot"><span class="annottext">addMiddleware :: forall (m :: * -&gt; *). Middleware -&gt; ScottyState m -&gt; ScottyState m
+</span><a href="Web.Scotty.Internal.Types.html#addMiddleware"><span class="hs-identifier hs-var hs-var">addMiddleware</span></a></span></span><span> </span><span id="local-6989586621679119742"><span class="annot"><span class="annottext">Middleware
+</span><a href="#local-6989586621679119742"><span class="hs-identifier hs-var">m</span></a></span></span><span> </span><span id="local-6989586621679119743"><span class="annot"><span class="annottext">s :: ScottyState m
+</span><a href="#local-6989586621679119743"><span class="hs-identifier hs-var">s</span></a></span></span><span class="hs-glyph">@</span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="hs-special">{</span><span class="annot"><span class="annottext">middlewares :: forall (m :: * -&gt; *). ScottyState m -&gt; [Middleware]
+</span><a href="Web.Scotty.Internal.Types.html#middlewares"><span class="hs-identifier hs-var">middlewares</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="local-6989586621679119744"><span class="annot"><span class="annottext">[Middleware]
+</span><a href="#local-6989586621679119744"><span class="hs-identifier hs-var">ms</span></a></span></span><span class="hs-special">}</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ScottyState m
+</span><a href="#local-6989586621679119743"><span class="hs-identifier hs-var">s</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#middlewares"><span class="hs-identifier hs-var">middlewares</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679119742"><span class="hs-identifier hs-type">m</span></a></span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span class="annot"><a href="#local-6989586621679119744"><span class="hs-identifier hs-type">ms</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-107"></span><span>
+</span><span id="line-108"></span><span id="local-6989586621679119356"><span class="annot"><a href="Web.Scotty.Internal.Types.html#addRoute"><span class="hs-identifier hs-type">addRoute</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Middleware"><span class="hs-identifier hs-type">Middleware</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119356"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119356"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119356"><span class="hs-identifier hs-type">m</span></a></span></span><span>
+</span><span id="line-109"></span><span id="addRoute"><span class="annot"><span class="annottext">addRoute :: forall (m :: * -&gt; *).
+(BodyInfo -&gt; Middleware m) -&gt; ScottyState m -&gt; ScottyState m
+</span><a href="Web.Scotty.Internal.Types.html#addRoute"><span class="hs-identifier hs-var hs-var">addRoute</span></a></span></span><span> </span><span id="local-6989586621679119746"><span class="annot"><span class="annottext">BodyInfo -&gt; Middleware m
+</span><a href="#local-6989586621679119746"><span class="hs-identifier hs-var">r</span></a></span></span><span> </span><span id="local-6989586621679119747"><span class="annot"><span class="annottext">s :: ScottyState m
+</span><a href="#local-6989586621679119747"><span class="hs-identifier hs-var">s</span></a></span></span><span class="hs-glyph">@</span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="hs-special">{</span><span class="annot"><span class="annottext">routes :: forall (m :: * -&gt; *). ScottyState m -&gt; [BodyInfo -&gt; Middleware m]
+</span><a href="Web.Scotty.Internal.Types.html#routes"><span class="hs-identifier hs-var">routes</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="local-6989586621679119748"><span class="annot"><span class="annottext">[BodyInfo -&gt; Middleware m]
+</span><a href="#local-6989586621679119748"><span class="hs-identifier hs-var">rs</span></a></span></span><span class="hs-special">}</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ScottyState m
+</span><a href="#local-6989586621679119747"><span class="hs-identifier hs-var">s</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#routes"><span class="hs-identifier hs-var">routes</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679119746"><span class="hs-identifier hs-type">r</span></a></span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span class="annot"><a href="#local-6989586621679119748"><span class="hs-identifier hs-type">rs</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-110"></span><span>
+</span><span id="line-111"></span><span id="local-6989586621679119358"><span class="annot"><a href="Web.Scotty.Internal.Types.html#setHandler"><span class="hs-identifier hs-type">setHandler</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ErrorHandler"><span class="hs-identifier hs-type">ErrorHandler</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119358"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119358"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119358"><span class="hs-identifier hs-type">m</span></a></span></span><span>
+</span><span id="line-112"></span><span id="setHandler"><span class="annot"><span class="annottext">setHandler :: forall (m :: * -&gt; *).
+Maybe (ErrorHandler m) -&gt; ScottyState m -&gt; ScottyState m
+</span><a href="Web.Scotty.Internal.Types.html#setHandler"><span class="hs-identifier hs-var hs-var">setHandler</span></a></span></span><span> </span><span id="local-6989586621679119750"><span class="annot"><span class="annottext">Maybe (ErrorHandler m)
+</span><a href="#local-6989586621679119750"><span class="hs-identifier hs-var">h</span></a></span></span><span> </span><span id="local-6989586621679119751"><span class="annot"><span class="annottext">ScottyState m
+</span><a href="#local-6989586621679119751"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ScottyState m
+</span><a href="#local-6989586621679119751"><span class="hs-identifier hs-var">s</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#handler"><span class="hs-identifier hs-var">handler</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679119750"><span class="hs-identifier hs-type">h</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-113"></span><span>
+</span><span id="line-114"></span><span id="local-6989586621679119360"><span class="annot"><a href="Web.Scotty.Internal.Types.html#updateMaxRequestBodySize"><span class="hs-identifier hs-type">updateMaxRequestBodySize</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-type">RouteOptions</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119360"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119360"><span class="hs-identifier hs-type">m</span></a></span></span><span>
+</span><span id="line-115"></span><span id="updateMaxRequestBodySize"><span class="annot"><span class="annottext">updateMaxRequestBodySize :: forall (m :: * -&gt; *).
+RouteOptions -&gt; ScottyState m -&gt; ScottyState m
+</span><a href="Web.Scotty.Internal.Types.html#updateMaxRequestBodySize"><span class="hs-identifier hs-var hs-var">updateMaxRequestBodySize</span></a></span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-type">RouteOptions</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span id="local-6989586621679119753"><span class="annot"><span class="annottext">Maybe Int
+maxRequestBodySize :: RouteOptions -&gt; Maybe Int
+maxRequestBodySize :: Maybe Int
+</span><a href="Web.Scotty.Internal.Types.html#maxRequestBodySize"><span class="hs-glyph hs-var hs-var">..</span></a></span></span><span> </span><span class="hs-special">}</span><span> </span><span id="local-6989586621679119754"><span class="annot"><span class="annottext">s :: ScottyState m
+</span><a href="#local-6989586621679119754"><span class="hs-identifier hs-var">s</span></a></span></span><span class="hs-glyph">@</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">routeOptions :: forall (m :: * -&gt; *). ScottyState m -&gt; RouteOptions
+</span><a href="Web.Scotty.Internal.Types.html#routeOptions"><span class="hs-identifier hs-var">routeOptions</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="local-6989586621679119755"><span class="annot"><span class="annottext">RouteOptions
+</span><a href="#local-6989586621679119755"><span class="hs-identifier hs-var">ro</span></a></span></span><span> </span><span class="hs-special">}</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-116"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679119756"><span class="annot"><span class="annottext">ro' :: RouteOptions
+</span><a href="#local-6989586621679119756"><span class="hs-identifier hs-var hs-var">ro'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RouteOptions
+</span><a href="#local-6989586621679119755"><span class="hs-identifier hs-var">ro</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#maxRequestBodySize"><span class="hs-identifier hs-var">maxRequestBodySize</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679119753"><span class="hs-identifier hs-type">maxRequestBodySize</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-117"></span><span>    </span><span class="hs-keyword">in</span><span> </span><span class="annot"><span class="annottext">ScottyState m
+</span><a href="#local-6989586621679119754"><span class="hs-identifier hs-var">s</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#routeOptions"><span class="hs-identifier hs-var">routeOptions</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679119756"><span class="hs-identifier hs-type">ro'</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-118"></span><span>
+</span><span id="line-119"></span><span class="hs-keyword">newtype</span><span> </span><span id="ScottyT"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyT"><span class="hs-identifier hs-var">ScottyT</span></a></span></span><span> </span><span id="local-6989586621679119362"><span class="annot"><a href="#local-6989586621679119362"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span id="local-6989586621679119363"><span class="annot"><a href="#local-6989586621679119363"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ScottyT"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyT"><span class="hs-identifier hs-var">ScottyT</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="runS"><span class="annot"><span class="annottext">forall (m :: * -&gt; *) a. ScottyT m a -&gt; State (ScottyState m) a
+</span><a href="Web.Scotty.Internal.Types.html#runS"><span class="hs-identifier hs-var hs-var">runS</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">State</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier hs-type">ScottyState</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119362"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><a href="#local-6989586621679119363"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-120"></span><span>    </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span> </span><span id="local-6989586621679119760"><span id="local-6989586621679119766"><span class="annot"><span class="annottext">(forall a b. (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b)
+-&gt; (forall a b. a -&gt; ScottyT m b -&gt; ScottyT m a)
+-&gt; Functor (ScottyT m)
+forall a b. a -&gt; ScottyT m b -&gt; ScottyT m a
+forall a b. (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+forall (f :: * -&gt; *).
+(forall a b. (a -&gt; b) -&gt; f a -&gt; f b)
+-&gt; (forall a b. a -&gt; f b -&gt; f a) -&gt; Functor f
+forall (m :: * -&gt; *) a b. a -&gt; ScottyT m b -&gt; ScottyT m a
+forall (m :: * -&gt; *) a b. (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+$cfmap :: forall (m :: * -&gt; *) a b. (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+fmap :: forall a b. (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+$c&lt;$ :: forall (m :: * -&gt; *) a b. a -&gt; ScottyT m b -&gt; ScottyT m a
+&lt;$ :: forall a b. a -&gt; ScottyT m b -&gt; ScottyT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Functor</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679119776"><span id="local-6989586621679119783"><span id="local-6989586621679119789"><span id="local-6989586621679119795"><span id="local-6989586621679119801"><span class="annot"><span class="annottext">Functor (ScottyT m)
+Functor (ScottyT m) =&gt;
+(forall a. a -&gt; ScottyT m a)
+-&gt; (forall a b. ScottyT m (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b)
+-&gt; (forall a b c.
+    (a -&gt; b -&gt; c) -&gt; ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m c)
+-&gt; (forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b)
+-&gt; (forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m a)
+-&gt; Applicative (ScottyT m)
+forall a. a -&gt; ScottyT m a
+forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m a
+forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b
+forall a b. ScottyT m (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+forall a b c.
+(a -&gt; b -&gt; c) -&gt; ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m c
+forall (m :: * -&gt; *). Functor (ScottyT m)
+forall (f :: * -&gt; *).
+Functor f =&gt;
+(forall a. a -&gt; f a)
+-&gt; (forall a b. f (a -&gt; b) -&gt; f a -&gt; f b)
+-&gt; (forall a b c. (a -&gt; b -&gt; c) -&gt; f a -&gt; f b -&gt; f c)
+-&gt; (forall a b. f a -&gt; f b -&gt; f b)
+-&gt; (forall a b. f a -&gt; f b -&gt; f a)
+-&gt; Applicative f
+forall (m :: * -&gt; *) a. a -&gt; ScottyT m a
+forall (m :: * -&gt; *) a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m a
+forall (m :: * -&gt; *) a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b
+forall (m :: * -&gt; *) a b.
+ScottyT m (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+forall (m :: * -&gt; *) a b c.
+(a -&gt; b -&gt; c) -&gt; ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m c
+$cpure :: forall (m :: * -&gt; *) a. a -&gt; ScottyT m a
+pure :: forall a. a -&gt; ScottyT m a
+$c&lt;*&gt; :: forall (m :: * -&gt; *) a b.
+ScottyT m (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+&lt;*&gt; :: forall a b. ScottyT m (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+$cliftA2 :: forall (m :: * -&gt; *) a b c.
+(a -&gt; b -&gt; c) -&gt; ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m c
+liftA2 :: forall a b c.
+(a -&gt; b -&gt; c) -&gt; ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m c
+$c*&gt; :: forall (m :: * -&gt; *) a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b
+*&gt; :: forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b
+$c&lt;* :: forall (m :: * -&gt; *) a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m a
+&lt;* :: forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Applicative</span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679119812"><span id="local-6989586621679119818"><span id="local-6989586621679119823"><span class="annot"><span class="annottext">Applicative (ScottyT m)
+Applicative (ScottyT m) =&gt;
+(forall a b. ScottyT m a -&gt; (a -&gt; ScottyT m b) -&gt; ScottyT m b)
+-&gt; (forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b)
+-&gt; (forall a. a -&gt; ScottyT m a)
+-&gt; Monad (ScottyT m)
+forall a. a -&gt; ScottyT m a
+forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b
+forall a b. ScottyT m a -&gt; (a -&gt; ScottyT m b) -&gt; ScottyT m b
+forall (m :: * -&gt; *). Applicative (ScottyT m)
+forall (m :: * -&gt; *).
+Applicative m =&gt;
+(forall a b. m a -&gt; (a -&gt; m b) -&gt; m b)
+-&gt; (forall a b. m a -&gt; m b -&gt; m b)
+-&gt; (forall a. a -&gt; m a)
+-&gt; Monad m
+forall (m :: * -&gt; *) a. a -&gt; ScottyT m a
+forall (m :: * -&gt; *) a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b
+forall (m :: * -&gt; *) a b.
+ScottyT m a -&gt; (a -&gt; ScottyT m b) -&gt; ScottyT m b
+$c&gt;&gt;= :: forall (m :: * -&gt; *) a b.
+ScottyT m a -&gt; (a -&gt; ScottyT m b) -&gt; ScottyT m b
+&gt;&gt;= :: forall a b. ScottyT m a -&gt; (a -&gt; ScottyT m b) -&gt; ScottyT m b
+$c&gt;&gt; :: forall (m :: * -&gt; *) a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b
+&gt;&gt; :: forall a b. ScottyT m a -&gt; ScottyT m b -&gt; ScottyT m b
+$creturn :: forall (m :: * -&gt; *) a. a -&gt; ScottyT m a
+return :: forall a. a -&gt; ScottyT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Monad</span></span></span></span></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-121"></span><span>
+</span><span id="line-122"></span><span>
+</span><span id="line-123"></span><span class="hs-comment">------------------ Scotty Errors --------------------</span><span>
+</span><span id="line-124"></span><span>
+</span><span id="line-125"></span><span class="hs-comment">-- | Internal exception mechanism used to modify the request processing flow.</span><span>
+</span><span id="line-126"></span><span class="hs-comment">--</span><span>
+</span><span id="line-127"></span><span class="hs-comment">-- The exception constructor is not exposed to the user and all exceptions of this type are caught</span><span>
+</span><span id="line-128"></span><span class="hs-comment">-- and processed within the 'runAction' function.</span><span>
+</span><span id="line-129"></span><span class="hs-keyword">data</span><span> </span><span id="ActionError"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionError"><span class="hs-identifier hs-var">ActionError</span></a></span></span><span>
+</span><span id="line-130"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span id="AERedirect"><span class="annot"><a href="Web.Scotty.Internal.Types.html#AERedirect"><span class="hs-identifier hs-var">AERedirect</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Redirect</span></span><span>
+</span><span id="line-131"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="AENext"><span class="annot"><a href="Web.Scotty.Internal.Types.html#AENext"><span class="hs-identifier hs-var">AENext</span></a></span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Stop processing this route and skip to the next one</span></span><span>
+</span><span id="line-132"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="AEFinish"><span class="annot"><a href="Web.Scotty.Internal.Types.html#AEFinish"><span class="hs-identifier hs-var">AEFinish</span></a></span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Stop processing the request</span></span><span>
+</span><span id="line-133"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679119833"><span id="local-6989586621679119839"><span id="local-6989586621679119843"><span class="annot"><span class="annottext">Int -&gt; ActionError -&gt; ShowS
+[ActionError] -&gt; ShowS
+ActionError -&gt; String
+(Int -&gt; ActionError -&gt; ShowS)
+-&gt; (ActionError -&gt; String)
+-&gt; ([ActionError] -&gt; ShowS)
+-&gt; Show ActionError
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ActionError -&gt; ShowS
+showsPrec :: Int -&gt; ActionError -&gt; ShowS
+$cshow :: ActionError -&gt; String
+show :: ActionError -&gt; String
+$cshowList :: [ActionError] -&gt; ShowS
+showList :: [ActionError] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Typeable</span></span><span class="hs-special">)</span><span>
+</span><span id="line-134"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119851"><span id="local-6989586621679119855"><span id="local-6989586621679119858"><span class="annot"><span class="hs-identifier hs-type">E.Exception</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionError"><span class="hs-identifier hs-type">ActionError</span></a></span></span></span></span><span>
+</span><span id="line-135"></span><span>
+</span><span id="line-136"></span><span id="local-6989586621679119432"><span id="local-6989586621679119434"><span class="annot"><a href="Web.Scotty.Internal.Types.html#tryNext"><span class="hs-identifier hs-type">tryNext</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679119432"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679119432"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119434"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679119432"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span></span></span><span>
+</span><span id="line-137"></span><span id="tryNext"><span class="annot"><span class="annottext">tryNext :: forall (m :: * -&gt; *) a. MonadUnliftIO m =&gt; m a -&gt; m Bool
+</span><a href="Web.Scotty.Internal.Types.html#tryNext"><span class="hs-identifier hs-var hs-var">tryNext</span></a></span></span><span> </span><span id="local-6989586621679119875"><span class="annot"><span class="annottext">m a
+</span><a href="#local-6989586621679119875"><span class="hs-identifier hs-var">io</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">m Bool -&gt; (ActionError -&gt; m Bool) -&gt; m Bool
+forall (m :: * -&gt; *) e a.
+(MonadUnliftIO m, Exception e) =&gt;
+m a -&gt; (e -&gt; m a) -&gt; m a
+</span><span class="hs-identifier hs-var">catch</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">m a
+</span><a href="#local-6989586621679119875"><span class="hs-identifier hs-var">io</span></a></span><span> </span><span class="annot"><span class="annottext">m a -&gt; m Bool -&gt; m Bool
+forall a b. m a -&gt; m b -&gt; m b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; m b -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Bool -&gt; m Bool
+forall a. a -&gt; m a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">((ActionError -&gt; m Bool) -&gt; m Bool)
+-&gt; (ActionError -&gt; m Bool) -&gt; m Bool
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679119876"><span class="annot"><span class="annottext">ActionError
+</span><a href="#local-6989586621679119876"><span class="hs-identifier hs-var">e</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-138"></span><span>  </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">ActionError
+</span><a href="#local-6989586621679119876"><span class="hs-identifier hs-var">e</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-139"></span><span>    </span><span class="annot"><span class="annottext">ActionError
+</span><a href="Web.Scotty.Internal.Types.html#AENext"><span class="hs-identifier hs-var">AENext</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; m Bool
+forall a. a -&gt; m a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span>
+</span><span id="line-140"></span><span>    </span><span class="annot"><span class="annottext">ActionError
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; m Bool
+forall a. a -&gt; m a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span>
+</span><span id="line-141"></span><span>
+</span><span id="line-142"></span><span class="annot"><span class="hs-comment">-- | E.g. when a parameter is not found in a query string (400 Bad Request) or when parsing a JSON body fails (422 Unprocessable Entity)</span></span><span>
+</span><span id="line-143"></span><span class="hs-keyword">data</span><span> </span><span id="StatusError"><span class="annot"><a href="Web.Scotty.Internal.Types.html#StatusError"><span class="hs-identifier hs-var">StatusError</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="StatusError"><span class="annot"><a href="Web.Scotty.Internal.Types.html#StatusError"><span class="hs-identifier hs-var">StatusError</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Status</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679119879"><span id="local-6989586621679119885"><span id="local-6989586621679119889"><span class="annot"><span class="annottext">Int -&gt; StatusError -&gt; ShowS
+[StatusError] -&gt; ShowS
+StatusError -&gt; String
+(Int -&gt; StatusError -&gt; ShowS)
+-&gt; (StatusError -&gt; String)
+-&gt; ([StatusError] -&gt; ShowS)
+-&gt; Show StatusError
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; StatusError -&gt; ShowS
+showsPrec :: Int -&gt; StatusError -&gt; ShowS
+$cshow :: StatusError -&gt; String
+show :: StatusError -&gt; String
+$cshowList :: [StatusError] -&gt; ShowS
+showList :: [StatusError] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Typeable</span></span><span class="hs-special">)</span><span>
+</span><span id="line-144"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119896"><span id="local-6989586621679119900"><span id="local-6989586621679119903"><span class="annot"><span class="hs-identifier hs-type">E.Exception</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#StatusError"><span class="hs-identifier hs-type">StatusError</span></a></span></span></span></span><span>
+</span><span id="line-145"></span><span class="hs-pragma">{-# DEPRECATED</span><span> </span><span class="hs-pragma">StatusError</span><span> </span><span class="hs-pragma">&quot;If it is supposed to be caught, a proper exception type should be defined&quot;</span><span> </span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-146"></span><span>
+</span><span id="line-147"></span><span class="annot"><span class="hs-comment">-- | Specializes a 'Handler' to the 'ActionT' monad</span></span><span>
+</span><span id="line-148"></span><span class="hs-keyword">type</span><span> </span><span id="ErrorHandler"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ErrorHandler"><span class="hs-identifier hs-var">ErrorHandler</span></a></span></span><span> </span><span id="local-6989586621679119907"><span class="annot"><a href="#local-6989586621679119907"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Handler</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119907"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-149"></span><span>
+</span><span id="line-150"></span><span class="annot"><span class="hs-comment">-- | Thrown e.g. when a request is too large</span></span><span>
+</span><span id="line-151"></span><span class="hs-keyword">data</span><span> </span><span id="ScottyException"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyException"><span class="hs-identifier hs-var">ScottyException</span></a></span></span><span>
+</span><span id="line-152"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span id="RequestTooLarge"><span class="annot"><a href="Web.Scotty.Internal.Types.html#RequestTooLarge"><span class="hs-identifier hs-var">RequestTooLarge</span></a></span></span><span>
+</span><span id="line-153"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="MalformedJSON"><span class="annot"><a href="Web.Scotty.Internal.Types.html#MalformedJSON"><span class="hs-identifier hs-var">MalformedJSON</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">LBS8.ByteString</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-154"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="FailedToParseJSON"><span class="annot"><a href="Web.Scotty.Internal.Types.html#FailedToParseJSON"><span class="hs-identifier hs-var">FailedToParseJSON</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">LBS8.ByteString</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-155"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="PathParameterNotFound"><span class="annot"><a href="Web.Scotty.Internal.Types.html#PathParameterNotFound"><span class="hs-identifier hs-var">PathParameterNotFound</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-156"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="QueryParameterNotFound"><span class="annot"><a href="Web.Scotty.Internal.Types.html#QueryParameterNotFound"><span class="hs-identifier hs-var">QueryParameterNotFound</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-157"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="FormFieldNotFound"><span class="annot"><a href="Web.Scotty.Internal.Types.html#FormFieldNotFound"><span class="hs-identifier hs-var">FormFieldNotFound</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-158"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="FailedToParseParameter"><span class="annot"><a href="Web.Scotty.Internal.Types.html#FailedToParseParameter"><span class="hs-identifier hs-var">FailedToParseParameter</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-159"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679119916"><span id="local-6989586621679119935"><span id="local-6989586621679119939"><span class="annot"><span class="annottext">Int -&gt; ScottyException -&gt; ShowS
+[ScottyException] -&gt; ShowS
+ScottyException -&gt; String
+(Int -&gt; ScottyException -&gt; ShowS)
+-&gt; (ScottyException -&gt; String)
+-&gt; ([ScottyException] -&gt; ShowS)
+-&gt; Show ScottyException
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ScottyException -&gt; ShowS
+showsPrec :: Int -&gt; ScottyException -&gt; ShowS
+$cshow :: ScottyException -&gt; String
+show :: ScottyException -&gt; String
+$cshowList :: [ScottyException] -&gt; ShowS
+showList :: [ScottyException] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Typeable</span></span><span class="hs-special">)</span><span>
+</span><span id="line-160"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119946"><span id="local-6989586621679119950"><span id="local-6989586621679119953"><span class="annot"><span class="hs-identifier hs-type">E.Exception</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyException"><span class="hs-identifier hs-type">ScottyException</span></a></span></span></span></span><span>
+</span><span id="line-161"></span><span>
+</span><span id="line-162"></span><span class="hs-comment">------------------ Scotty Actions -------------------</span><span>
+</span><span id="line-163"></span><span class="hs-keyword">type</span><span> </span><span id="Param"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-var">Param</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-164"></span><span>
+</span><span id="line-165"></span><span class="hs-keyword">type</span><span> </span><span id="File"><span class="annot"><a href="Web.Scotty.Internal.Types.html#File"><span class="hs-identifier hs-var">File</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FileInfo</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">LBS8.ByteString</span></span><span class="hs-special">)</span><span>
+</span><span id="line-166"></span><span>
+</span><span id="line-167"></span><span class="hs-keyword">data</span><span> </span><span id="ActionEnv"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionEnv"><span class="hs-identifier hs-var">ActionEnv</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Env"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Env"><span class="hs-identifier hs-var">Env</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="envReq"><span class="annot"><span class="annottext">ActionEnv -&gt; Request
+</span><a href="Web.Scotty.Internal.Types.html#envReq"><span class="hs-identifier hs-var hs-var">envReq</span></a></span></span><span>       </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Request</span></span><span>
+</span><span id="line-168"></span><span>                     </span><span class="hs-special">,</span><span> </span><span id="envPathParams"><span class="annot"><span class="annottext">ActionEnv -&gt; [Param]
+</span><a href="Web.Scotty.Internal.Types.html#envPathParams"><span class="hs-identifier hs-var hs-var">envPathParams</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-169"></span><span>                     </span><span class="hs-special">,</span><span> </span><span id="envFormParams"><span class="annot"><span class="annottext">ActionEnv -&gt; [Param]
+</span><a href="Web.Scotty.Internal.Types.html#envFormParams"><span class="hs-identifier hs-var hs-var">envFormParams</span></a></span></span><span>    </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-170"></span><span>                     </span><span class="hs-special">,</span><span> </span><span id="envQueryParams"><span class="annot"><span class="annottext">ActionEnv -&gt; [Param]
+</span><a href="Web.Scotty.Internal.Types.html#envQueryParams"><span class="hs-identifier hs-var hs-var">envQueryParams</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-171"></span><span>                     </span><span class="hs-special">,</span><span> </span><span id="envBody"><span class="annot"><span class="annottext">ActionEnv -&gt; IO ByteString
+</span><a href="Web.Scotty.Internal.Types.html#envBody"><span class="hs-identifier hs-var hs-var">envBody</span></a></span></span><span>      </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">LBS8.ByteString</span></span><span>
+</span><span id="line-172"></span><span>                     </span><span class="hs-special">,</span><span> </span><span id="envBodyChunk"><span class="annot"><span class="annottext">ActionEnv -&gt; IO ByteString
+</span><a href="Web.Scotty.Internal.Types.html#envBodyChunk"><span class="hs-identifier hs-var hs-var">envBodyChunk</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span>
+</span><span id="line-173"></span><span>                     </span><span class="hs-special">,</span><span> </span><span id="envFiles"><span class="annot"><span class="annottext">ActionEnv -&gt; [File]
+</span><a href="Web.Scotty.Internal.Types.html#envFiles"><span class="hs-identifier hs-var hs-var">envFiles</span></a></span></span><span>     </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#File"><span class="hs-identifier hs-type">File</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-174"></span><span>                     </span><span class="hs-special">,</span><span> </span><span id="envResponse"><span class="annot"><span class="annottext">ActionEnv -&gt; TVar ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#envResponse"><span class="hs-identifier hs-var hs-var">envResponse</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">TVar</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span>
+</span><span id="line-175"></span><span>                     </span><span class="hs-special">}</span><span>
+</span><span id="line-176"></span><span>
+</span><span id="line-177"></span><span id="local-6989586621679119456"><span class="annot"><a href="Web.Scotty.Internal.Types.html#getResponse"><span class="hs-identifier hs-type">getResponse</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679119456"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionEnv"><span class="hs-identifier hs-type">ActionEnv</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679119456"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span></span><span>
+</span><span id="line-178"></span><span id="getResponse"><span class="annot"><span class="annottext">getResponse :: forall (m :: * -&gt; *). MonadIO m =&gt; ActionEnv -&gt; m ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#getResponse"><span class="hs-identifier hs-var hs-var">getResponse</span></a></span></span><span> </span><span id="local-6989586621679119967"><span class="annot"><span class="annottext">ActionEnv
+</span><a href="#local-6989586621679119967"><span class="hs-identifier hs-var">ae</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO ScottyResponse -&gt; m ScottyResponse
+forall a. IO a -&gt; m a
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; m a
+</span><span class="hs-identifier hs-var">liftIO</span></span><span> </span><span class="annot"><span class="annottext">(IO ScottyResponse -&gt; m ScottyResponse)
+-&gt; IO ScottyResponse -&gt; m ScottyResponse
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">TVar ScottyResponse -&gt; IO ScottyResponse
+forall a. TVar a -&gt; IO a
+</span><span class="hs-identifier hs-var">readTVarIO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ActionEnv -&gt; TVar ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#envResponse"><span class="hs-identifier hs-var">envResponse</span></a></span><span> </span><span class="annot"><span class="annottext">ActionEnv
+</span><a href="#local-6989586621679119967"><span class="hs-identifier hs-var">ae</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-179"></span><span>
+</span><span id="line-180"></span><span id="local-6989586621679119460"><span class="annot"><a href="Web.Scotty.Internal.Types.html#getResponseAction"><span class="hs-identifier hs-type">getResponseAction</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679119460"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119460"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span></span><span>
+</span><span id="line-181"></span><span id="getResponseAction"><span class="annot"><span class="annottext">getResponseAction :: forall (m :: * -&gt; *). MonadIO m =&gt; ActionT m ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#getResponseAction"><span class="hs-identifier hs-var hs-var">getResponseAction</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-182"></span><span>  </span><span id="local-6989586621679119978"><span class="annot"><span class="annottext">ActionEnv
+</span><a href="#local-6989586621679119978"><span class="hs-identifier hs-var">ae</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">ReaderT ActionEnv m ActionEnv -&gt; ActionT m ActionEnv
+forall (m :: * -&gt; *) a. ReaderT ActionEnv m a -&gt; ActionT m a
+</span><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-var">ActionT</span></a></span><span> </span><span class="annot"><span class="annottext">ReaderT ActionEnv m ActionEnv
+forall r (m :: * -&gt; *). MonadReader r m =&gt; m r
+</span><span class="hs-identifier hs-var">ask</span></span><span>
+</span><span id="line-183"></span><span>  </span><span class="annot"><span class="annottext">ActionEnv -&gt; ActionT m ScottyResponse
+forall (m :: * -&gt; *). MonadIO m =&gt; ActionEnv -&gt; m ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#getResponse"><span class="hs-identifier hs-var">getResponse</span></a></span><span> </span><span class="annot"><span class="annottext">ActionEnv
+</span><a href="#local-6989586621679119978"><span class="hs-identifier hs-var">ae</span></a></span><span>
+</span><span id="line-184"></span><span>
+</span><span id="line-185"></span><span id="local-6989586621679119473"><span class="annot"><a href="Web.Scotty.Internal.Types.html#modifyResponse"><span class="hs-identifier hs-type">modifyResponse</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679119473"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119473"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-186"></span><span id="modifyResponse"><span class="annot"><span class="annottext">modifyResponse :: forall (m :: * -&gt; *).
+MonadIO m =&gt;
+(ScottyResponse -&gt; ScottyResponse) -&gt; ActionT m ()
+</span><a href="Web.Scotty.Internal.Types.html#modifyResponse"><span class="hs-identifier hs-var hs-var">modifyResponse</span></a></span></span><span> </span><span id="local-6989586621679119986"><span class="annot"><span class="annottext">ScottyResponse -&gt; ScottyResponse
+</span><a href="#local-6989586621679119986"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-187"></span><span>  </span><span id="local-6989586621679119987"><span class="annot"><span class="annottext">TVar ScottyResponse
+</span><a href="#local-6989586621679119987"><span class="hs-identifier hs-var">tv</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">ReaderT ActionEnv m (TVar ScottyResponse)
+-&gt; ActionT m (TVar ScottyResponse)
+forall (m :: * -&gt; *) a. ReaderT ActionEnv m a -&gt; ActionT m a
+</span><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-var">ActionT</span></a></span><span> </span><span class="annot"><span class="annottext">(ReaderT ActionEnv m (TVar ScottyResponse)
+ -&gt; ActionT m (TVar ScottyResponse))
+-&gt; ReaderT ActionEnv m (TVar ScottyResponse)
+-&gt; ActionT m (TVar ScottyResponse)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">(ActionEnv -&gt; TVar ScottyResponse)
+-&gt; ReaderT ActionEnv m (TVar ScottyResponse)
+forall r (m :: * -&gt; *) a. MonadReader r m =&gt; (r -&gt; a) -&gt; m a
+</span><span class="hs-identifier hs-var">asks</span></span><span> </span><span class="annot"><span class="annottext">ActionEnv -&gt; TVar ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#envResponse"><span class="hs-identifier hs-var">envResponse</span></a></span><span>
+</span><span id="line-188"></span><span>  </span><span class="annot"><span class="annottext">IO () -&gt; ActionT m ()
+forall a. IO a -&gt; ActionT m a
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; m a
+</span><span class="hs-identifier hs-var">liftIO</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; ActionT m ()) -&gt; IO () -&gt; ActionT m ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">STM () -&gt; IO ()
+forall a. STM a -&gt; IO a
+</span><span class="hs-identifier hs-var">atomically</span></span><span> </span><span class="annot"><span class="annottext">(STM () -&gt; IO ()) -&gt; STM () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">TVar ScottyResponse -&gt; (ScottyResponse -&gt; ScottyResponse) -&gt; STM ()
+forall a. TVar a -&gt; (a -&gt; a) -&gt; STM ()
+</span><span class="hs-identifier hs-var">modifyTVar'</span></span><span> </span><span class="annot"><span class="annottext">TVar ScottyResponse
+</span><a href="#local-6989586621679119987"><span class="hs-identifier hs-var">tv</span></a></span><span> </span><span class="annot"><span class="annottext">ScottyResponse -&gt; ScottyResponse
+</span><a href="#local-6989586621679119986"><span class="hs-identifier hs-var">f</span></a></span><span>
+</span><span id="line-189"></span><span>
+</span><span id="line-190"></span><span class="hs-keyword">data</span><span> </span><span id="BodyPartiallyStreamed"><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyPartiallyStreamed"><span class="hs-identifier hs-var">BodyPartiallyStreamed</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="BodyPartiallyStreamed"><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyPartiallyStreamed"><span class="hs-identifier hs-var">BodyPartiallyStreamed</span></a></span></span><span> </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679119990"><span id="local-6989586621679119992"><span id="local-6989586621679119996"><span class="annot"><span class="annottext">Int -&gt; BodyPartiallyStreamed -&gt; ShowS
+[BodyPartiallyStreamed] -&gt; ShowS
+BodyPartiallyStreamed -&gt; String
+(Int -&gt; BodyPartiallyStreamed -&gt; ShowS)
+-&gt; (BodyPartiallyStreamed -&gt; String)
+-&gt; ([BodyPartiallyStreamed] -&gt; ShowS)
+-&gt; Show BodyPartiallyStreamed
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; BodyPartiallyStreamed -&gt; ShowS
+showsPrec :: Int -&gt; BodyPartiallyStreamed -&gt; ShowS
+$cshow :: BodyPartiallyStreamed -&gt; String
+show :: BodyPartiallyStreamed -&gt; String
+$cshowList :: [BodyPartiallyStreamed] -&gt; ShowS
+showList :: [BodyPartiallyStreamed] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Typeable</span></span><span class="hs-special">)</span><span>
+</span><span id="line-191"></span><span>
+</span><span id="line-192"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679120003"><span id="local-6989586621679120007"><span id="local-6989586621679120010"><span class="annot"><span class="hs-identifier hs-type">E.Exception</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyPartiallyStreamed"><span class="hs-identifier hs-type">BodyPartiallyStreamed</span></a></span></span></span></span><span>
+</span><span id="line-193"></span><span>
+</span><span id="line-194"></span><span class="hs-keyword">data</span><span> </span><span id="Content"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Content"><span class="hs-identifier hs-var">Content</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ContentBuilder"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ContentBuilder"><span class="hs-identifier hs-var">ContentBuilder</span></a></span></span><span>  </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span>
+</span><span id="line-195"></span><span>             </span><span class="hs-glyph">|</span><span> </span><span id="ContentFile"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ContentFile"><span class="hs-identifier hs-var">ContentFile</span></a></span></span><span>     </span><span class="annot"><span class="hs-identifier hs-type">FilePath</span></span><span>
+</span><span id="line-196"></span><span>             </span><span class="hs-glyph">|</span><span> </span><span id="ContentStream"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ContentStream"><span class="hs-identifier hs-var">ContentStream</span></a></span></span><span>   </span><span class="annot"><span class="hs-identifier hs-type">StreamingBody</span></span><span>
+</span><span id="line-197"></span><span>             </span><span class="hs-glyph">|</span><span> </span><span id="ContentResponse"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ContentResponse"><span class="hs-identifier hs-var">ContentResponse</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Response</span></span><span>
+</span><span id="line-198"></span><span>
+</span><span id="line-199"></span><span class="hs-keyword">data</span><span> </span><span id="ScottyResponse"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-var">ScottyResponse</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="SR"><span class="annot"><a href="Web.Scotty.Internal.Types.html#SR"><span class="hs-identifier hs-var">SR</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="srStatus"><span class="annot"><span class="annottext">ScottyResponse -&gt; Status
+</span><a href="Web.Scotty.Internal.Types.html#srStatus"><span class="hs-identifier hs-var hs-var">srStatus</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Status</span></span><span>
+</span><span id="line-200"></span><span>                         </span><span class="hs-special">,</span><span> </span><span id="srHeaders"><span class="annot"><span class="annottext">ScottyResponse -&gt; ResponseHeaders
+</span><a href="Web.Scotty.Internal.Types.html#srHeaders"><span class="hs-identifier hs-var hs-var">srHeaders</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ResponseHeaders</span></span><span>
+</span><span id="line-201"></span><span>                         </span><span class="hs-special">,</span><span> </span><span id="srContent"><span class="annot"><span class="annottext">ScottyResponse -&gt; Content
+</span><a href="Web.Scotty.Internal.Types.html#srContent"><span class="hs-identifier hs-var hs-var">srContent</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Content"><span class="hs-identifier hs-type">Content</span></a></span><span>
+</span><span id="line-202"></span><span>                         </span><span class="hs-special">}</span><span>
+</span><span id="line-203"></span><span>
+</span><span id="line-204"></span><span class="annot"><a href="Web.Scotty.Internal.Types.html#setContent"><span class="hs-identifier hs-type">setContent</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Content"><span class="hs-identifier hs-type">Content</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span>
+</span><span id="line-205"></span><span id="setContent"><span class="annot"><span class="annottext">setContent :: Content -&gt; ScottyResponse -&gt; ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#setContent"><span class="hs-identifier hs-var hs-var">setContent</span></a></span></span><span> </span><span id="local-6989586621679120023"><span class="annot"><span class="annottext">Content
+</span><a href="#local-6989586621679120023"><span class="hs-identifier hs-var">c</span></a></span></span><span> </span><span id="local-6989586621679120024"><span class="annot"><span class="annottext">ScottyResponse
+</span><a href="#local-6989586621679120024"><span class="hs-identifier hs-var">sr</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ScottyResponse
+</span><a href="#local-6989586621679120024"><span class="hs-identifier hs-var">sr</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#srContent"><span class="hs-identifier hs-var">srContent</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679120023"><span class="hs-identifier hs-type">c</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-206"></span><span>
+</span><span id="line-207"></span><span class="annot"><a href="Web.Scotty.Internal.Types.html#setHeaderWith"><span class="hs-identifier hs-type">setHeaderWith</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">HeaderName</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span class="hs-special">)</span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">HeaderName</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span class="hs-special">)</span><span class="hs-special">]</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span>
+</span><span id="line-208"></span><span id="setHeaderWith"><span class="annot"><span class="annottext">setHeaderWith :: (ResponseHeaders -&gt; ResponseHeaders)
+-&gt; ScottyResponse -&gt; ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#setHeaderWith"><span class="hs-identifier hs-var hs-var">setHeaderWith</span></a></span></span><span> </span><span id="local-6989586621679120027"><span class="annot"><span class="annottext">ResponseHeaders -&gt; ResponseHeaders
+</span><a href="#local-6989586621679120027"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span id="local-6989586621679120028"><span class="annot"><span class="annottext">ScottyResponse
+</span><a href="#local-6989586621679120028"><span class="hs-identifier hs-var">sr</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ScottyResponse
+</span><a href="#local-6989586621679120028"><span class="hs-identifier hs-var">sr</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#srHeaders"><span class="hs-identifier hs-var">srHeaders</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679120027"><span class="hs-identifier hs-type">f</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#srHeaders"><span class="hs-identifier hs-var">srHeaders</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679120028"><span class="hs-identifier hs-type">sr</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-209"></span><span>
+</span><span id="line-210"></span><span class="annot"><a href="Web.Scotty.Internal.Types.html#setStatus"><span class="hs-identifier hs-type">setStatus</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Status</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span>
+</span><span id="line-211"></span><span id="setStatus"><span class="annot"><span class="annottext">setStatus :: Status -&gt; ScottyResponse -&gt; ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#setStatus"><span class="hs-identifier hs-var hs-var">setStatus</span></a></span></span><span> </span><span id="local-6989586621679120030"><span class="annot"><span class="annottext">Status
+</span><a href="#local-6989586621679120030"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span id="local-6989586621679120031"><span class="annot"><span class="annottext">ScottyResponse
+</span><a href="#local-6989586621679120031"><span class="hs-identifier hs-var">sr</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ScottyResponse
+</span><a href="#local-6989586621679120031"><span class="hs-identifier hs-var">sr</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#srStatus"><span class="hs-identifier hs-var">srStatus</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679120030"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-212"></span><span>
+</span><span id="line-213"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Default</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-214"></span><span>  </span><span id="local-6989586621679120034"><span class="annot"><span class="annottext">def :: ScottyResponse
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">def</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#defaultScottyResponse"><span class="hs-identifier hs-var">defaultScottyResponse</span></a></span><span>
+</span><span id="line-215"></span><span>
+</span><span id="line-216"></span><span class="annot"><span class="hs-comment">-- | The default response has code 200 OK and empty body</span></span><span>
+</span><span id="line-217"></span><span class="annot"><a href="Web.Scotty.Internal.Types.html#defaultScottyResponse"><span class="hs-identifier hs-type">defaultScottyResponse</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyResponse"><span class="hs-identifier hs-type">ScottyResponse</span></a></span><span>
+</span><span id="line-218"></span><span id="defaultScottyResponse"><span class="annot"><span class="annottext">defaultScottyResponse :: ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#defaultScottyResponse"><span class="hs-identifier hs-var hs-var">defaultScottyResponse</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Status -&gt; ResponseHeaders -&gt; Content -&gt; ScottyResponse
+</span><a href="Web.Scotty.Internal.Types.html#SR"><span class="hs-identifier hs-var">SR</span></a></span><span> </span><span class="annot"><span class="annottext">Status
+</span><span class="hs-identifier hs-var">status200</span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Builder -&gt; Content
+</span><a href="Web.Scotty.Internal.Types.html#ContentBuilder"><span class="hs-identifier hs-var">ContentBuilder</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">)</span><span>
+</span><span id="line-219"></span><span>
+</span><span id="line-220"></span><span>
+</span><span id="line-221"></span><span class="hs-keyword">newtype</span><span> </span><span id="ActionT"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-var">ActionT</span></a></span></span><span> </span><span id="local-6989586621679119469"><span class="annot"><a href="#local-6989586621679119469"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span id="local-6989586621679119470"><span class="annot"><a href="#local-6989586621679119470"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ActionT"><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-var">ActionT</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="runAM"><span class="annot"><span class="annottext">forall (m :: * -&gt; *) a. ActionT m a -&gt; ReaderT ActionEnv m a
+</span><a href="Web.Scotty.Internal.Types.html#runAM"><span class="hs-identifier hs-var hs-var">runAM</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ReaderT</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionEnv"><span class="hs-identifier hs-type">ActionEnv</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119469"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119470"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-222"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="annot"><span class="hs-keyword">newtype</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679120040"><span id="local-6989586621679120045"><span class="annot"><span class="annottext">(forall a b. (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b)
+-&gt; (forall a b. a -&gt; ActionT m b -&gt; ActionT m a)
+-&gt; Functor (ActionT m)
+forall a b. a -&gt; ActionT m b -&gt; ActionT m a
+forall a b. (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+a -&gt; ActionT m b -&gt; ActionT m a
+forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+(a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+forall (f :: * -&gt; *).
+(forall a b. (a -&gt; b) -&gt; f a -&gt; f b)
+-&gt; (forall a b. a -&gt; f b -&gt; f a) -&gt; Functor f
+$cfmap :: forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+(a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+fmap :: forall a b. (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+$c&lt;$ :: forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+a -&gt; ActionT m b -&gt; ActionT m a
+&lt;$ :: forall a b. a -&gt; ActionT m b -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Functor</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120054"><span id="local-6989586621679120059"><span id="local-6989586621679120063"><span id="local-6989586621679120067"><span id="local-6989586621679120071"><span class="annot"><span class="annottext">Functor (ActionT m)
+Functor (ActionT m) =&gt;
+(forall a. a -&gt; ActionT m a)
+-&gt; (forall a b. ActionT m (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b)
+-&gt; (forall a b c.
+    (a -&gt; b -&gt; c) -&gt; ActionT m a -&gt; ActionT m b -&gt; ActionT m c)
+-&gt; (forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m b)
+-&gt; (forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m a)
+-&gt; Applicative (ActionT m)
+forall a. a -&gt; ActionT m a
+forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m a
+forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m b
+forall a b. ActionT m (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+forall a b c.
+(a -&gt; b -&gt; c) -&gt; ActionT m a -&gt; ActionT m b -&gt; ActionT m c
+forall (f :: * -&gt; *).
+Functor f =&gt;
+(forall a. a -&gt; f a)
+-&gt; (forall a b. f (a -&gt; b) -&gt; f a -&gt; f b)
+-&gt; (forall a b c. (a -&gt; b -&gt; c) -&gt; f a -&gt; f b -&gt; f c)
+-&gt; (forall a b. f a -&gt; f b -&gt; f b)
+-&gt; (forall a b. f a -&gt; f b -&gt; f a)
+-&gt; Applicative f
+forall (m :: * -&gt; *). Applicative m =&gt; Functor (ActionT m)
+forall (m :: * -&gt; *) a. Applicative m =&gt; a -&gt; ActionT m a
+forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+ActionT m a -&gt; ActionT m b -&gt; ActionT m a
+forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+ActionT m a -&gt; ActionT m b -&gt; ActionT m b
+forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+ActionT m (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+forall (m :: * -&gt; *) a b c.
+Applicative m =&gt;
+(a -&gt; b -&gt; c) -&gt; ActionT m a -&gt; ActionT m b -&gt; ActionT m c
+$cpure :: forall (m :: * -&gt; *) a. Applicative m =&gt; a -&gt; ActionT m a
+pure :: forall a. a -&gt; ActionT m a
+$c&lt;*&gt; :: forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+ActionT m (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+&lt;*&gt; :: forall a b. ActionT m (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+$cliftA2 :: forall (m :: * -&gt; *) a b c.
+Applicative m =&gt;
+(a -&gt; b -&gt; c) -&gt; ActionT m a -&gt; ActionT m b -&gt; ActionT m c
+liftA2 :: forall a b c.
+(a -&gt; b -&gt; c) -&gt; ActionT m a -&gt; ActionT m b -&gt; ActionT m c
+$c*&gt; :: forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+ActionT m a -&gt; ActionT m b -&gt; ActionT m b
+*&gt; :: forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m b
+$c&lt;* :: forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+ActionT m a -&gt; ActionT m b -&gt; ActionT m a
+&lt;* :: forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Applicative</span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120081"><span id="local-6989586621679120086"><span id="local-6989586621679120090"><span class="annot"><span class="annottext">Applicative (ActionT m)
+Applicative (ActionT m) =&gt;
+(forall a b. ActionT m a -&gt; (a -&gt; ActionT m b) -&gt; ActionT m b)
+-&gt; (forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m b)
+-&gt; (forall a. a -&gt; ActionT m a)
+-&gt; Monad (ActionT m)
+forall a. a -&gt; ActionT m a
+forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m b
+forall a b. ActionT m a -&gt; (a -&gt; ActionT m b) -&gt; ActionT m b
+forall (m :: * -&gt; *). Monad m =&gt; Applicative (ActionT m)
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; ActionT m a
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+ActionT m a -&gt; ActionT m b -&gt; ActionT m b
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+ActionT m a -&gt; (a -&gt; ActionT m b) -&gt; ActionT m b
+forall (m :: * -&gt; *).
+Applicative m =&gt;
+(forall a b. m a -&gt; (a -&gt; m b) -&gt; m b)
+-&gt; (forall a b. m a -&gt; m b -&gt; m b)
+-&gt; (forall a. a -&gt; m a)
+-&gt; Monad m
+$c&gt;&gt;= :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+ActionT m a -&gt; (a -&gt; ActionT m b) -&gt; ActionT m b
+&gt;&gt;= :: forall a b. ActionT m a -&gt; (a -&gt; ActionT m b) -&gt; ActionT m b
+$c&gt;&gt; :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+ActionT m a -&gt; ActionT m b -&gt; ActionT m b
+&gt;&gt; :: forall a b. ActionT m a -&gt; ActionT m b -&gt; ActionT m b
+$creturn :: forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; ActionT m a
+return :: forall a. a -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Monad</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120098"><span class="annot"><span class="annottext">Monad (ActionT m)
+Monad (ActionT m) =&gt;
+(forall a. IO a -&gt; ActionT m a) -&gt; MonadIO (ActionT m)
+forall a. IO a -&gt; ActionT m a
+forall (m :: * -&gt; *).
+Monad m =&gt;
+(forall a. IO a -&gt; m a) -&gt; MonadIO m
+forall (m :: * -&gt; *). MonadIO m =&gt; Monad (ActionT m)
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; ActionT m a
+$cliftIO :: forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; ActionT m a
+liftIO :: forall a. IO a -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadIO</span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120108"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Monad m =&gt; Monad (ActionT m)) =&gt;
+(forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; ActionT m a)
+-&gt; MonadTrans ActionT
+forall (m :: * -&gt; *). Monad m =&gt; Monad (ActionT m)
+forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; ActionT m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *).
+(forall (m :: * -&gt; *). Monad m =&gt; Monad (t m)) =&gt;
+(forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; t m a) -&gt; MonadTrans t
+$clift :: forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; ActionT m a
+lift :: forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadTrans</span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120126"><span class="annot"><span class="annottext">Monad (ActionT m)
+Monad (ActionT m) =&gt;
+(forall e a. (HasCallStack, Exception e) =&gt; e -&gt; ActionT m a)
+-&gt; MonadThrow (ActionT m)
+forall e a. (HasCallStack, Exception e) =&gt; e -&gt; ActionT m a
+forall (m :: * -&gt; *).
+Monad m =&gt;
+(forall e a. (HasCallStack, Exception e) =&gt; e -&gt; m a)
+-&gt; MonadThrow m
+forall (m :: * -&gt; *). MonadThrow m =&gt; Monad (ActionT m)
+forall (m :: * -&gt; *) e a.
+(MonadThrow m, HasCallStack, Exception e) =&gt;
+e -&gt; ActionT m a
+$cthrowM :: forall (m :: * -&gt; *) e a.
+(MonadThrow m, HasCallStack, Exception e) =&gt;
+e -&gt; ActionT m a
+throwM :: forall e a. (HasCallStack, Exception e) =&gt; e -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadThrow</span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120148"><span class="annot"><span class="annottext">MonadThrow (ActionT m)
+MonadThrow (ActionT m) =&gt;
+(forall e a.
+ (HasCallStack, Exception e) =&gt;
+ ActionT m a -&gt; (e -&gt; ActionT m a) -&gt; ActionT m a)
+-&gt; MonadCatch (ActionT m)
+forall e a.
+(HasCallStack, Exception e) =&gt;
+ActionT m a -&gt; (e -&gt; ActionT m a) -&gt; ActionT m a
+forall (m :: * -&gt; *). MonadCatch m =&gt; MonadThrow (ActionT m)
+forall (m :: * -&gt; *) e a.
+(MonadCatch m, HasCallStack, Exception e) =&gt;
+ActionT m a -&gt; (e -&gt; ActionT m a) -&gt; ActionT m a
+forall (m :: * -&gt; *).
+MonadThrow m =&gt;
+(forall e a.
+ (HasCallStack, Exception e) =&gt;
+ m a -&gt; (e -&gt; m a) -&gt; m a)
+-&gt; MonadCatch m
+$ccatch :: forall (m :: * -&gt; *) e a.
+(MonadCatch m, HasCallStack, Exception e) =&gt;
+ActionT m a -&gt; (e -&gt; ActionT m a) -&gt; ActionT m a
+catch :: forall e a.
+(HasCallStack, Exception e) =&gt;
+ActionT m a -&gt; (e -&gt; ActionT m a) -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadCatch</span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120160"><span id="local-6989586621679120175"><span class="annot"><span class="hs-identifier hs-type">MonadBase</span></span><span> </span><span class="annot"><a href="#local-6989586621679120160"><span class="hs-identifier hs-type">b</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120185"><span id="local-6989586621679120191"><span id="local-6989586621679120197"><span class="annot"><span class="hs-identifier hs-type">MonadBaseControl</span></span><span> </span><span class="annot"><a href="#local-6989586621679120185"><span class="hs-identifier hs-type">b</span></a></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120211"><span id="local-6989586621679120221"><span class="annot"><span class="annottext">MonadTrans ActionT
+MonadTrans ActionT =&gt;
+(forall (m :: * -&gt; *) a.
+ Monad m =&gt;
+ (Run ActionT -&gt; m a) -&gt; ActionT m a)
+-&gt; (forall (m :: * -&gt; *) a.
+    Monad m =&gt;
+    m (StT ActionT a) -&gt; ActionT m a)
+-&gt; MonadTransControl ActionT
+forall (m :: * -&gt; *) a. Monad m =&gt; m (StT ActionT a) -&gt; ActionT m a
+forall (m :: * -&gt; *) a.
+Monad m =&gt;
+(Run ActionT -&gt; m a) -&gt; ActionT m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *).
+MonadTrans t =&gt;
+(forall (m :: * -&gt; *) a. Monad m =&gt; (Run t -&gt; m a) -&gt; t m a)
+-&gt; (forall (m :: * -&gt; *) a. Monad m =&gt; m (StT t a) -&gt; t m a)
+-&gt; MonadTransControl t
+$cliftWith :: forall (m :: * -&gt; *) a.
+Monad m =&gt;
+(Run ActionT -&gt; m a) -&gt; ActionT m a
+liftWith :: forall (m :: * -&gt; *) a.
+Monad m =&gt;
+(Run ActionT -&gt; m a) -&gt; ActionT m a
+$crestoreT :: forall (m :: * -&gt; *) a. Monad m =&gt; m (StT ActionT a) -&gt; ActionT m a
+restoreT :: forall (m :: * -&gt; *) a. Monad m =&gt; m (StT ActionT a) -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var">MonadTransControl</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679120234"><span class="annot"><span class="annottext">MonadIO (ActionT m)
+MonadIO (ActionT m) =&gt;
+(forall b.
+ ((forall a. ActionT m a -&gt; IO a) -&gt; IO b) -&gt; ActionT m b)
+-&gt; MonadUnliftIO (ActionT m)
+forall b. ((forall a. ActionT m a -&gt; IO a) -&gt; IO b) -&gt; ActionT m b
+forall (m :: * -&gt; *).
+MonadIO m =&gt;
+(forall b. ((forall a. m a -&gt; IO a) -&gt; IO b) -&gt; m b)
+-&gt; MonadUnliftIO m
+forall (m :: * -&gt; *). MonadUnliftIO m =&gt; MonadIO (ActionT m)
+forall (m :: * -&gt; *) b.
+MonadUnliftIO m =&gt;
+((forall a. ActionT m a -&gt; IO a) -&gt; IO b) -&gt; ActionT m b
+$cwithRunInIO :: forall (m :: * -&gt; *) b.
+MonadUnliftIO m =&gt;
+((forall a. ActionT m a -&gt; IO a) -&gt; IO b) -&gt; ActionT m b
+withRunInIO :: forall b. ((forall a. ActionT m a -&gt; IO a) -&gt; IO b) -&gt; ActionT m b
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadUnliftIO</span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-223"></span><span>
+</span><span id="line-224"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119611"><span id="local-6989586621679119612"><span id="local-6989586621679120247"><span class="annot"><span class="hs-identifier hs-type">MonadReader</span></span><span> </span><span class="annot"><a href="#local-6989586621679119611"><span class="hs-identifier hs-type">r</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119612"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadReader</span></span><span> </span><span class="annot"><a href="#local-6989586621679119611"><span class="hs-identifier hs-type">r</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119612"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-225"></span><span>  </span><span id="local-6989586621679120255"><span class="annot"><span class="annottext">ask :: ActionT m r
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">ask</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ReaderT ActionEnv m r -&gt; ActionT m r
+forall (m :: * -&gt; *) a. ReaderT ActionEnv m a -&gt; ActionT m a
+</span><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-var">ActionT</span></a></span><span> </span><span class="annot"><span class="annottext">(ReaderT ActionEnv m r -&gt; ActionT m r)
+-&gt; ReaderT ActionEnv m r -&gt; ActionT m r
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">m r -&gt; ReaderT ActionEnv m r
+forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; ReaderT ActionEnv m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *) (m :: * -&gt; *) a.
+(MonadTrans t, Monad m) =&gt;
+m a -&gt; t m a
+</span><span class="hs-identifier hs-var">lift</span></span><span> </span><span class="annot"><span class="annottext">m r
+forall r (m :: * -&gt; *). MonadReader r m =&gt; m r
+</span><span class="hs-identifier hs-var">ask</span></span><span>
+</span><span id="line-226"></span><span>  </span><span id="local-6989586621679120258"><span class="annot"><span class="annottext">local :: forall a. (r -&gt; r) -&gt; ActionT m a -&gt; ActionT m a
+</span><a href="#local-6989586621679120258"><span class="hs-identifier hs-var hs-var hs-var hs-var">local</span></a></span></span><span> </span><span id="local-6989586621679120260"><span class="annot"><span class="annottext">r -&gt; r
+</span><a href="#local-6989586621679120260"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ReaderT ActionEnv m a -&gt; ActionT m a
+forall (m :: * -&gt; *) a. ReaderT ActionEnv m a -&gt; ActionT m a
+</span><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-var">ActionT</span></a></span><span> </span><span class="annot"><span class="annottext">(ReaderT ActionEnv m a -&gt; ActionT m a)
+-&gt; (ActionT m a -&gt; ReaderT ActionEnv m a)
+-&gt; ActionT m a
+-&gt; ActionT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(m a -&gt; m a) -&gt; ReaderT ActionEnv m a -&gt; ReaderT ActionEnv m a
+forall (m :: * -&gt; *) a (n :: * -&gt; *) b r.
+(m a -&gt; n b) -&gt; ReaderT r m a -&gt; ReaderT r n b
+</span><span class="hs-identifier hs-var">mapReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(r -&gt; r) -&gt; m a -&gt; m a
+forall a. (r -&gt; r) -&gt; m a -&gt; m a
+forall r (m :: * -&gt; *) a. MonadReader r m =&gt; (r -&gt; r) -&gt; m a -&gt; m a
+</span><span class="hs-identifier hs-var">local</span></span><span> </span><span class="annot"><span class="annottext">r -&gt; r
+</span><a href="#local-6989586621679120260"><span class="hs-identifier hs-var">f</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT ActionEnv m a -&gt; ReaderT ActionEnv m a)
+-&gt; (ActionT m a -&gt; ReaderT ActionEnv m a)
+-&gt; ActionT m a
+-&gt; ReaderT ActionEnv m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ActionT m a -&gt; ReaderT ActionEnv m a
+forall (m :: * -&gt; *) a. ActionT m a -&gt; ReaderT ActionEnv m a
+</span><a href="Web.Scotty.Internal.Types.html#runAM"><span class="hs-identifier hs-var">runAM</span></a></span><span>
+</span><span id="line-227"></span><span>
+</span><span id="line-228"></span><span class="annot"><span class="hs-comment">-- | Models the invariant that only 'StatusError's can be thrown and caught.</span></span><span>
+</span><span id="line-229"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119628"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679119628"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadError</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#StatusError"><span class="hs-identifier hs-type">StatusError</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119628"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-230"></span><span>  </span><span id="local-6989586621679120272"><span class="annot"><span class="annottext">throwError :: forall a. StatusError -&gt; ActionT m a
+</span><a href="#local-6989586621679120272"><span class="hs-identifier hs-var hs-var hs-var hs-var">throwError</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">StatusError -&gt; ActionT m a
+forall a e. Exception e =&gt; e -&gt; a
+</span><span class="hs-identifier hs-var">E.throw</span></span><span>
+</span><span id="line-231"></span><span>  </span><span id="local-6989586621679120277"><span class="annot"><span class="annottext">catchError :: forall a.
+ActionT m a -&gt; (StatusError -&gt; ActionT m a) -&gt; ActionT m a
+</span><a href="#local-6989586621679120277"><span class="hs-identifier hs-var hs-var hs-var hs-var">catchError</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionT m a -&gt; (StatusError -&gt; ActionT m a) -&gt; ActionT m a
+forall (m :: * -&gt; *) e a.
+(MonadUnliftIO m, Exception e) =&gt;
+m a -&gt; (e -&gt; m a) -&gt; m a
+</span><span class="hs-identifier hs-var">catch</span></span><span>
+</span><span id="line-232"></span><span class="annot"><span class="hs-comment">-- | Modeled after the behaviour in scotty &lt; 0.20, 'fail' throws a 'StatusError' with code 500 (&quot;Server Error&quot;), which can be caught with 'E.catch'.</span></span><span>
+</span><span id="line-233"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119637"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679119637"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadFail</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119637"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-234"></span><span>  </span><span id="local-6989586621679120288"><span class="annot"><span class="annottext">fail :: forall a. String -&gt; ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">fail</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">StatusError -&gt; ActionT m a
+forall a e. Exception e =&gt; e -&gt; a
+</span><span class="hs-identifier hs-var">E.throw</span></span><span> </span><span class="annot"><span class="annottext">(StatusError -&gt; ActionT m a)
+-&gt; (String -&gt; StatusError) -&gt; String -&gt; ActionT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Status -&gt; Text -&gt; StatusError
+</span><a href="Web.Scotty.Internal.Types.html#StatusError"><span class="hs-identifier hs-var">StatusError</span></a></span><span> </span><span class="annot"><span class="annottext">Status
+</span><span class="hs-identifier hs-var">status500</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; StatusError) -&gt; (String -&gt; Text) -&gt; String -&gt; StatusError
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; Text
+</span><span class="hs-identifier hs-var">pack</span></span><span>
+</span><span id="line-235"></span><span class="annot"><span class="hs-comment">-- | 'empty' throws 'ActionError' 'AENext', whereas '(&lt;|&gt;)' catches any 'ActionError's or 'StatusError's in the first action and proceeds to the second one.</span></span><span>
+</span><span id="line-236"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119645"><span id="local-6989586621679120299"><span id="local-6989586621679120303"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679119645"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Alternative</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119645"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-237"></span><span>  </span><span id="local-6989586621679120309"><span class="annot"><span class="annottext">empty :: forall a. ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">empty</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionError -&gt; ActionT m a
+forall a e. Exception e =&gt; e -&gt; a
+</span><span class="hs-identifier hs-var">E.throw</span></span><span> </span><span class="annot"><span class="annottext">ActionError
+</span><a href="Web.Scotty.Internal.Types.html#AENext"><span class="hs-identifier hs-var">AENext</span></a></span><span>
+</span><span id="line-238"></span><span>  </span><span id="local-6989586621679120312"><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120312"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span id="local-6989586621679120313"><span class="annot"><span class="annottext">&lt;|&gt; :: forall a. ActionT m a -&gt; ActionT m a -&gt; ActionT m a
+</span><span class="hs-operator hs-var hs-var hs-var hs-var">&lt;|&gt;</span></span></span><span> </span><span id="local-6989586621679120314"><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120314"><span class="hs-identifier hs-var">b</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-239"></span><span>    </span><span id="local-6989586621679120315"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679120315"><span class="hs-identifier hs-var">ok</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">ActionT m a -&gt; ActionT m Bool
+forall (m :: * -&gt; *) a. MonadUnliftIO m =&gt; m a -&gt; m Bool
+</span><a href="Web.Scotty.Internal.Types.html#tryAnyStatus"><span class="hs-identifier hs-var">tryAnyStatus</span></a></span><span> </span><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120312"><span class="hs-identifier hs-var">a</span></a></span><span>
+</span><span id="line-240"></span><span>    </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679120315"><span class="hs-identifier hs-var">ok</span></a></span><span> </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120312"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120314"><span class="hs-identifier hs-var">b</span></a></span><span>
+</span><span id="line-241"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119653"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679119653"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadPlus</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119653"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-242"></span><span>  </span><span id="local-6989586621679120329"><span class="annot"><span class="annottext">mzero :: forall a. ActionT m a
+</span><a href="#local-6989586621679120329"><span class="hs-identifier hs-var hs-var hs-var hs-var">mzero</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionT m a
+forall a. ActionT m a
+forall (f :: * -&gt; *) a. Alternative f =&gt; f a
+</span><span class="hs-identifier hs-var">empty</span></span><span>
+</span><span id="line-243"></span><span>  </span><span id="local-6989586621679120332"><span class="annot"><span class="annottext">mplus :: forall a. ActionT m a -&gt; ActionT m a -&gt; ActionT m a
+</span><a href="#local-6989586621679120332"><span class="hs-identifier hs-var hs-var hs-var hs-var">mplus</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionT m a -&gt; ActionT m a -&gt; ActionT m a
+forall a. ActionT m a -&gt; ActionT m a -&gt; ActionT m a
+forall (f :: * -&gt; *) a. Alternative f =&gt; f a -&gt; f a -&gt; f a
+</span><span class="hs-operator hs-var">(&lt;|&gt;)</span></span><span>
+</span><span id="line-244"></span><span>
+</span><span id="line-245"></span><span class="hs-comment">-- | catches either ActionError (thrown by 'next'),</span><span>
+</span><span id="line-246"></span><span class="hs-comment">-- 'ScottyException' (thrown if e.g. a query parameter is not found)</span><span>
+</span><span id="line-247"></span><span class="hs-comment">-- or 'StatusError' (via 'raiseStatus')</span><span>
+</span><span id="line-248"></span><span id="local-6989586621679120334"><span id="local-6989586621679120335"><span class="annot"><a href="Web.Scotty.Internal.Types.html#tryAnyStatus"><span class="hs-identifier hs-type">tryAnyStatus</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679120334"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679120334"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679120335"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679120334"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span></span></span><span>
+</span><span id="line-249"></span><span id="tryAnyStatus"><span class="annot"><span class="annottext">tryAnyStatus :: forall (m :: * -&gt; *) a. MonadUnliftIO m =&gt; m a -&gt; m Bool
+</span><a href="Web.Scotty.Internal.Types.html#tryAnyStatus"><span class="hs-identifier hs-var hs-var">tryAnyStatus</span></a></span></span><span> </span><span id="local-6989586621679120344"><span class="annot"><span class="annottext">m a
+</span><a href="#local-6989586621679120344"><span class="hs-identifier hs-var">io</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">m a
+</span><a href="#local-6989586621679120344"><span class="hs-identifier hs-var">io</span></a></span><span> </span><span class="annot"><span class="annottext">m a -&gt; m Bool -&gt; m Bool
+forall a b. m a -&gt; m b -&gt; m b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; m b -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Bool -&gt; m Bool
+forall a. a -&gt; m a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">m Bool -&gt; [Handler m Bool] -&gt; m Bool
+forall (m :: * -&gt; *) a.
+MonadUnliftIO m =&gt;
+m a -&gt; [Handler m a] -&gt; m a
+</span><span class="hs-operator hs-var">`catches`</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Handler m Bool
+</span><a href="#local-6989586621679120345"><span class="hs-identifier hs-var">h1</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Handler m Bool
+</span><a href="#local-6989586621679120346"><span class="hs-identifier hs-var">h2</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Handler m Bool
+</span><a href="#local-6989586621679120347"><span class="hs-identifier hs-var">h3</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-250"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-251"></span><span>    </span><span id="local-6989586621679120345"><span class="annot"><span class="annottext">h1 :: Handler m Bool
+</span><a href="#local-6989586621679120345"><span class="hs-identifier hs-var hs-var">h1</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(ActionError -&gt; m Bool) -&gt; Handler m Bool
+forall (m :: * -&gt; *) a e. Exception e =&gt; (e -&gt; m a) -&gt; Handler m a
+</span><span class="hs-identifier hs-var">Handler</span></span><span> </span><span class="annot"><span class="annottext">((ActionError -&gt; m Bool) -&gt; Handler m Bool)
+-&gt; (ActionError -&gt; m Bool) -&gt; Handler m Bool
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span class="hs-special">(</span><span class="annot"><span class="annottext">ActionError
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionError"><span class="hs-identifier hs-type">ActionError</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; m Bool
+forall a. a -&gt; m a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span>
+</span><span id="line-252"></span><span>    </span><span id="local-6989586621679120346"><span class="annot"><span class="annottext">h2 :: Handler m Bool
+</span><a href="#local-6989586621679120346"><span class="hs-identifier hs-var hs-var">h2</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(StatusError -&gt; m Bool) -&gt; Handler m Bool
+forall (m :: * -&gt; *) a e. Exception e =&gt; (e -&gt; m a) -&gt; Handler m a
+</span><span class="hs-identifier hs-var">Handler</span></span><span> </span><span class="annot"><span class="annottext">((StatusError -&gt; m Bool) -&gt; Handler m Bool)
+-&gt; (StatusError -&gt; m Bool) -&gt; Handler m Bool
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span class="hs-special">(</span><span class="annot"><span class="annottext">StatusError
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#StatusError"><span class="hs-identifier hs-type">StatusError</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; m Bool
+forall a. a -&gt; m a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span>
+</span><span id="line-253"></span><span>    </span><span id="local-6989586621679120347"><span class="annot"><span class="annottext">h3 :: Handler m Bool
+</span><a href="#local-6989586621679120347"><span class="hs-identifier hs-var hs-var">h3</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(ScottyException -&gt; m Bool) -&gt; Handler m Bool
+forall (m :: * -&gt; *) a e. Exception e =&gt; (e -&gt; m a) -&gt; Handler m a
+</span><span class="hs-identifier hs-var">Handler</span></span><span> </span><span class="annot"><span class="annottext">((ScottyException -&gt; m Bool) -&gt; Handler m Bool)
+-&gt; (ScottyException -&gt; m Bool) -&gt; Handler m Bool
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span class="hs-special">(</span><span class="annot"><span class="annottext">ScottyException
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyException"><span class="hs-identifier hs-type">ScottyException</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; m Bool
+forall a. a -&gt; m a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span>
+</span><span id="line-254"></span><span>
+</span><span id="line-255"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679119669"><span id="local-6989586621679119670"><span id="local-6989586621679120360"><span id="local-6989586621679120364"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Semigroup</span></span><span> </span><span class="annot"><a href="#local-6989586621679119669"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Semigroup</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyT"><span class="hs-identifier hs-type">ScottyT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119670"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119669"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-256"></span><span>  </span><span id="local-6989586621679120372"><span class="annot"><span class="annottext">ScottyT m a
+</span><a href="#local-6989586621679120372"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span id="local-6989586621679120373"><span class="annot"><span class="annottext">&lt;&gt; :: ScottyT m a -&gt; ScottyT m a -&gt; ScottyT m a
+</span><span class="hs-operator hs-var hs-var hs-var hs-var">&lt;&gt;</span></span></span><span> </span><span id="local-6989586621679120374"><span class="annot"><span class="annottext">ScottyT m a
+</span><a href="#local-6989586621679120374"><span class="hs-identifier hs-var">y</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">(&lt;&gt;)</span></span><span> </span><span class="annot"><span class="annottext">(a -&gt; a -&gt; a) -&gt; ScottyT m a -&gt; ScottyT m (a -&gt; a)
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">ScottyT m a
+</span><a href="#local-6989586621679120372"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">ScottyT m (a -&gt; a) -&gt; ScottyT m a -&gt; ScottyT m a
+forall a b. ScottyT m (a -&gt; b) -&gt; ScottyT m a -&gt; ScottyT m b
+forall (f :: * -&gt; *) a b. Applicative f =&gt; f (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;*&gt;</span></span><span> </span><span class="annot"><span class="annottext">ScottyT m a
+</span><a href="#local-6989586621679120374"><span class="hs-identifier hs-var">y</span></a></span><span>
+</span><span id="line-257"></span><span>
+</span><span id="line-258"></span><span class="hs-keyword">instance</span><span>
+</span><span id="line-259"></span><span>  </span><span id="local-6989586621679119676"><span id="local-6989586621679119677"><span id="local-6989586621679120382"><span id="local-6989586621679120386"><span class="hs-special">(</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monoid</span></span><span> </span><span class="annot"><a href="#local-6989586621679119676"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-260"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monoid</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyT"><span class="hs-identifier hs-type">ScottyT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119677"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119676"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-261"></span><span>  </span><span id="local-6989586621679120392"><span class="annot"><span class="annottext">mempty :: ScottyT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">mempty</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; ScottyT m a
+forall a. a -&gt; ScottyT m a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><span class="annottext">a
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span>
+</span><span id="line-262"></span><span>
+</span><span id="line-263"></span><span class="hs-keyword">instance</span><span>
+</span><span id="line-264"></span><span>  </span><span id="local-6989586621679119681"><span id="local-6989586621679119682"><span id="local-6989586621679120397"><span id="local-6989586621679120401"><span class="hs-special">(</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monad</span></span><span> </span><span class="annot"><a href="#local-6989586621679119681"><span class="hs-identifier hs-type">m</span></a></span><span>
+</span><span id="line-265"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Semigroup</span></span><span> </span><span class="annot"><a href="#local-6989586621679119682"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-266"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Semigroup</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119681"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119682"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-267"></span><span>  </span><span id="local-6989586621679120410"><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120410"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span id="local-6989586621679120411"><span class="annot"><span class="annottext">&lt;&gt; :: ActionT m a -&gt; ActionT m a -&gt; ActionT m a
+</span><span class="hs-operator hs-var hs-var hs-var hs-var">&lt;&gt;</span></span></span><span> </span><span id="local-6989586621679120412"><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120412"><span class="hs-identifier hs-var">y</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">(&lt;&gt;)</span></span><span> </span><span class="annot"><span class="annottext">(a -&gt; a -&gt; a) -&gt; ActionT m a -&gt; ActionT m (a -&gt; a)
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120410"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">ActionT m (a -&gt; a) -&gt; ActionT m a -&gt; ActionT m a
+forall a b. ActionT m (a -&gt; b) -&gt; ActionT m a -&gt; ActionT m b
+forall (f :: * -&gt; *) a b. Applicative f =&gt; f (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;*&gt;</span></span><span> </span><span class="annot"><span class="annottext">ActionT m a
+</span><a href="#local-6989586621679120412"><span class="hs-identifier hs-var">y</span></a></span><span>
+</span><span id="line-268"></span><span>
+</span><span id="line-269"></span><span class="hs-keyword">instance</span><span>
+</span><span id="line-270"></span><span>  </span><span id="local-6989586621679119685"><span id="local-6989586621679119686"><span id="local-6989586621679120420"><span id="local-6989586621679120424"><span class="hs-special">(</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monad</span></span><span> </span><span class="annot"><a href="#local-6989586621679119685"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monoid</span></span><span> </span><span class="annot"><a href="#local-6989586621679119686"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-271"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monoid</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119685"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679119686"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-272"></span><span>  </span><span id="local-6989586621679120428"><span class="annot"><span class="annottext">mempty :: ActionT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">mempty</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; ActionT m a
+forall a. a -&gt; ActionT m a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><span class="annottext">a
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span>
+</span><span id="line-273"></span><span>
+</span><span id="line-274"></span><span class="hs-comment">------------------ Scotty Routes --------------------</span><span>
+</span><span id="line-275"></span><span class="hs-keyword">data</span><span> </span><span id="RoutePattern"><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-var">RoutePattern</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Capture"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Capture"><span class="hs-identifier hs-var">Capture</span></a></span></span><span>   </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-276"></span><span>                  </span><span class="hs-glyph">|</span><span> </span><span id="Literal"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Literal"><span class="hs-identifier hs-var">Literal</span></a></span></span><span>   </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-277"></span><span>                  </span><span class="hs-glyph">|</span><span> </span><span id="Function"><span class="annot"><a href="Web.Scotty.Internal.Types.html#Function"><span class="hs-identifier hs-var">Function</span></a></span></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Request</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-278"></span><span>
+</span><span id="line-279"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IsString</span></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-280"></span><span>    </span><span id="local-6989586621679120435"><span class="annot"><span class="annottext">fromString :: String -&gt; RoutePattern
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">fromString</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; RoutePattern
+</span><a href="Web.Scotty.Internal.Types.html#Capture"><span class="hs-identifier hs-var">Capture</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; RoutePattern)
+-&gt; (String -&gt; Text) -&gt; String -&gt; RoutePattern
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; Text
+</span><span class="hs-identifier hs-var">pack</span></span><span>
+</span><span id="line-281"></span><span>
+</span><span id="line-282"></span><span>
+</span><span id="line-283"></span></pre></body></html>

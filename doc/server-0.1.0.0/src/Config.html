@@ -1,0 +1,70 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE DataKinds #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE DeriveGeneric #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances #-}</span><span>
+</span><span id="line-4"></span><span class="hs-pragma">{-# LANGUAGE MultiParamTypeClasses #-}</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# LANGUAGE TypeFamilies #-}</span><span>
+</span><span id="line-6"></span><span class="hs-pragma">{-# LANGUAGE UndecidableInstances #-}</span><span>
+</span><span id="line-7"></span><span>
+</span><span id="line-8"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Config</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Config.html#Config"><span class="hs-identifier">Config</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-9"></span><span>
+</span><span id="line-10"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson</span></span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-11"></span><span>    </span><span class="annot"><span class="hs-identifier">FromJSON</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">parseJSON</span></span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-12"></span><span>    </span><span class="annot"><span class="hs-identifier">Options</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">constructorTagModifier</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">fieldLabelModifier</span></span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-13"></span><span>    </span><span class="annot"><span class="hs-identifier">camelTo2</span></span><span class="hs-special">,</span><span>
+</span><span id="line-14"></span><span>    </span><span class="annot"><span class="hs-identifier">defaultOptions</span></span><span class="hs-special">,</span><span>
+</span><span id="line-15"></span><span>    </span><span class="annot"><span class="hs-identifier">genericParseJSON</span></span><span class="hs-special">,</span><span>
+</span><span id="line-16"></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-18"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">GHC.Generics</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Generic</span></span><span class="hs-special">)</span><span>
+</span><span id="line-19"></span><span>
+</span><span id="line-20"></span><span class="annot"><span class="hs-comment">-- | Configuration for web server</span></span><span>
+</span><span id="line-21"></span><span class="hs-keyword">data</span><span> </span><span id="Config"><span class="annot"><a href="Config.html#Config"><span class="hs-identifier hs-var">Config</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Config"><span class="annot"><a href="Config.html#Config"><span class="hs-identifier hs-var">Config</span></a></span></span><span>
+</span><span id="line-22"></span><span>    </span><span class="hs-special">{</span><span> </span><span id="portNumber"><span class="annot"><span class="annottext">Config -&gt; Int
+</span><a href="Config.html#portNumber"><span class="hs-identifier hs-var hs-var">portNumber</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-23"></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ port number of the server</span></span><span>
+</span><span id="line-24"></span><span>    </span><span class="hs-special">,</span><span> </span><span id="webSecret"><span class="annot"><span class="annottext">Config -&gt; Text
+</span><a href="Config.html#webSecret"><span class="hs-identifier hs-var hs-var">webSecret</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-25"></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ web secret for verify github push</span></span><span>
+</span><span id="line-26"></span><span>    </span><span class="hs-special">,</span><span> </span><span id="dbFile"><span class="annot"><span class="annottext">Config -&gt; FilePath
+</span><a href="Config.html#dbFile"><span class="hs-identifier hs-var hs-var">dbFile</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">FilePath</span></span><span>
+</span><span id="line-27"></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ database file path</span></span><span>
+</span><span id="line-28"></span><span>    </span><span class="hs-special">,</span><span> </span><span id="logFile"><span class="annot"><span class="annottext">Config -&gt; FilePath
+</span><a href="Config.html#logFile"><span class="hs-identifier hs-var hs-var">logFile</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">FilePath</span></span><span>
+</span><span id="line-29"></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ log file path</span></span><span>
+</span><span id="line-30"></span><span>    </span><span class="hs-special">,</span><span> </span><span id="githubToken"><span class="annot"><span class="annottext">Config -&gt; Text
+</span><a href="Config.html#githubToken"><span class="hs-identifier hs-var hs-var">githubToken</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-31"></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ github token (&quot;&lt;USERNAME&gt; &lt;TOKEN&gt;&quot;)</span></span><span>
+</span><span id="line-32"></span><span>    </span><span class="hs-special">,</span><span> </span><span id="domain"><span class="annot"><span class="annottext">Config -&gt; Text
+</span><a href="Config.html#domain"><span class="hs-identifier hs-var hs-var">domain</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-33"></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ domain name and protocol used by server (&quot;https://yourdomain.com&quot;)</span></span><span>
+</span><span id="line-34"></span><span>    </span><span class="hs-special">}</span><span>
+</span><span id="line-35"></span><span>    </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679155911"><span id="local-6989586621679155913"><span class="annot"><span class="annottext">(forall x. Config -&gt; Rep Config x)
+-&gt; (forall x. Rep Config x -&gt; Config) -&gt; Generic Config
+forall x. Rep Config x -&gt; Config
+forall x. Config -&gt; Rep Config x
+forall a.
+(forall x. a -&gt; Rep a x) -&gt; (forall x. Rep a x -&gt; a) -&gt; Generic a
+$cfrom :: forall x. Config -&gt; Rep Config x
+from :: forall x. Config -&gt; Rep Config x
+$cto :: forall x. Rep Config x -&gt; Config
+to :: forall x. Rep Config x -&gt; Config
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Generic</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-36"></span><span>
+</span><span id="line-37"></span><span class="annot"><a href="Config.html#jsonOptions"><span class="hs-identifier hs-type">jsonOptions</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Options</span></span><span>
+</span><span id="line-38"></span><span id="jsonOptions"><span class="annot"><span class="annottext">jsonOptions :: Options
+</span><a href="Config.html#jsonOptions"><span class="hs-identifier hs-var hs-var">jsonOptions</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-39"></span><span>    </span><span class="annot"><span class="annottext">Options
+</span><span class="hs-identifier hs-var">defaultOptions</span></span><span>
+</span><span id="line-40"></span><span>        </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="hs-identifier hs-var">fieldLabelModifier</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">camelTo2</span></span><span> </span><span class="annot"><span class="hs-char">'-'</span></span><span>
+</span><span id="line-41"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-var">constructorTagModifier</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">camelTo2</span></span><span> </span><span class="annot"><span class="hs-char">'-'</span></span><span>
+</span><span id="line-42"></span><span>        </span><span class="hs-special">}</span><span>
+</span><span id="line-43"></span><span>
+</span><span id="line-44"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679155919"><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="annot"><a href="Config.html#Config"><span class="hs-identifier hs-type">Config</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-45"></span><span>    </span><span id="local-6989586621679156046"><span class="annot"><span class="annottext">parseJSON :: Value -&gt; Parser Config
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">parseJSON</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Options -&gt; Value -&gt; Parser Config
+forall a.
+(Generic a, GFromJSON Zero (Rep a)) =&gt;
+Options -&gt; Value -&gt; Parser a
+</span><span class="hs-identifier hs-var">genericParseJSON</span></span><span> </span><span class="annot"><span class="annottext">Options
+</span><a href="Config.html#jsonOptions"><span class="hs-identifier hs-var">jsonOptions</span></a></span><span>
+</span><span id="line-46"></span></pre></body></html>

@@ -1,0 +1,956 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# OPTIONS_GHC -Wno-unused-top-binds #-}</span><span>
+</span><span id="line-2"></span><span class="hs-comment">{- You can't export a data family constructor, so there's an &quot;unused&quot; warning -}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE DerivingVia #-}</span><span>
+</span><span id="line-4"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances #-}</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# LANGUAGE ScopedTypeVariables #-}</span><span>
+</span><span id="line-6"></span><span class="hs-pragma">{-# LANGUAGE StandaloneDeriving #-}</span><span>
+</span><span id="line-7"></span><span class="hs-pragma">{-# LANGUAGE TemplateHaskell #-}</span><span>
+</span><span id="line-8"></span><span class="hs-pragma">{-# LANGUAGE TypeApplications #-}</span><span>
+</span><span id="line-9"></span><span class="hs-pragma">{-# LANGUAGE UndecidableInstances #-}</span><span>
+</span><span id="line-10"></span><span>
+</span><span id="line-11"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Database.Persist.Compatible.Types</span><span>
+</span><span id="line-12"></span><span>    </span><span class="hs-special">(</span><span> </span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier">Compatible</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-13"></span><span>    </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-14"></span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Trans.Reader</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">withReaderT</span></span><span class="hs-special">)</span><span>
+</span><span id="line-16"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson</span></span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Persist.Class.html"><span class="hs-identifier">Database.Persist.Class</span></a></span><span>
+</span><span id="line-18"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Persist.Sql.Class.html"><span class="hs-identifier">Database.Persist.Sql.Class</span></a></span><span>
+</span><span id="line-19"></span><span>
+</span><span id="line-20"></span><span>
+</span><span id="line-21"></span><span class="hs-comment">-- | A newtype wrapper for compatible backends, mainly useful for @DerivingVia@.</span><span>
+</span><span id="line-22"></span><span class="hs-comment">--</span><span>
+</span><span id="line-23"></span><span class="hs-comment">-- When writing a new backend that is 'BackendCompatible' with an existing backend,</span><span>
+</span><span id="line-24"></span><span class="hs-comment">-- instances for the new backend can be naturally defined in terms of the</span><span>
+</span><span id="line-25"></span><span class="hs-comment">-- instances for the existing backend.</span><span>
+</span><span id="line-26"></span><span class="hs-comment">--</span><span>
+</span><span id="line-27"></span><span class="hs-comment">-- For example, if you decide to augment the 'SqlBackend' with some additional</span><span>
+</span><span id="line-28"></span><span class="hs-comment">-- features:</span><span>
+</span><span id="line-29"></span><span class="hs-comment">--</span><span>
+</span><span id="line-30"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-31"></span><span class="hs-comment">-- data BetterSqlBackend = BetterSqlBackend { sqlBackend :: SqlBackend, ... }</span><span>
+</span><span id="line-32"></span><span class="hs-comment">--</span><span>
+</span><span id="line-33"></span><span class="hs-comment">-- instance BackendCompatible SqlBackend BetterSqlBackend where</span><span>
+</span><span id="line-34"></span><span class="hs-comment">--   projectBackend = sqlBackend</span><span>
+</span><span id="line-35"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-36"></span><span class="hs-comment">--</span><span>
+</span><span id="line-37"></span><span class="hs-comment">-- Then you can use @DerivingVia@ to automatically get instances like:</span><span>
+</span><span id="line-38"></span><span class="hs-comment">--</span><span>
+</span><span id="line-39"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-40"></span><span class="hs-comment">-- deriving via (Compatible SqlBackend BetterSqlBackend) instance PersistStoreRead BetterSqlBackend</span><span>
+</span><span id="line-41"></span><span class="hs-comment">-- deriving via (Compatible SqlBackend BetterSqlBackend) instance PersistStoreWrite BetterSqlBackend</span><span>
+</span><span id="line-42"></span><span class="hs-comment">-- ...</span><span>
+</span><span id="line-43"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-44"></span><span class="hs-comment">--</span><span>
+</span><span id="line-45"></span><span class="hs-comment">-- These instances will go through the compatible backend (in this case, 'SqlBackend')</span><span>
+</span><span id="line-46"></span><span class="hs-comment">-- for all their queries.</span><span>
+</span><span id="line-47"></span><span class="hs-comment">--</span><span>
+</span><span id="line-48"></span><span class="hs-comment">-- These instances require that both backends have the same 'BaseBackend', but</span><span>
+</span><span id="line-49"></span><span class="hs-comment">-- deriving 'HasPersistBackend' will enforce that for you.</span><span>
+</span><span id="line-50"></span><span class="hs-comment">--</span><span>
+</span><span id="line-51"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-52"></span><span class="hs-comment">-- deriving via (Compatible SqlBackend BetterSqlBackend) instance HasPersistBackend BetterSqlBackend</span><span>
+</span><span id="line-53"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-54"></span><span class="hs-comment">--</span><span>
+</span><span id="line-55"></span><span class="hs-comment">-- @since 2.12</span><span>
+</span><span id="line-56"></span><span class="hs-keyword">newtype</span><span> </span><span id="Compatible"><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-var">Compatible</span></a></span></span><span> </span><span id="local-6989586621679820042"><span class="annot"><a href="#local-6989586621679820042"><span class="hs-identifier hs-type">b</span></a></span></span><span> </span><span id="local-6989586621679820043"><span class="annot"><a href="#local-6989586621679820043"><span class="hs-identifier hs-type">s</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Compatible"><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-var">Compatible</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unCompatible"><span class="annot"><span class="annottext">forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var hs-var">unCompatible</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="#local-6989586621679820043"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-57"></span><span>
+</span><span id="line-58"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679820053"><span id="local-6989586621679820054"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820053"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820054"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#HasPersistBackend"><span class="hs-identifier hs-type">HasPersistBackend</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820053"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#HasPersistBackend"><span class="hs-identifier hs-type">HasPersistBackend</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820053"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820054"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-59"></span><span>    </span><span class="hs-keyword">type</span><span> </span><span id="BaseBackend"><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BaseBackend"><span class="hs-identifier hs-var">BaseBackend</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820053"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820054"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BaseBackend"><span class="hs-identifier hs-type">BaseBackend</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820053"><span class="hs-identifier hs-type">b</span></a></span><span>
+</span><span id="line-60"></span><span>    </span><span id="local-6989586621679820339"><span class="annot"><span class="annottext">persistBackend :: Compatible b s -&gt; BaseBackend (Compatible b s)
+</span><a href="#local-6989586621679820339"><span class="hs-identifier hs-var hs-var hs-var hs-var">persistBackend</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">b -&gt; BaseBackend b
+forall backend.
+HasPersistBackend backend =&gt;
+backend -&gt; BaseBackend backend
+</span><a href="Database.Persist.Class.PersistStore.html#persistBackend"><span class="hs-identifier hs-var">persistBackend</span></a></span><span> </span><span class="annot"><span class="annottext">(b -&gt; BaseBackend b)
+-&gt; (Compatible b s -&gt; b) -&gt; Compatible b s -&gt; BaseBackend b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820053"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820054"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span>
+</span><span id="line-61"></span><span>
+</span><span id="line-62"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679820064"><span id="local-6989586621679820065"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820064"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820065"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#PersistCore"><span class="hs-identifier hs-type">PersistCore</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820064"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#PersistCore"><span class="hs-identifier hs-type">PersistCore</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820064"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820065"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-63"></span><span>    </span><span class="hs-comment">-- | A newtype wrapper around @'BackendKey' b@, mainly useful for @DerivingVia@.</span><span>
+</span><span id="line-64"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-65"></span><span>    </span><span class="hs-comment">-- Similarly to @'Compatible' b s@, this data family instance is handy for deriving</span><span>
+</span><span id="line-66"></span><span>    </span><span class="hs-comment">-- instances for @'BackendKey' s@ by defining them in terms of @'BackendKey' b@.</span><span>
+</span><span id="line-67"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-68"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-69"></span><span>    </span><span class="hs-comment">-- For example, if you decide to augment the 'SqlBackend' with some additional</span><span>
+</span><span id="line-70"></span><span>    </span><span class="hs-comment">-- features:</span><span>
+</span><span id="line-71"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-72"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-73"></span><span>    </span><span class="hs-comment">-- data BetterSqlBackend = BetterSqlBackend { sqlBackend :: SqlBackend, ... }</span><span>
+</span><span id="line-74"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-75"></span><span>    </span><span class="hs-comment">-- instance PersistCore BetterSqlBackend where</span><span>
+</span><span id="line-76"></span><span>    </span><span class="hs-comment">--   newtype BackendKey BetterSqlBackend = BSQLKey { unBSQLKey :: BackendKey (Compatible SqlBackend BetterSqlBackend) }</span><span>
+</span><span id="line-77"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-78"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-79"></span><span>    </span><span class="hs-comment">-- Then you can use @DerivingVia@ to automatically get instances like:</span><span>
+</span><span id="line-80"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-81"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-82"></span><span>    </span><span class="hs-comment">-- deriving via BackendKey (Compatible SqlBackend BetterSqlBackend) instance Show (BackendKey BetterSqlBackend)</span><span>
+</span><span id="line-83"></span><span>    </span><span class="hs-comment">-- ...</span><span>
+</span><span id="line-84"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-85"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-86"></span><span>    </span><span class="hs-comment">-- These instances will go through the compatible backend's key (in this case,</span><span>
+</span><span id="line-87"></span><span>    </span><span class="hs-comment">-- @'BackendKey' 'SqlBackend'@) for all their logic.</span><span>
+</span><span id="line-88"></span><span>    </span><span class="hs-keyword">newtype</span><span> </span><span id="BackendKey"><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-var">BackendKey</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820064"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820065"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span id="CompatibleKey"><span class="annot"><a href="Database.Persist.Compatible.Types.html#CompatibleKey"><span class="hs-identifier hs-var">CompatibleKey</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unCompatibleKey"><span class="annot"><span class="annottext">forall b s. BackendKey (Compatible b s) -&gt; BackendKey b
+</span><a href="Database.Persist.Compatible.Types.html#unCompatibleKey"><span class="hs-identifier hs-var hs-var">unCompatibleKey</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820064"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-89"></span><span>
+</span><span id="line-90"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679820088"><span id="local-6989586621679820089"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#HasPersistBackend"><span class="hs-identifier hs-type">HasPersistBackend</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820088"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820088"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820089"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#PersistStoreRead"><span class="hs-identifier hs-type">PersistStoreRead</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820088"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#PersistStoreRead"><span class="hs-identifier hs-type">PersistStoreRead</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820088"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820089"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-91"></span><span>    </span><span id="local-6989586621679820406"><span class="annot"><span class="annottext">get :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Key record -&gt; ReaderT (Compatible b s) m (Maybe record)
+</span><a href="#local-6989586621679820406"><span class="hs-identifier hs-var hs-var hs-var hs-var">get</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m (Maybe record)
+-&gt; ReaderT (Compatible b s) m (Maybe record)
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820088"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820089"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m (Maybe record)
+ -&gt; ReaderT (Compatible b s) m (Maybe record))
+-&gt; (Key record -&gt; ReaderT b m (Maybe record))
+-&gt; Key record
+-&gt; ReaderT (Compatible b s) m (Maybe record)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Key record -&gt; ReaderT b m (Maybe record)
+forall backend record (m :: * -&gt; *).
+(PersistStoreRead backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Key record -&gt; ReaderT backend m (Maybe record)
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Key record -&gt; ReaderT b m (Maybe record)
+</span><a href="Database.Persist.Class.PersistStore.html#get"><span class="hs-identifier hs-var">get</span></a></span><span>
+</span><span id="line-92"></span><span>    </span><span id="local-6989586621679820419"><span class="annot"><span class="annottext">getMany :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+[Key record]
+-&gt; ReaderT (Compatible b s) m (Map (Key record) record)
+</span><a href="#local-6989586621679820419"><span class="hs-identifier hs-var hs-var hs-var hs-var">getMany</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m (Map (Key record) record)
+-&gt; ReaderT (Compatible b s) m (Map (Key record) record)
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820088"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820089"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m (Map (Key record) record)
+ -&gt; ReaderT (Compatible b s) m (Map (Key record) record))
+-&gt; ([Key record] -&gt; ReaderT b m (Map (Key record) record))
+-&gt; [Key record]
+-&gt; ReaderT (Compatible b s) m (Map (Key record) record)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Key record] -&gt; ReaderT b m (Map (Key record) record)
+forall backend record (m :: * -&gt; *).
+(PersistStoreRead backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+[Key record] -&gt; ReaderT backend m (Map (Key record) record)
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+[Key record] -&gt; ReaderT b m (Map (Key record) record)
+</span><a href="Database.Persist.Class.PersistStore.html#getMany"><span class="hs-identifier hs-var">getMany</span></a></span><span>
+</span><span id="line-93"></span><span>
+</span><span id="line-94"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679820138"><span id="local-6989586621679820139"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#HasPersistBackend"><span class="hs-identifier hs-type">HasPersistBackend</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820139"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistQuery.html#PersistQueryRead"><span class="hs-identifier hs-type">PersistQueryRead</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistQuery.html#PersistQueryRead"><span class="hs-identifier hs-type">PersistQueryRead</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820139"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-95"></span><span>    </span><span id="local-6989586621679820452"><span class="annot"><span class="annottext">selectSourceRes :: forall record (m1 :: * -&gt; *) (m2 :: * -&gt; *).
+(PersistRecordBackend record (Compatible b s), MonadIO m1,
+ MonadIO m2) =&gt;
+[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT
+     (Compatible b s) m1 (Acquire (ConduitM () (Entity record) m2 ()))
+</span><a href="#local-6989586621679820452"><span class="hs-identifier hs-var hs-var hs-var hs-var">selectSourceRes</span></a></span></span><span> </span><span id="local-6989586621679820454"><span class="annot"><span class="annottext">[Filter record]
+</span><a href="#local-6989586621679820454"><span class="hs-identifier hs-var">filts</span></a></span></span><span> </span><span id="local-6989586621679820455"><span class="annot"><span class="annottext">[SelectOpt record]
+</span><a href="#local-6989586621679820455"><span class="hs-identifier hs-var">opts</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m1 (Acquire (ConduitM () (Entity record) m2 ()))
+-&gt; ReaderT
+     (Compatible b s) m1 (Acquire (ConduitM () (Entity record) m2 ()))
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820139"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m1 (Acquire (ConduitM () (Entity record) m2 ()))
+ -&gt; ReaderT
+      (Compatible b s) m1 (Acquire (ConduitM () (Entity record) m2 ())))
+-&gt; ReaderT b m1 (Acquire (ConduitM () (Entity record) m2 ()))
+-&gt; ReaderT
+     (Compatible b s) m1 (Acquire (ConduitM () (Entity record) m2 ()))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT b m1 (Acquire (ConduitM () (Entity record) m2 ()))
+forall backend record (m1 :: * -&gt; *) (m2 :: * -&gt; *).
+(PersistQueryRead backend, PersistRecordBackend record backend,
+ MonadIO m1, MonadIO m2) =&gt;
+[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT backend m1 (Acquire (ConduitM () (Entity record) m2 ()))
+forall record (m1 :: * -&gt; *) (m2 :: * -&gt; *).
+(PersistRecordBackend record b, MonadIO m1, MonadIO m2) =&gt;
+[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT b m1 (Acquire (ConduitM () (Entity record) m2 ()))
+</span><a href="Database.Persist.Class.PersistQuery.html#selectSourceRes"><span class="hs-identifier hs-var">selectSourceRes</span></a></span><span> </span><span class="annot"><span class="annottext">[Filter record]
+</span><a href="#local-6989586621679820454"><span class="hs-identifier hs-var">filts</span></a></span><span> </span><span class="annot"><span class="annottext">[SelectOpt record]
+</span><a href="#local-6989586621679820455"><span class="hs-identifier hs-var">opts</span></a></span><span>
+</span><span id="line-96"></span><span>    </span><span id="local-6989586621679820467"><span class="annot"><span class="annottext">selectFirst :: forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT (Compatible b s) m (Maybe (Entity record))
+</span><a href="#local-6989586621679820467"><span class="hs-identifier hs-var hs-var hs-var hs-var">selectFirst</span></a></span></span><span> </span><span id="local-6989586621679820469"><span class="annot"><span class="annottext">[Filter record]
+</span><a href="#local-6989586621679820469"><span class="hs-identifier hs-var">filts</span></a></span></span><span> </span><span id="local-6989586621679820470"><span class="annot"><span class="annottext">[SelectOpt record]
+</span><a href="#local-6989586621679820470"><span class="hs-identifier hs-var">opts</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m (Maybe (Entity record))
+-&gt; ReaderT (Compatible b s) m (Maybe (Entity record))
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820139"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m (Maybe (Entity record))
+ -&gt; ReaderT (Compatible b s) m (Maybe (Entity record)))
+-&gt; ReaderT b m (Maybe (Entity record))
+-&gt; ReaderT (Compatible b s) m (Maybe (Entity record))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[Filter record]
+-&gt; [SelectOpt record] -&gt; ReaderT b m (Maybe (Entity record))
+forall backend (m :: * -&gt; *) record.
+(PersistQueryRead backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+[Filter record]
+-&gt; [SelectOpt record] -&gt; ReaderT backend m (Maybe (Entity record))
+forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record b) =&gt;
+[Filter record]
+-&gt; [SelectOpt record] -&gt; ReaderT b m (Maybe (Entity record))
+</span><a href="Database.Persist.Class.PersistQuery.html#selectFirst"><span class="hs-identifier hs-var">selectFirst</span></a></span><span> </span><span class="annot"><span class="annottext">[Filter record]
+</span><a href="#local-6989586621679820469"><span class="hs-identifier hs-var">filts</span></a></span><span> </span><span class="annot"><span class="annottext">[SelectOpt record]
+</span><a href="#local-6989586621679820470"><span class="hs-identifier hs-var">opts</span></a></span><span>
+</span><span id="line-97"></span><span>    </span><span id="local-6989586621679820484"><span class="annot"><span class="annottext">selectKeysRes :: forall (m1 :: * -&gt; *) (m2 :: * -&gt; *) record.
+(MonadIO m1, MonadIO m2,
+ PersistRecordBackend record (Compatible b s)) =&gt;
+[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT
+     (Compatible b s) m1 (Acquire (ConduitM () (Key record) m2 ()))
+</span><a href="#local-6989586621679820484"><span class="hs-identifier hs-var hs-var hs-var hs-var">selectKeysRes</span></a></span></span><span> </span><span id="local-6989586621679820486"><span class="annot"><span class="annottext">[Filter record]
+</span><a href="#local-6989586621679820486"><span class="hs-identifier hs-var">filts</span></a></span></span><span> </span><span id="local-6989586621679820487"><span class="annot"><span class="annottext">[SelectOpt record]
+</span><a href="#local-6989586621679820487"><span class="hs-identifier hs-var">opts</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m1 (Acquire (ConduitM () (Key record) m2 ()))
+-&gt; ReaderT
+     (Compatible b s) m1 (Acquire (ConduitM () (Key record) m2 ()))
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820139"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m1 (Acquire (ConduitM () (Key record) m2 ()))
+ -&gt; ReaderT
+      (Compatible b s) m1 (Acquire (ConduitM () (Key record) m2 ())))
+-&gt; ReaderT b m1 (Acquire (ConduitM () (Key record) m2 ()))
+-&gt; ReaderT
+     (Compatible b s) m1 (Acquire (ConduitM () (Key record) m2 ()))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT b m1 (Acquire (ConduitM () (Key record) m2 ()))
+forall backend (m1 :: * -&gt; *) (m2 :: * -&gt; *) record.
+(PersistQueryRead backend, MonadIO m1, MonadIO m2,
+ PersistRecordBackend record backend) =&gt;
+[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT backend m1 (Acquire (ConduitM () (Key record) m2 ()))
+forall (m1 :: * -&gt; *) (m2 :: * -&gt; *) record.
+(MonadIO m1, MonadIO m2, PersistRecordBackend record b) =&gt;
+[Filter record]
+-&gt; [SelectOpt record]
+-&gt; ReaderT b m1 (Acquire (ConduitM () (Key record) m2 ()))
+</span><a href="Database.Persist.Class.PersistQuery.html#selectKeysRes"><span class="hs-identifier hs-var">selectKeysRes</span></a></span><span> </span><span class="annot"><span class="annottext">[Filter record]
+</span><a href="#local-6989586621679820486"><span class="hs-identifier hs-var">filts</span></a></span><span> </span><span class="annot"><span class="annottext">[SelectOpt record]
+</span><a href="#local-6989586621679820487"><span class="hs-identifier hs-var">opts</span></a></span><span>
+</span><span id="line-98"></span><span>    </span><span id="local-6989586621679820499"><span class="annot"><span class="annottext">count :: forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+[Filter record] -&gt; ReaderT (Compatible b s) m Int
+</span><a href="#local-6989586621679820499"><span class="hs-identifier hs-var hs-var hs-var hs-var">count</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m Int -&gt; ReaderT (Compatible b s) m Int
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820139"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m Int -&gt; ReaderT (Compatible b s) m Int)
+-&gt; ([Filter record] -&gt; ReaderT b m Int)
+-&gt; [Filter record]
+-&gt; ReaderT (Compatible b s) m Int
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Filter record] -&gt; ReaderT b m Int
+forall backend (m :: * -&gt; *) record.
+(PersistQueryRead backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+[Filter record] -&gt; ReaderT backend m Int
+forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record b) =&gt;
+[Filter record] -&gt; ReaderT b m Int
+</span><a href="Database.Persist.Class.PersistQuery.html#count"><span class="hs-identifier hs-var">count</span></a></span><span>
+</span><span id="line-99"></span><span>    </span><span id="local-6989586621679820512"><span class="annot"><span class="annottext">exists :: forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+[Filter record] -&gt; ReaderT (Compatible b s) m Bool
+</span><a href="#local-6989586621679820512"><span class="hs-identifier hs-var hs-var hs-var hs-var">exists</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m Bool -&gt; ReaderT (Compatible b s) m Bool
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820138"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820139"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m Bool -&gt; ReaderT (Compatible b s) m Bool)
+-&gt; ([Filter record] -&gt; ReaderT b m Bool)
+-&gt; [Filter record]
+-&gt; ReaderT (Compatible b s) m Bool
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Filter record] -&gt; ReaderT b m Bool
+forall backend (m :: * -&gt; *) record.
+(PersistQueryRead backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+[Filter record] -&gt; ReaderT backend m Bool
+forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record b) =&gt;
+[Filter record] -&gt; ReaderT b m Bool
+</span><a href="Database.Persist.Class.PersistQuery.html#exists"><span class="hs-identifier hs-var">exists</span></a></span><span>
+</span><span id="line-100"></span><span>
+</span><span id="line-101"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679820167"><span id="local-6989586621679820168"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#HasPersistBackend"><span class="hs-identifier hs-type">HasPersistBackend</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820167"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820167"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820168"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistQuery.html#PersistQueryWrite"><span class="hs-identifier hs-type">PersistQueryWrite</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820167"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistQuery.html#PersistQueryWrite"><span class="hs-identifier hs-type">PersistQueryWrite</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820167"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820168"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-102"></span><span>    </span><span id="local-6989586621679820541"><span class="annot"><span class="annottext">updateWhere :: forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+[Filter record] -&gt; [Update record] -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820541"><span class="hs-identifier hs-var hs-var hs-var hs-var">updateWhere</span></a></span></span><span> </span><span id="local-6989586621679820543"><span class="annot"><span class="annottext">[Filter record]
+</span><a href="#local-6989586621679820543"><span class="hs-identifier hs-var">filts</span></a></span></span><span> </span><span id="local-6989586621679820544"><span class="annot"><span class="annottext">[Update record]
+</span><a href="#local-6989586621679820544"><span class="hs-identifier hs-var">updates</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820167"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820168"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[Filter record] -&gt; [Update record] -&gt; ReaderT b m ()
+forall backend (m :: * -&gt; *) record.
+(PersistQueryWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+[Filter record] -&gt; [Update record] -&gt; ReaderT backend m ()
+forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record b) =&gt;
+[Filter record] -&gt; [Update record] -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistQuery.html#updateWhere"><span class="hs-identifier hs-var">updateWhere</span></a></span><span> </span><span class="annot"><span class="annottext">[Filter record]
+</span><a href="#local-6989586621679820543"><span class="hs-identifier hs-var">filts</span></a></span><span> </span><span class="annot"><span class="annottext">[Update record]
+</span><a href="#local-6989586621679820544"><span class="hs-identifier hs-var">updates</span></a></span><span>
+</span><span id="line-103"></span><span>    </span><span id="local-6989586621679820556"><span class="annot"><span class="annottext">deleteWhere :: forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+[Filter record] -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820556"><span class="hs-identifier hs-var hs-var hs-var hs-var">deleteWhere</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820167"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820168"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; ([Filter record] -&gt; ReaderT b m ())
+-&gt; [Filter record]
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Filter record] -&gt; ReaderT b m ()
+forall backend (m :: * -&gt; *) record.
+(PersistQueryWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+[Filter record] -&gt; ReaderT backend m ()
+forall (m :: * -&gt; *) record.
+(MonadIO m, PersistRecordBackend record b) =&gt;
+[Filter record] -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistQuery.html#deleteWhere"><span class="hs-identifier hs-var">deleteWhere</span></a></span><span>
+</span><span id="line-104"></span><span>
+</span><span id="line-105"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679820182"><span id="local-6989586621679820183"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#HasPersistBackend"><span class="hs-identifier hs-type">HasPersistBackend</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820182"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820182"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820183"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistUnique.html#PersistUniqueRead"><span class="hs-identifier hs-type">PersistUniqueRead</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820182"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistUnique.html#PersistUniqueRead"><span class="hs-identifier hs-type">PersistUniqueRead</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820182"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820183"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-106"></span><span>    </span><span id="local-6989586621679820580"><span class="annot"><span class="annottext">getBy :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Unique record -&gt; ReaderT (Compatible b s) m (Maybe (Entity record))
+</span><a href="#local-6989586621679820580"><span class="hs-identifier hs-var hs-var hs-var hs-var">getBy</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m (Maybe (Entity record))
+-&gt; ReaderT (Compatible b s) m (Maybe (Entity record))
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820182"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820183"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m (Maybe (Entity record))
+ -&gt; ReaderT (Compatible b s) m (Maybe (Entity record)))
+-&gt; (Unique record -&gt; ReaderT b m (Maybe (Entity record)))
+-&gt; Unique record
+-&gt; ReaderT (Compatible b s) m (Maybe (Entity record))
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Unique record -&gt; ReaderT b m (Maybe (Entity record))
+forall backend record (m :: * -&gt; *).
+(PersistUniqueRead backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Unique record -&gt; ReaderT backend m (Maybe (Entity record))
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Unique record -&gt; ReaderT b m (Maybe (Entity record))
+</span><a href="Database.Persist.Class.PersistUnique.html#getBy"><span class="hs-identifier hs-var">getBy</span></a></span><span>
+</span><span id="line-107"></span><span>    </span><span id="local-6989586621679820593"><span class="annot"><span class="annottext">existsBy :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Unique record -&gt; ReaderT (Compatible b s) m Bool
+</span><a href="#local-6989586621679820593"><span class="hs-identifier hs-var hs-var hs-var hs-var">existsBy</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m Bool -&gt; ReaderT (Compatible b s) m Bool
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820182"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820183"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m Bool -&gt; ReaderT (Compatible b s) m Bool)
+-&gt; (Unique record -&gt; ReaderT b m Bool)
+-&gt; Unique record
+-&gt; ReaderT (Compatible b s) m Bool
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Unique record -&gt; ReaderT b m Bool
+forall backend record (m :: * -&gt; *).
+(PersistUniqueRead backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Unique record -&gt; ReaderT backend m Bool
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Unique record -&gt; ReaderT b m Bool
+</span><a href="Database.Persist.Class.PersistUnique.html#existsBy"><span class="hs-identifier hs-var">existsBy</span></a></span><span>
+</span><span id="line-108"></span><span>
+</span><span id="line-109"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679820165"><span id="local-6989586621679820166"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#HasPersistBackend"><span class="hs-identifier hs-type">HasPersistBackend</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#PersistStoreWrite"><span class="hs-identifier hs-type">PersistStoreWrite</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#PersistStoreWrite"><span class="hs-identifier hs-type">PersistStoreWrite</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-110"></span><span>    </span><span id="local-6989586621679820656"><span class="annot"><span class="annottext">insert :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s),
+ SafeToInsert record) =&gt;
+record -&gt; ReaderT (Compatible b s) m (Key record)
+</span><a href="#local-6989586621679820656"><span class="hs-identifier hs-var hs-var hs-var hs-var">insert</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m (Key record)
+-&gt; ReaderT (Compatible b s) m (Key record)
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m (Key record)
+ -&gt; ReaderT (Compatible b s) m (Key record))
+-&gt; (record -&gt; ReaderT b m (Key record))
+-&gt; record
+-&gt; ReaderT (Compatible b s) m (Key record)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">record -&gt; ReaderT b m (Key record)
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend, SafeToInsert record) =&gt;
+record -&gt; ReaderT backend m (Key record)
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b, SafeToInsert record) =&gt;
+record -&gt; ReaderT b m (Key record)
+</span><a href="Database.Persist.Class.PersistStore.html#insert"><span class="hs-identifier hs-var">insert</span></a></span><span>
+</span><span id="line-111"></span><span>    </span><span id="local-6989586621679820671"><span class="annot"><span class="annottext">insert_ :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s),
+ SafeToInsert record) =&gt;
+record -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820671"><span class="hs-identifier hs-var hs-var hs-var hs-var">insert_</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; (record -&gt; ReaderT b m ())
+-&gt; record
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">record -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend, SafeToInsert record) =&gt;
+record -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b, SafeToInsert record) =&gt;
+record -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#insert_"><span class="hs-identifier hs-var">insert_</span></a></span><span>
+</span><span id="line-112"></span><span>    </span><span id="local-6989586621679820686"><span class="annot"><span class="annottext">insertMany :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s),
+ SafeToInsert record) =&gt;
+[record] -&gt; ReaderT (Compatible b s) m [Key record]
+</span><a href="#local-6989586621679820686"><span class="hs-identifier hs-var hs-var hs-var hs-var">insertMany</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m [Key record]
+-&gt; ReaderT (Compatible b s) m [Key record]
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m [Key record]
+ -&gt; ReaderT (Compatible b s) m [Key record])
+-&gt; ([record] -&gt; ReaderT b m [Key record])
+-&gt; [record]
+-&gt; ReaderT (Compatible b s) m [Key record]
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[record] -&gt; ReaderT b m [Key record]
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend, SafeToInsert record) =&gt;
+[record] -&gt; ReaderT backend m [Key record]
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b, SafeToInsert record) =&gt;
+[record] -&gt; ReaderT b m [Key record]
+</span><a href="Database.Persist.Class.PersistStore.html#insertMany"><span class="hs-identifier hs-var">insertMany</span></a></span><span>
+</span><span id="line-113"></span><span>    </span><span id="local-6989586621679820701"><span class="annot"><span class="annottext">insertMany_ :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s),
+ SafeToInsert record) =&gt;
+[record] -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820701"><span class="hs-identifier hs-var hs-var hs-var hs-var">insertMany_</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; ([record] -&gt; ReaderT b m ())
+-&gt; [record]
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[record] -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend, SafeToInsert record) =&gt;
+[record] -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b, SafeToInsert record) =&gt;
+[record] -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#insertMany_"><span class="hs-identifier hs-var">insertMany_</span></a></span><span>
+</span><span id="line-114"></span><span>    </span><span id="local-6989586621679820714"><span class="annot"><span class="annottext">insertEntityMany :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+[Entity record] -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820714"><span class="hs-identifier hs-var hs-var hs-var hs-var">insertEntityMany</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; ([Entity record] -&gt; ReaderT b m ())
+-&gt; [Entity record]
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Entity record] -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+[Entity record] -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+[Entity record] -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#insertEntityMany"><span class="hs-identifier hs-var">insertEntityMany</span></a></span><span>
+</span><span id="line-115"></span><span>    </span><span id="local-6989586621679820727"><span class="annot"><span class="annottext">insertKey :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Key record -&gt; record -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820727"><span class="hs-identifier hs-var hs-var hs-var hs-var">insertKey</span></a></span></span><span> </span><span id="local-6989586621679820729"><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820729"><span class="hs-identifier hs-var">k</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; (record -&gt; ReaderT b m ())
+-&gt; record
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Key record -&gt; record -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Key record -&gt; record -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Key record -&gt; record -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#insertKey"><span class="hs-identifier hs-var">insertKey</span></a></span><span> </span><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820729"><span class="hs-identifier hs-var">k</span></a></span><span>
+</span><span id="line-116"></span><span>    </span><span id="local-6989586621679820741"><span class="annot"><span class="annottext">repsert :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Key record -&gt; record -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820741"><span class="hs-identifier hs-var hs-var hs-var hs-var">repsert</span></a></span></span><span> </span><span id="local-6989586621679820743"><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820743"><span class="hs-identifier hs-var">k</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; (record -&gt; ReaderT b m ())
+-&gt; record
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Key record -&gt; record -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Key record -&gt; record -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Key record -&gt; record -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#repsert"><span class="hs-identifier hs-var">repsert</span></a></span><span> </span><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820743"><span class="hs-identifier hs-var">k</span></a></span><span>
+</span><span id="line-117"></span><span>    </span><span id="local-6989586621679820755"><span class="annot"><span class="annottext">repsertMany :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+[(Key record, record)] -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820755"><span class="hs-identifier hs-var hs-var hs-var hs-var">repsertMany</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; ([(Key record, record)] -&gt; ReaderT b m ())
+-&gt; [(Key record, record)]
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[(Key record, record)] -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+[(Key record, record)] -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+[(Key record, record)] -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#repsertMany"><span class="hs-identifier hs-var">repsertMany</span></a></span><span>
+</span><span id="line-118"></span><span>    </span><span id="local-6989586621679820768"><span class="annot"><span class="annottext">replace :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Key record -&gt; record -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820768"><span class="hs-identifier hs-var hs-var hs-var hs-var">replace</span></a></span></span><span> </span><span id="local-6989586621679820770"><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820770"><span class="hs-identifier hs-var">k</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; (record -&gt; ReaderT b m ())
+-&gt; record
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Key record -&gt; record -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Key record -&gt; record -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Key record -&gt; record -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#replace"><span class="hs-identifier hs-var">replace</span></a></span><span> </span><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820770"><span class="hs-identifier hs-var">k</span></a></span><span>
+</span><span id="line-119"></span><span>    </span><span id="local-6989586621679820782"><span class="annot"><span class="annottext">delete :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Key record -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820782"><span class="hs-identifier hs-var hs-var hs-var hs-var">delete</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; (Key record -&gt; ReaderT b m ())
+-&gt; Key record
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Key record -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Key record -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Key record -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#delete"><span class="hs-identifier hs-var">delete</span></a></span><span>
+</span><span id="line-120"></span><span>    </span><span id="local-6989586621679820795"><span class="annot"><span class="annottext">update :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Key record -&gt; [Update record] -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820795"><span class="hs-identifier hs-var hs-var hs-var hs-var">update</span></a></span></span><span> </span><span id="local-6989586621679820797"><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820797"><span class="hs-identifier hs-var">k</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; ([Update record] -&gt; ReaderT b m ())
+-&gt; [Update record]
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Key record -&gt; [Update record] -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Key record -&gt; [Update record] -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Key record -&gt; [Update record] -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistStore.html#update"><span class="hs-identifier hs-var">update</span></a></span><span> </span><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820797"><span class="hs-identifier hs-var">k</span></a></span><span>
+</span><span id="line-121"></span><span>    </span><span id="local-6989586621679820809"><span class="annot"><span class="annottext">updateGet :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Key record -&gt; [Update record] -&gt; ReaderT (Compatible b s) m record
+</span><a href="#local-6989586621679820809"><span class="hs-identifier hs-var hs-var hs-var hs-var">updateGet</span></a></span></span><span> </span><span id="local-6989586621679820811"><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820811"><span class="hs-identifier hs-var">k</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m record -&gt; ReaderT (Compatible b s) m record
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820165"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820166"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m record -&gt; ReaderT (Compatible b s) m record)
+-&gt; ([Update record] -&gt; ReaderT b m record)
+-&gt; [Update record]
+-&gt; ReaderT (Compatible b s) m record
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Key record -&gt; [Update record] -&gt; ReaderT b m record
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Key record -&gt; [Update record] -&gt; ReaderT backend m record
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Key record -&gt; [Update record] -&gt; ReaderT b m record
+</span><a href="Database.Persist.Class.PersistStore.html#updateGet"><span class="hs-identifier hs-var">updateGet</span></a></span><span> </span><span class="annot"><span class="annottext">Key record
+</span><a href="#local-6989586621679820811"><span class="hs-identifier hs-var">k</span></a></span><span>
+</span><span id="line-122"></span><span>
+</span><span id="line-123"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679820255"><span id="local-6989586621679820256"><span id="local-6989586621679820824"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#HasPersistBackend"><span class="hs-identifier hs-type">HasPersistBackend</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820256"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistUnique.html#PersistUniqueWrite"><span class="hs-identifier hs-type">PersistUniqueWrite</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistUnique.html#PersistUniqueWrite"><span class="hs-identifier hs-type">PersistUniqueWrite</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820256"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-124"></span><span>    </span><span id="local-6989586621679820855"><span class="annot"><span class="annottext">deleteBy :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s)) =&gt;
+Unique record -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820855"><span class="hs-identifier hs-var hs-var hs-var hs-var">deleteBy</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820256"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; (Unique record -&gt; ReaderT b m ())
+-&gt; Unique record
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Unique record -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistUniqueWrite backend, MonadIO m,
+ PersistRecordBackend record backend) =&gt;
+Unique record -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b) =&gt;
+Unique record -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistUnique.html#deleteBy"><span class="hs-identifier hs-var">deleteBy</span></a></span><span>
+</span><span id="line-125"></span><span>    </span><span id="local-6989586621679820870"><span class="annot"><span class="annottext">insertUnique :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s),
+ SafeToInsert record) =&gt;
+record -&gt; ReaderT (Compatible b s) m (Maybe (Key record))
+</span><a href="#local-6989586621679820870"><span class="hs-identifier hs-var hs-var hs-var hs-var">insertUnique</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m (Maybe (Key record))
+-&gt; ReaderT (Compatible b s) m (Maybe (Key record))
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820256"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m (Maybe (Key record))
+ -&gt; ReaderT (Compatible b s) m (Maybe (Key record)))
+-&gt; (record -&gt; ReaderT b m (Maybe (Key record)))
+-&gt; record
+-&gt; ReaderT (Compatible b s) m (Maybe (Key record))
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">record -&gt; ReaderT b m (Maybe (Key record))
+forall backend record (m :: * -&gt; *).
+(PersistUniqueWrite backend, MonadIO m,
+ PersistRecordBackend record backend, SafeToInsert record) =&gt;
+record -&gt; ReaderT backend m (Maybe (Key record))
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b, SafeToInsert record) =&gt;
+record -&gt; ReaderT b m (Maybe (Key record))
+</span><a href="Database.Persist.Class.PersistUnique.html#insertUnique"><span class="hs-identifier hs-var">insertUnique</span></a></span><span>
+</span><span id="line-126"></span><span>    </span><span id="local-6989586621679820887"><span class="annot"><span class="annottext">upsert :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s),
+ OnlyOneUniqueKey record, SafeToInsert record) =&gt;
+record
+-&gt; [Update record] -&gt; ReaderT (Compatible b s) m (Entity record)
+</span><a href="#local-6989586621679820887"><span class="hs-identifier hs-var hs-var hs-var hs-var">upsert</span></a></span></span><span> </span><span id="local-6989586621679820889"><span class="annot"><span class="annottext">record
+</span><a href="#local-6989586621679820889"><span class="hs-identifier hs-var">rec</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m (Entity record)
+-&gt; ReaderT (Compatible b s) m (Entity record)
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820256"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m (Entity record)
+ -&gt; ReaderT (Compatible b s) m (Entity record))
+-&gt; ([Update record] -&gt; ReaderT b m (Entity record))
+-&gt; [Update record]
+-&gt; ReaderT (Compatible b s) m (Entity record)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">record -&gt; [Update record] -&gt; ReaderT b m (Entity record)
+forall backend record (m :: * -&gt; *).
+(PersistUniqueWrite backend, MonadIO m,
+ PersistRecordBackend record backend, OnlyOneUniqueKey record,
+ SafeToInsert record) =&gt;
+record -&gt; [Update record] -&gt; ReaderT backend m (Entity record)
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b, OnlyOneUniqueKey record,
+ SafeToInsert record) =&gt;
+record -&gt; [Update record] -&gt; ReaderT b m (Entity record)
+</span><a href="Database.Persist.Class.PersistUnique.html#upsert"><span class="hs-identifier hs-var">upsert</span></a></span><span> </span><span class="annot"><span class="annottext">record
+</span><a href="#local-6989586621679820889"><span class="hs-identifier hs-var">rec</span></a></span><span>
+</span><span id="line-127"></span><span>    </span><span id="local-6989586621679820903"><span class="annot"><span class="annottext">upsertBy :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s),
+ SafeToInsert record) =&gt;
+Unique record
+-&gt; record
+-&gt; [Update record]
+-&gt; ReaderT (Compatible b s) m (Entity record)
+</span><a href="#local-6989586621679820903"><span class="hs-identifier hs-var hs-var hs-var hs-var">upsertBy</span></a></span></span><span> </span><span id="local-6989586621679820905"><span class="annot"><span class="annottext">Unique record
+</span><a href="#local-6989586621679820905"><span class="hs-identifier hs-var">uniq</span></a></span></span><span> </span><span id="local-6989586621679820906"><span class="annot"><span class="annottext">record
+</span><a href="#local-6989586621679820906"><span class="hs-identifier hs-var">rec</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m (Entity record)
+-&gt; ReaderT (Compatible b s) m (Entity record)
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820256"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m (Entity record)
+ -&gt; ReaderT (Compatible b s) m (Entity record))
+-&gt; ([Update record] -&gt; ReaderT b m (Entity record))
+-&gt; [Update record]
+-&gt; ReaderT (Compatible b s) m (Entity record)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Unique record
+-&gt; record -&gt; [Update record] -&gt; ReaderT b m (Entity record)
+forall backend record (m :: * -&gt; *).
+(PersistUniqueWrite backend, MonadIO m,
+ PersistRecordBackend record backend, SafeToInsert record) =&gt;
+Unique record
+-&gt; record -&gt; [Update record] -&gt; ReaderT backend m (Entity record)
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b, SafeToInsert record) =&gt;
+Unique record
+-&gt; record -&gt; [Update record] -&gt; ReaderT b m (Entity record)
+</span><a href="Database.Persist.Class.PersistUnique.html#upsertBy"><span class="hs-identifier hs-var">upsertBy</span></a></span><span> </span><span class="annot"><span class="annottext">Unique record
+</span><a href="#local-6989586621679820905"><span class="hs-identifier hs-var">uniq</span></a></span><span> </span><span class="annot"><span class="annottext">record
+</span><a href="#local-6989586621679820906"><span class="hs-identifier hs-var">rec</span></a></span><span>
+</span><span id="line-128"></span><span>    </span><span id="local-6989586621679820920"><span class="annot"><span class="annottext">putMany :: forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record (Compatible b s),
+ SafeToInsert record) =&gt;
+[record] -&gt; ReaderT (Compatible b s) m ()
+</span><a href="#local-6989586621679820920"><span class="hs-identifier hs-var hs-var hs-var hs-var">putMany</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Compatible b s -&gt; b)
+-&gt; ReaderT b m () -&gt; ReaderT (Compatible b s) m ()
+forall r' r (m :: * -&gt; *) a.
+(r' -&gt; r) -&gt; ReaderT r m a -&gt; ReaderT r' m a
+</span><span class="hs-identifier hs-var">withReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall sup sub. BackendCompatible sup sub =&gt; sub -&gt; sup
+</span><a href="Database.Persist.Class.PersistStore.html#projectBackend"><span class="hs-identifier hs-var">projectBackend</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820255"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679820256"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="annottext">(s -&gt; b) -&gt; (Compatible b s -&gt; s) -&gt; Compatible b s -&gt; b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Compatible b s -&gt; s
+forall b s. Compatible b s -&gt; s
+</span><a href="Database.Persist.Compatible.Types.html#unCompatible"><span class="hs-identifier hs-var">unCompatible</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(ReaderT b m () -&gt; ReaderT (Compatible b s) m ())
+-&gt; ([record] -&gt; ReaderT b m ())
+-&gt; [record]
+-&gt; ReaderT (Compatible b s) m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[record] -&gt; ReaderT b m ()
+forall backend record (m :: * -&gt; *).
+(PersistUniqueWrite backend, MonadIO m,
+ PersistRecordBackend record backend, SafeToInsert record) =&gt;
+[record] -&gt; ReaderT backend m ()
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record b, SafeToInsert record) =&gt;
+[record] -&gt; ReaderT b m ()
+</span><a href="Database.Persist.Class.PersistUnique.html#putMany"><span class="hs-identifier hs-var">putMany</span></a></span><span>
+</span><span id="line-129"></span><span>
+</span><span id="line-130"></span><span id="local-6989586621679820925"><span id="local-6989586621679820929"><span id="local-6989586621679820933"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820103"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820102"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820102"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820102"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820103"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Show</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820102"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Show</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820102"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820103"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span></span><span>
+</span><span id="line-131"></span><span id="local-6989586621679820940"><span id="local-6989586621679820944"><span id="local-6989586621679820948"><span id="local-6989586621679820952"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820101"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820100"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820100"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820100"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820101"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Read</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820100"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Read</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820100"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820101"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span></span></span><span>
+</span><span id="line-132"></span><span id="local-6989586621679820959"><span id="local-6989586621679820963"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820099"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820098"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820098"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820098"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820099"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Eq</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820098"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Eq</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820098"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820099"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-133"></span><span id="local-6989586621679820973"><span id="local-6989586621679820977"><span id="local-6989586621679820981"><span id="local-6989586621679820985"><span id="local-6989586621679820989"><span id="local-6989586621679820993"><span id="local-6989586621679820997"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820097"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820096"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820096"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820096"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820097"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Ord</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820096"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Ord</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820096"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820097"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span></span></span></span></span></span><span>
+</span><span id="line-134"></span><span id="local-6989586621679821005"><span id="local-6989586621679821009"><span id="local-6989586621679821013"><span id="local-6989586621679821017"><span id="local-6989586621679821021"><span id="local-6989586621679821025"><span id="local-6989586621679821029"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820286"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820285"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820285"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820285"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820286"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Num</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820285"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Num</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820285"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820286"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span></span></span></span></span></span><span>
+</span><span id="line-135"></span><span id="local-6989586621679821045"><span id="local-6989586621679821049"><span id="local-6989586621679821053"><span id="local-6989586621679821057"><span id="local-6989586621679821061"><span id="local-6989586621679821065"><span id="local-6989586621679821069"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820295"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820294"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820294"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820294"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820295"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Integral</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820294"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Integral</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820294"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820295"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span></span></span></span></span></span><span>
+</span><span id="line-136"></span><span id="local-6989586621679821079"><span id="local-6989586621679821083"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820095"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820094"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820094"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820094"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820095"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistField.html#PersistField"><span class="hs-identifier hs-type">PersistField</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820094"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Class.PersistField.html#PersistField"><span class="hs-identifier hs-type">PersistField</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820094"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820095"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-137"></span><span id="local-6989586621679821093"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820308"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820307"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820307"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820307"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820308"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Persist.Sql.Class.html#PersistFieldSql"><span class="hs-identifier hs-type">PersistFieldSql</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820307"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Persist.Sql.Class.html#PersistFieldSql"><span class="hs-identifier hs-type">PersistFieldSql</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820307"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820308"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span><span>
+</span><span id="line-138"></span><span id="local-6989586621679821108"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820293"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820292"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820292"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820292"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820293"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Real</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820292"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Real</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820292"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820293"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span><span>
+</span><span id="line-139"></span><span id="local-6989586621679821117"><span id="local-6989586621679821121"><span id="local-6989586621679821125"><span id="local-6989586621679821129"><span id="local-6989586621679821133"><span id="local-6989586621679821137"><span id="local-6989586621679821141"><span id="local-6989586621679821145"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820291"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820290"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820290"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820290"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820291"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Enum</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820290"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Enum</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820290"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820291"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-140"></span><span id="local-6989586621679821152"><span id="local-6989586621679821156"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820319"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820318"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820318"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820318"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820319"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bounded</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820318"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bounded</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820318"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820319"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-141"></span><span id="local-6989586621679821164"><span id="local-6989586621679821168"><span id="local-6989586621679821172"><span id="local-6989586621679821176"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820093"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820092"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820092"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820092"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820093"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToJSON</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820092"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToJSON</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820092"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820093"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span></span></span><span>
+</span><span id="line-142"></span><span id="local-6989586621679821183"><span id="local-6989586621679821187"><span class="hs-keyword">deriving</span><span> </span><span id="local-6989586621679820091"><span class="hs-keyword">via</span><span> </span><span id="local-6989586621679820090"><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820090"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendCompatible"><span class="hs-identifier hs-type">BackendCompatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820090"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820091"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820090"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Class.PersistStore.html#BackendKey"><span class="hs-identifier hs-type">BackendKey</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Compatible.Types.html#Compatible"><span class="hs-identifier hs-type">Compatible</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820090"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679820091"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-143"></span></pre></body></html>

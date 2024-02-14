@@ -1,0 +1,684 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE DeriveLift #-}</span><span>
+</span><span id="line-2"></span><span>
+</span><span id="line-3"></span><span class="hs-comment">-- | This module contains types and functions for working with and</span><span>
+</span><span id="line-4"></span><span class="hs-comment">-- disambiguating database and Haskell names.</span><span>
+</span><span id="line-5"></span><span class="hs-comment">--</span><span>
+</span><span id="line-6"></span><span class="hs-comment">-- @since 2.13.0.0</span><span>
+</span><span id="line-7"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Database.Persist.Names</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-8"></span><span>
+</span><span id="line-9"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-10"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Language.Haskell.TH.Syntax</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Lift</span></span><span class="hs-special">)</span><span>
+</span><span id="line-11"></span><span class="hs-comment">-- Bring `Lift (Map k v)` instance into scope, as well as `Lift Text`</span><span>
+</span><span id="line-12"></span><span class="hs-comment">-- instance on pre-1.2.4 versions of `text`</span><span>
+</span><span id="line-13"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Instances.TH.Lift</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-14"></span><span>
+</span><span id="line-15"></span><span class="hs-comment">-- | Convenience operations for working with '-NameDB' types.</span><span>
+</span><span id="line-16"></span><span class="hs-comment">--</span><span>
+</span><span id="line-17"></span><span class="hs-comment">-- @since 2.12.0.0</span><span>
+</span><span id="line-18"></span><span class="hs-keyword">class</span><span> </span><span id="DatabaseName"><span class="annot"><a href="Database.Persist.Names.html#DatabaseName"><span class="hs-identifier hs-var">DatabaseName</span></a></span></span><span> </span><span id="local-6989586621679779187"><span class="annot"><a href="#local-6989586621679779187"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-19"></span><span>    </span><span id="escapeWith"><span class="annot"><a href="Database.Persist.Names.html#escapeWith"><span class="hs-identifier hs-type">escapeWith</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span id="local-6989586621679779185"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679779185"><span class="hs-identifier hs-type">str</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679779187"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679779185"><span class="hs-identifier hs-type">str</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-20"></span><span>
+</span><span id="line-21"></span><span class="hs-comment">-- | A 'FieldNameDB' represents the datastore-side name that @persistent@</span><span>
+</span><span id="line-22"></span><span class="hs-comment">-- will use for a field.</span><span>
+</span><span id="line-23"></span><span class="hs-comment">--</span><span>
+</span><span id="line-24"></span><span class="hs-comment">-- @since 2.12.0.0</span><span>
+</span><span id="line-25"></span><span class="hs-keyword">newtype</span><span> </span><span id="FieldNameDB"><span class="annot"><a href="Database.Persist.Names.html#FieldNameDB"><span class="hs-identifier hs-var">FieldNameDB</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="FieldNameDB"><span class="annot"><a href="Database.Persist.Names.html#FieldNameDB"><span class="hs-identifier hs-var">FieldNameDB</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unFieldNameDB"><span class="annot"><span class="annottext">FieldNameDB -&gt; Text
+</span><a href="Database.Persist.Names.html#unFieldNameDB"><span class="hs-identifier hs-var hs-var">unFieldNameDB</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-26"></span><span>    </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679779210"><span id="local-6989586621679779216"><span id="local-6989586621679779220"><span class="annot"><span class="annottext">Int -&gt; FieldNameDB -&gt; ShowS
+[FieldNameDB] -&gt; ShowS
+FieldNameDB -&gt; String
+(Int -&gt; FieldNameDB -&gt; ShowS)
+-&gt; (FieldNameDB -&gt; String)
+-&gt; ([FieldNameDB] -&gt; ShowS)
+-&gt; Show FieldNameDB
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; FieldNameDB -&gt; ShowS
+showsPrec :: Int -&gt; FieldNameDB -&gt; ShowS
+$cshow :: FieldNameDB -&gt; String
+show :: FieldNameDB -&gt; String
+$cshowList :: [FieldNameDB] -&gt; ShowS
+showList :: [FieldNameDB] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779224"><span id="local-6989586621679779229"><span class="annot"><span class="annottext">FieldNameDB -&gt; FieldNameDB -&gt; Bool
+(FieldNameDB -&gt; FieldNameDB -&gt; Bool)
+-&gt; (FieldNameDB -&gt; FieldNameDB -&gt; Bool) -&gt; Eq FieldNameDB
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+== :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+$c/= :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+/= :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779235"><span id="local-6989586621679779239"><span id="local-6989586621679779242"><span id="local-6989586621679779252"><span class="annot"><span class="annottext">ReadPrec [FieldNameDB]
+ReadPrec FieldNameDB
+Int -&gt; ReadS FieldNameDB
+ReadS [FieldNameDB]
+(Int -&gt; ReadS FieldNameDB)
+-&gt; ReadS [FieldNameDB]
+-&gt; ReadPrec FieldNameDB
+-&gt; ReadPrec [FieldNameDB]
+-&gt; Read FieldNameDB
+forall a.
+(Int -&gt; ReadS a)
+-&gt; ReadS [a] -&gt; ReadPrec a -&gt; ReadPrec [a] -&gt; Read a
+$creadsPrec :: Int -&gt; ReadS FieldNameDB
+readsPrec :: Int -&gt; ReadS FieldNameDB
+$creadList :: ReadS [FieldNameDB]
+readList :: ReadS [FieldNameDB]
+$creadPrec :: ReadPrec FieldNameDB
+readPrec :: ReadPrec FieldNameDB
+$creadListPrec :: ReadPrec [FieldNameDB]
+readListPrec :: ReadPrec [FieldNameDB]
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Read</span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779258"><span id="local-6989586621679779263"><span id="local-6989586621679779267"><span id="local-6989586621679779271"><span id="local-6989586621679779275"><span id="local-6989586621679779279"><span id="local-6989586621679779283"><span class="annot"><span class="annottext">Eq FieldNameDB
+Eq FieldNameDB =&gt;
+(FieldNameDB -&gt; FieldNameDB -&gt; Ordering)
+-&gt; (FieldNameDB -&gt; FieldNameDB -&gt; Bool)
+-&gt; (FieldNameDB -&gt; FieldNameDB -&gt; Bool)
+-&gt; (FieldNameDB -&gt; FieldNameDB -&gt; Bool)
+-&gt; (FieldNameDB -&gt; FieldNameDB -&gt; Bool)
+-&gt; (FieldNameDB -&gt; FieldNameDB -&gt; FieldNameDB)
+-&gt; (FieldNameDB -&gt; FieldNameDB -&gt; FieldNameDB)
+-&gt; Ord FieldNameDB
+FieldNameDB -&gt; FieldNameDB -&gt; Bool
+FieldNameDB -&gt; FieldNameDB -&gt; Ordering
+FieldNameDB -&gt; FieldNameDB -&gt; FieldNameDB
+forall a.
+Eq a =&gt;
+(a -&gt; a -&gt; Ordering)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; Ord a
+$ccompare :: FieldNameDB -&gt; FieldNameDB -&gt; Ordering
+compare :: FieldNameDB -&gt; FieldNameDB -&gt; Ordering
+$c&lt; :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+&lt; :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+$c&lt;= :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+&lt;= :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+$c&gt; :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+&gt; :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+$c&gt;= :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+&gt;= :: FieldNameDB -&gt; FieldNameDB -&gt; Bool
+$cmax :: FieldNameDB -&gt; FieldNameDB -&gt; FieldNameDB
+max :: FieldNameDB -&gt; FieldNameDB -&gt; FieldNameDB
+$cmin :: FieldNameDB -&gt; FieldNameDB -&gt; FieldNameDB
+min :: FieldNameDB -&gt; FieldNameDB -&gt; FieldNameDB
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Ord</span></span></span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779289"><span id="local-6989586621679779296"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Quote m =&gt; FieldNameDB -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *).
+    Quote m =&gt;
+    FieldNameDB -&gt; Code m FieldNameDB)
+-&gt; Lift FieldNameDB
+forall t.
+(forall (m :: * -&gt; *). Quote m =&gt; t -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *). Quote m =&gt; t -&gt; Code m t) -&gt; Lift t
+forall (m :: * -&gt; *). Quote m =&gt; FieldNameDB -&gt; m Exp
+forall (m :: * -&gt; *). Quote m =&gt; FieldNameDB -&gt; Code m FieldNameDB
+$clift :: forall (m :: * -&gt; *). Quote m =&gt; FieldNameDB -&gt; m Exp
+lift :: forall (m :: * -&gt; *). Quote m =&gt; FieldNameDB -&gt; m Exp
+$cliftTyped :: forall (m :: * -&gt; *). Quote m =&gt; FieldNameDB -&gt; Code m FieldNameDB
+liftTyped :: forall (m :: * -&gt; *). Quote m =&gt; FieldNameDB -&gt; Code m FieldNameDB
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Lift</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-27"></span><span>
+</span><span id="line-28"></span><span class="annot"><span class="hs-comment">-- | @since 2.12.0.0</span></span><span>
+</span><span id="line-29"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Database.Persist.Names.html#DatabaseName"><span class="hs-identifier hs-type">DatabaseName</span></a></span><span> </span><span class="annot"><a href="Database.Persist.Names.html#FieldNameDB"><span class="hs-identifier hs-type">FieldNameDB</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-30"></span><span>    </span><span id="local-6989586621679779306"><span class="annot"><span class="annottext">escapeWith :: forall str. (Text -&gt; str) -&gt; FieldNameDB -&gt; str
+</span><a href="Database.Persist.Names.html#escapeWith"><span class="hs-identifier hs-var hs-var hs-var hs-var">escapeWith</span></a></span></span><span> </span><span id="local-6989586621679779307"><span class="annot"><span class="annottext">Text -&gt; str
+</span><a href="#local-6989586621679779307"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Names.html#FieldNameDB"><span class="hs-identifier hs-type">FieldNameDB</span></a></span><span> </span><span id="local-6989586621679779308"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679779308"><span class="hs-identifier hs-var">n</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; str
+</span><a href="#local-6989586621679779307"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679779308"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-31"></span><span>
+</span><span id="line-32"></span><span class="hs-comment">-- | A 'FieldNameHS' represents the Haskell-side name that @persistent@</span><span>
+</span><span id="line-33"></span><span class="hs-comment">-- will use for a field.</span><span>
+</span><span id="line-34"></span><span class="hs-comment">--</span><span>
+</span><span id="line-35"></span><span class="hs-comment">-- @since 2.12.0.0</span><span>
+</span><span id="line-36"></span><span class="hs-keyword">newtype</span><span> </span><span id="FieldNameHS"><span class="annot"><a href="Database.Persist.Names.html#FieldNameHS"><span class="hs-identifier hs-var">FieldNameHS</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="FieldNameHS"><span class="annot"><a href="Database.Persist.Names.html#FieldNameHS"><span class="hs-identifier hs-var">FieldNameHS</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unFieldNameHS"><span class="annot"><span class="annottext">FieldNameHS -&gt; Text
+</span><a href="Database.Persist.Names.html#unFieldNameHS"><span class="hs-identifier hs-var hs-var">unFieldNameHS</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-37"></span><span>    </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679779312"><span id="local-6989586621679779316"><span id="local-6989586621679779320"><span class="annot"><span class="annottext">Int -&gt; FieldNameHS -&gt; ShowS
+[FieldNameHS] -&gt; ShowS
+FieldNameHS -&gt; String
+(Int -&gt; FieldNameHS -&gt; ShowS)
+-&gt; (FieldNameHS -&gt; String)
+-&gt; ([FieldNameHS] -&gt; ShowS)
+-&gt; Show FieldNameHS
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; FieldNameHS -&gt; ShowS
+showsPrec :: Int -&gt; FieldNameHS -&gt; ShowS
+$cshow :: FieldNameHS -&gt; String
+show :: FieldNameHS -&gt; String
+$cshowList :: [FieldNameHS] -&gt; ShowS
+showList :: [FieldNameHS] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779323"><span id="local-6989586621679779327"><span class="annot"><span class="annottext">FieldNameHS -&gt; FieldNameHS -&gt; Bool
+(FieldNameHS -&gt; FieldNameHS -&gt; Bool)
+-&gt; (FieldNameHS -&gt; FieldNameHS -&gt; Bool) -&gt; Eq FieldNameHS
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+== :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+$c/= :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+/= :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779332"><span id="local-6989586621679779336"><span id="local-6989586621679779339"><span id="local-6989586621679779347"><span class="annot"><span class="annottext">ReadPrec [FieldNameHS]
+ReadPrec FieldNameHS
+Int -&gt; ReadS FieldNameHS
+ReadS [FieldNameHS]
+(Int -&gt; ReadS FieldNameHS)
+-&gt; ReadS [FieldNameHS]
+-&gt; ReadPrec FieldNameHS
+-&gt; ReadPrec [FieldNameHS]
+-&gt; Read FieldNameHS
+forall a.
+(Int -&gt; ReadS a)
+-&gt; ReadS [a] -&gt; ReadPrec a -&gt; ReadPrec [a] -&gt; Read a
+$creadsPrec :: Int -&gt; ReadS FieldNameHS
+readsPrec :: Int -&gt; ReadS FieldNameHS
+$creadList :: ReadS [FieldNameHS]
+readList :: ReadS [FieldNameHS]
+$creadPrec :: ReadPrec FieldNameHS
+readPrec :: ReadPrec FieldNameHS
+$creadListPrec :: ReadPrec [FieldNameHS]
+readListPrec :: ReadPrec [FieldNameHS]
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Read</span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779352"><span id="local-6989586621679779356"><span id="local-6989586621679779360"><span id="local-6989586621679779364"><span id="local-6989586621679779368"><span id="local-6989586621679779372"><span id="local-6989586621679779376"><span class="annot"><span class="annottext">Eq FieldNameHS
+Eq FieldNameHS =&gt;
+(FieldNameHS -&gt; FieldNameHS -&gt; Ordering)
+-&gt; (FieldNameHS -&gt; FieldNameHS -&gt; Bool)
+-&gt; (FieldNameHS -&gt; FieldNameHS -&gt; Bool)
+-&gt; (FieldNameHS -&gt; FieldNameHS -&gt; Bool)
+-&gt; (FieldNameHS -&gt; FieldNameHS -&gt; Bool)
+-&gt; (FieldNameHS -&gt; FieldNameHS -&gt; FieldNameHS)
+-&gt; (FieldNameHS -&gt; FieldNameHS -&gt; FieldNameHS)
+-&gt; Ord FieldNameHS
+FieldNameHS -&gt; FieldNameHS -&gt; Bool
+FieldNameHS -&gt; FieldNameHS -&gt; Ordering
+FieldNameHS -&gt; FieldNameHS -&gt; FieldNameHS
+forall a.
+Eq a =&gt;
+(a -&gt; a -&gt; Ordering)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; Ord a
+$ccompare :: FieldNameHS -&gt; FieldNameHS -&gt; Ordering
+compare :: FieldNameHS -&gt; FieldNameHS -&gt; Ordering
+$c&lt; :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+&lt; :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+$c&lt;= :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+&lt;= :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+$c&gt; :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+&gt; :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+$c&gt;= :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+&gt;= :: FieldNameHS -&gt; FieldNameHS -&gt; Bool
+$cmax :: FieldNameHS -&gt; FieldNameHS -&gt; FieldNameHS
+max :: FieldNameHS -&gt; FieldNameHS -&gt; FieldNameHS
+$cmin :: FieldNameHS -&gt; FieldNameHS -&gt; FieldNameHS
+min :: FieldNameHS -&gt; FieldNameHS -&gt; FieldNameHS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Ord</span></span></span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779381"><span id="local-6989586621679779387"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Quote m =&gt; FieldNameHS -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *).
+    Quote m =&gt;
+    FieldNameHS -&gt; Code m FieldNameHS)
+-&gt; Lift FieldNameHS
+forall t.
+(forall (m :: * -&gt; *). Quote m =&gt; t -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *). Quote m =&gt; t -&gt; Code m t) -&gt; Lift t
+forall (m :: * -&gt; *). Quote m =&gt; FieldNameHS -&gt; m Exp
+forall (m :: * -&gt; *). Quote m =&gt; FieldNameHS -&gt; Code m FieldNameHS
+$clift :: forall (m :: * -&gt; *). Quote m =&gt; FieldNameHS -&gt; m Exp
+lift :: forall (m :: * -&gt; *). Quote m =&gt; FieldNameHS -&gt; m Exp
+$cliftTyped :: forall (m :: * -&gt; *). Quote m =&gt; FieldNameHS -&gt; Code m FieldNameHS
+liftTyped :: forall (m :: * -&gt; *). Quote m =&gt; FieldNameHS -&gt; Code m FieldNameHS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Lift</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-38"></span><span>
+</span><span id="line-39"></span><span class="hs-comment">-- | An 'EntityNameHS' represents the Haskell-side name that @persistent@</span><span>
+</span><span id="line-40"></span><span class="hs-comment">-- will use for an entity.</span><span>
+</span><span id="line-41"></span><span class="hs-comment">--</span><span>
+</span><span id="line-42"></span><span class="hs-comment">-- @since 2.12.0.0</span><span>
+</span><span id="line-43"></span><span class="hs-keyword">newtype</span><span> </span><span id="EntityNameHS"><span class="annot"><a href="Database.Persist.Names.html#EntityNameHS"><span class="hs-identifier hs-var">EntityNameHS</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="EntityNameHS"><span class="annot"><a href="Database.Persist.Names.html#EntityNameHS"><span class="hs-identifier hs-var">EntityNameHS</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unEntityNameHS"><span class="annot"><span class="annottext">EntityNameHS -&gt; Text
+</span><a href="Database.Persist.Names.html#unEntityNameHS"><span class="hs-identifier hs-var hs-var">unEntityNameHS</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-44"></span><span>    </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679779396"><span id="local-6989586621679779400"><span id="local-6989586621679779404"><span class="annot"><span class="annottext">Int -&gt; EntityNameHS -&gt; ShowS
+[EntityNameHS] -&gt; ShowS
+EntityNameHS -&gt; String
+(Int -&gt; EntityNameHS -&gt; ShowS)
+-&gt; (EntityNameHS -&gt; String)
+-&gt; ([EntityNameHS] -&gt; ShowS)
+-&gt; Show EntityNameHS
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; EntityNameHS -&gt; ShowS
+showsPrec :: Int -&gt; EntityNameHS -&gt; ShowS
+$cshow :: EntityNameHS -&gt; String
+show :: EntityNameHS -&gt; String
+$cshowList :: [EntityNameHS] -&gt; ShowS
+showList :: [EntityNameHS] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779407"><span id="local-6989586621679779411"><span class="annot"><span class="annottext">EntityNameHS -&gt; EntityNameHS -&gt; Bool
+(EntityNameHS -&gt; EntityNameHS -&gt; Bool)
+-&gt; (EntityNameHS -&gt; EntityNameHS -&gt; Bool) -&gt; Eq EntityNameHS
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+== :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+$c/= :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+/= :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779416"><span id="local-6989586621679779420"><span id="local-6989586621679779423"><span id="local-6989586621679779431"><span class="annot"><span class="annottext">ReadPrec [EntityNameHS]
+ReadPrec EntityNameHS
+Int -&gt; ReadS EntityNameHS
+ReadS [EntityNameHS]
+(Int -&gt; ReadS EntityNameHS)
+-&gt; ReadS [EntityNameHS]
+-&gt; ReadPrec EntityNameHS
+-&gt; ReadPrec [EntityNameHS]
+-&gt; Read EntityNameHS
+forall a.
+(Int -&gt; ReadS a)
+-&gt; ReadS [a] -&gt; ReadPrec a -&gt; ReadPrec [a] -&gt; Read a
+$creadsPrec :: Int -&gt; ReadS EntityNameHS
+readsPrec :: Int -&gt; ReadS EntityNameHS
+$creadList :: ReadS [EntityNameHS]
+readList :: ReadS [EntityNameHS]
+$creadPrec :: ReadPrec EntityNameHS
+readPrec :: ReadPrec EntityNameHS
+$creadListPrec :: ReadPrec [EntityNameHS]
+readListPrec :: ReadPrec [EntityNameHS]
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Read</span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779436"><span id="local-6989586621679779440"><span id="local-6989586621679779444"><span id="local-6989586621679779448"><span id="local-6989586621679779452"><span id="local-6989586621679779456"><span id="local-6989586621679779460"><span class="annot"><span class="annottext">Eq EntityNameHS
+Eq EntityNameHS =&gt;
+(EntityNameHS -&gt; EntityNameHS -&gt; Ordering)
+-&gt; (EntityNameHS -&gt; EntityNameHS -&gt; Bool)
+-&gt; (EntityNameHS -&gt; EntityNameHS -&gt; Bool)
+-&gt; (EntityNameHS -&gt; EntityNameHS -&gt; Bool)
+-&gt; (EntityNameHS -&gt; EntityNameHS -&gt; Bool)
+-&gt; (EntityNameHS -&gt; EntityNameHS -&gt; EntityNameHS)
+-&gt; (EntityNameHS -&gt; EntityNameHS -&gt; EntityNameHS)
+-&gt; Ord EntityNameHS
+EntityNameHS -&gt; EntityNameHS -&gt; Bool
+EntityNameHS -&gt; EntityNameHS -&gt; Ordering
+EntityNameHS -&gt; EntityNameHS -&gt; EntityNameHS
+forall a.
+Eq a =&gt;
+(a -&gt; a -&gt; Ordering)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; Ord a
+$ccompare :: EntityNameHS -&gt; EntityNameHS -&gt; Ordering
+compare :: EntityNameHS -&gt; EntityNameHS -&gt; Ordering
+$c&lt; :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+&lt; :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+$c&lt;= :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+&lt;= :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+$c&gt; :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+&gt; :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+$c&gt;= :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+&gt;= :: EntityNameHS -&gt; EntityNameHS -&gt; Bool
+$cmax :: EntityNameHS -&gt; EntityNameHS -&gt; EntityNameHS
+max :: EntityNameHS -&gt; EntityNameHS -&gt; EntityNameHS
+$cmin :: EntityNameHS -&gt; EntityNameHS -&gt; EntityNameHS
+min :: EntityNameHS -&gt; EntityNameHS -&gt; EntityNameHS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Ord</span></span></span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779465"><span id="local-6989586621679779471"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Quote m =&gt; EntityNameHS -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *).
+    Quote m =&gt;
+    EntityNameHS -&gt; Code m EntityNameHS)
+-&gt; Lift EntityNameHS
+forall t.
+(forall (m :: * -&gt; *). Quote m =&gt; t -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *). Quote m =&gt; t -&gt; Code m t) -&gt; Lift t
+forall (m :: * -&gt; *). Quote m =&gt; EntityNameHS -&gt; m Exp
+forall (m :: * -&gt; *).
+Quote m =&gt;
+EntityNameHS -&gt; Code m EntityNameHS
+$clift :: forall (m :: * -&gt; *). Quote m =&gt; EntityNameHS -&gt; m Exp
+lift :: forall (m :: * -&gt; *). Quote m =&gt; EntityNameHS -&gt; m Exp
+$cliftTyped :: forall (m :: * -&gt; *).
+Quote m =&gt;
+EntityNameHS -&gt; Code m EntityNameHS
+liftTyped :: forall (m :: * -&gt; *).
+Quote m =&gt;
+EntityNameHS -&gt; Code m EntityNameHS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Lift</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-45"></span><span>
+</span><span id="line-46"></span><span class="hs-comment">-- | An 'EntityNameDB' represents the datastore-side name that @persistent@</span><span>
+</span><span id="line-47"></span><span class="hs-comment">-- will use for an entity.</span><span>
+</span><span id="line-48"></span><span class="hs-comment">--</span><span>
+</span><span id="line-49"></span><span class="hs-comment">-- @since 2.12.0.0</span><span>
+</span><span id="line-50"></span><span class="hs-keyword">newtype</span><span> </span><span id="EntityNameDB"><span class="annot"><a href="Database.Persist.Names.html#EntityNameDB"><span class="hs-identifier hs-var">EntityNameDB</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="EntityNameDB"><span class="annot"><a href="Database.Persist.Names.html#EntityNameDB"><span class="hs-identifier hs-var">EntityNameDB</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unEntityNameDB"><span class="annot"><span class="annottext">EntityNameDB -&gt; Text
+</span><a href="Database.Persist.Names.html#unEntityNameDB"><span class="hs-identifier hs-var hs-var">unEntityNameDB</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-51"></span><span>    </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679779480"><span id="local-6989586621679779484"><span id="local-6989586621679779488"><span class="annot"><span class="annottext">Int -&gt; EntityNameDB -&gt; ShowS
+[EntityNameDB] -&gt; ShowS
+EntityNameDB -&gt; String
+(Int -&gt; EntityNameDB -&gt; ShowS)
+-&gt; (EntityNameDB -&gt; String)
+-&gt; ([EntityNameDB] -&gt; ShowS)
+-&gt; Show EntityNameDB
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; EntityNameDB -&gt; ShowS
+showsPrec :: Int -&gt; EntityNameDB -&gt; ShowS
+$cshow :: EntityNameDB -&gt; String
+show :: EntityNameDB -&gt; String
+$cshowList :: [EntityNameDB] -&gt; ShowS
+showList :: [EntityNameDB] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779491"><span id="local-6989586621679779495"><span class="annot"><span class="annottext">EntityNameDB -&gt; EntityNameDB -&gt; Bool
+(EntityNameDB -&gt; EntityNameDB -&gt; Bool)
+-&gt; (EntityNameDB -&gt; EntityNameDB -&gt; Bool) -&gt; Eq EntityNameDB
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+== :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+$c/= :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+/= :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779500"><span id="local-6989586621679779504"><span id="local-6989586621679779507"><span id="local-6989586621679779515"><span class="annot"><span class="annottext">ReadPrec [EntityNameDB]
+ReadPrec EntityNameDB
+Int -&gt; ReadS EntityNameDB
+ReadS [EntityNameDB]
+(Int -&gt; ReadS EntityNameDB)
+-&gt; ReadS [EntityNameDB]
+-&gt; ReadPrec EntityNameDB
+-&gt; ReadPrec [EntityNameDB]
+-&gt; Read EntityNameDB
+forall a.
+(Int -&gt; ReadS a)
+-&gt; ReadS [a] -&gt; ReadPrec a -&gt; ReadPrec [a] -&gt; Read a
+$creadsPrec :: Int -&gt; ReadS EntityNameDB
+readsPrec :: Int -&gt; ReadS EntityNameDB
+$creadList :: ReadS [EntityNameDB]
+readList :: ReadS [EntityNameDB]
+$creadPrec :: ReadPrec EntityNameDB
+readPrec :: ReadPrec EntityNameDB
+$creadListPrec :: ReadPrec [EntityNameDB]
+readListPrec :: ReadPrec [EntityNameDB]
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Read</span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779520"><span id="local-6989586621679779524"><span id="local-6989586621679779528"><span id="local-6989586621679779532"><span id="local-6989586621679779536"><span id="local-6989586621679779540"><span id="local-6989586621679779544"><span class="annot"><span class="annottext">Eq EntityNameDB
+Eq EntityNameDB =&gt;
+(EntityNameDB -&gt; EntityNameDB -&gt; Ordering)
+-&gt; (EntityNameDB -&gt; EntityNameDB -&gt; Bool)
+-&gt; (EntityNameDB -&gt; EntityNameDB -&gt; Bool)
+-&gt; (EntityNameDB -&gt; EntityNameDB -&gt; Bool)
+-&gt; (EntityNameDB -&gt; EntityNameDB -&gt; Bool)
+-&gt; (EntityNameDB -&gt; EntityNameDB -&gt; EntityNameDB)
+-&gt; (EntityNameDB -&gt; EntityNameDB -&gt; EntityNameDB)
+-&gt; Ord EntityNameDB
+EntityNameDB -&gt; EntityNameDB -&gt; Bool
+EntityNameDB -&gt; EntityNameDB -&gt; Ordering
+EntityNameDB -&gt; EntityNameDB -&gt; EntityNameDB
+forall a.
+Eq a =&gt;
+(a -&gt; a -&gt; Ordering)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; Ord a
+$ccompare :: EntityNameDB -&gt; EntityNameDB -&gt; Ordering
+compare :: EntityNameDB -&gt; EntityNameDB -&gt; Ordering
+$c&lt; :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+&lt; :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+$c&lt;= :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+&lt;= :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+$c&gt; :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+&gt; :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+$c&gt;= :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+&gt;= :: EntityNameDB -&gt; EntityNameDB -&gt; Bool
+$cmax :: EntityNameDB -&gt; EntityNameDB -&gt; EntityNameDB
+max :: EntityNameDB -&gt; EntityNameDB -&gt; EntityNameDB
+$cmin :: EntityNameDB -&gt; EntityNameDB -&gt; EntityNameDB
+min :: EntityNameDB -&gt; EntityNameDB -&gt; EntityNameDB
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Ord</span></span></span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779549"><span id="local-6989586621679779555"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Quote m =&gt; EntityNameDB -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *).
+    Quote m =&gt;
+    EntityNameDB -&gt; Code m EntityNameDB)
+-&gt; Lift EntityNameDB
+forall t.
+(forall (m :: * -&gt; *). Quote m =&gt; t -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *). Quote m =&gt; t -&gt; Code m t) -&gt; Lift t
+forall (m :: * -&gt; *). Quote m =&gt; EntityNameDB -&gt; m Exp
+forall (m :: * -&gt; *).
+Quote m =&gt;
+EntityNameDB -&gt; Code m EntityNameDB
+$clift :: forall (m :: * -&gt; *). Quote m =&gt; EntityNameDB -&gt; m Exp
+lift :: forall (m :: * -&gt; *). Quote m =&gt; EntityNameDB -&gt; m Exp
+$cliftTyped :: forall (m :: * -&gt; *).
+Quote m =&gt;
+EntityNameDB -&gt; Code m EntityNameDB
+liftTyped :: forall (m :: * -&gt; *).
+Quote m =&gt;
+EntityNameDB -&gt; Code m EntityNameDB
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Lift</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-52"></span><span>
+</span><span id="line-53"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Database.Persist.Names.html#DatabaseName"><span class="hs-identifier hs-type">DatabaseName</span></a></span><span> </span><span class="annot"><a href="Database.Persist.Names.html#EntityNameDB"><span class="hs-identifier hs-type">EntityNameDB</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-54"></span><span>    </span><span id="local-6989586621679779563"><span class="annot"><span class="annottext">escapeWith :: forall str. (Text -&gt; str) -&gt; EntityNameDB -&gt; str
+</span><a href="Database.Persist.Names.html#escapeWith"><span class="hs-identifier hs-var hs-var hs-var hs-var">escapeWith</span></a></span></span><span> </span><span id="local-6989586621679779564"><span class="annot"><span class="annottext">Text -&gt; str
+</span><a href="#local-6989586621679779564"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Names.html#EntityNameDB"><span class="hs-identifier hs-type">EntityNameDB</span></a></span><span> </span><span id="local-6989586621679779565"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679779565"><span class="hs-identifier hs-var">n</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; str
+</span><a href="#local-6989586621679779564"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679779565"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-55"></span><span>
+</span><span id="line-56"></span><span class="hs-comment">-- | A 'ConstraintNameDB' represents the datastore-side name that @persistent@</span><span>
+</span><span id="line-57"></span><span class="hs-comment">-- will use for a constraint.</span><span>
+</span><span id="line-58"></span><span class="hs-comment">--</span><span>
+</span><span id="line-59"></span><span class="hs-comment">-- @since 2.12.0.0</span><span>
+</span><span id="line-60"></span><span class="hs-keyword">newtype</span><span> </span><span id="ConstraintNameDB"><span class="annot"><a href="Database.Persist.Names.html#ConstraintNameDB"><span class="hs-identifier hs-var">ConstraintNameDB</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ConstraintNameDB"><span class="annot"><a href="Database.Persist.Names.html#ConstraintNameDB"><span class="hs-identifier hs-var">ConstraintNameDB</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unConstraintNameDB"><span class="annot"><span class="annottext">ConstraintNameDB -&gt; Text
+</span><a href="Database.Persist.Names.html#unConstraintNameDB"><span class="hs-identifier hs-var hs-var">unConstraintNameDB</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-61"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679779569"><span id="local-6989586621679779573"><span id="local-6989586621679779577"><span class="annot"><span class="annottext">Int -&gt; ConstraintNameDB -&gt; ShowS
+[ConstraintNameDB] -&gt; ShowS
+ConstraintNameDB -&gt; String
+(Int -&gt; ConstraintNameDB -&gt; ShowS)
+-&gt; (ConstraintNameDB -&gt; String)
+-&gt; ([ConstraintNameDB] -&gt; ShowS)
+-&gt; Show ConstraintNameDB
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ConstraintNameDB -&gt; ShowS
+showsPrec :: Int -&gt; ConstraintNameDB -&gt; ShowS
+$cshow :: ConstraintNameDB -&gt; String
+show :: ConstraintNameDB -&gt; String
+$cshowList :: [ConstraintNameDB] -&gt; ShowS
+showList :: [ConstraintNameDB] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779580"><span id="local-6989586621679779584"><span class="annot"><span class="annottext">ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+(ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool)
+-&gt; (ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool)
+-&gt; Eq ConstraintNameDB
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+== :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+$c/= :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+/= :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779589"><span id="local-6989586621679779593"><span id="local-6989586621679779596"><span id="local-6989586621679779604"><span class="annot"><span class="annottext">ReadPrec [ConstraintNameDB]
+ReadPrec ConstraintNameDB
+Int -&gt; ReadS ConstraintNameDB
+ReadS [ConstraintNameDB]
+(Int -&gt; ReadS ConstraintNameDB)
+-&gt; ReadS [ConstraintNameDB]
+-&gt; ReadPrec ConstraintNameDB
+-&gt; ReadPrec [ConstraintNameDB]
+-&gt; Read ConstraintNameDB
+forall a.
+(Int -&gt; ReadS a)
+-&gt; ReadS [a] -&gt; ReadPrec a -&gt; ReadPrec [a] -&gt; Read a
+$creadsPrec :: Int -&gt; ReadS ConstraintNameDB
+readsPrec :: Int -&gt; ReadS ConstraintNameDB
+$creadList :: ReadS [ConstraintNameDB]
+readList :: ReadS [ConstraintNameDB]
+$creadPrec :: ReadPrec ConstraintNameDB
+readPrec :: ReadPrec ConstraintNameDB
+$creadListPrec :: ReadPrec [ConstraintNameDB]
+readListPrec :: ReadPrec [ConstraintNameDB]
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Read</span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779609"><span id="local-6989586621679779613"><span id="local-6989586621679779617"><span id="local-6989586621679779621"><span id="local-6989586621679779625"><span id="local-6989586621679779629"><span id="local-6989586621679779633"><span class="annot"><span class="annottext">Eq ConstraintNameDB
+Eq ConstraintNameDB =&gt;
+(ConstraintNameDB -&gt; ConstraintNameDB -&gt; Ordering)
+-&gt; (ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool)
+-&gt; (ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool)
+-&gt; (ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool)
+-&gt; (ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool)
+-&gt; (ConstraintNameDB -&gt; ConstraintNameDB -&gt; ConstraintNameDB)
+-&gt; (ConstraintNameDB -&gt; ConstraintNameDB -&gt; ConstraintNameDB)
+-&gt; Ord ConstraintNameDB
+ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+ConstraintNameDB -&gt; ConstraintNameDB -&gt; Ordering
+ConstraintNameDB -&gt; ConstraintNameDB -&gt; ConstraintNameDB
+forall a.
+Eq a =&gt;
+(a -&gt; a -&gt; Ordering)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; Ord a
+$ccompare :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Ordering
+compare :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Ordering
+$c&lt; :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+&lt; :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+$c&lt;= :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+&lt;= :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+$c&gt; :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+&gt; :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+$c&gt;= :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+&gt;= :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; Bool
+$cmax :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; ConstraintNameDB
+max :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; ConstraintNameDB
+$cmin :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; ConstraintNameDB
+min :: ConstraintNameDB -&gt; ConstraintNameDB -&gt; ConstraintNameDB
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Ord</span></span></span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779638"><span id="local-6989586621679779644"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Quote m =&gt; ConstraintNameDB -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *).
+    Quote m =&gt;
+    ConstraintNameDB -&gt; Code m ConstraintNameDB)
+-&gt; Lift ConstraintNameDB
+forall t.
+(forall (m :: * -&gt; *). Quote m =&gt; t -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *). Quote m =&gt; t -&gt; Code m t) -&gt; Lift t
+forall (m :: * -&gt; *). Quote m =&gt; ConstraintNameDB -&gt; m Exp
+forall (m :: * -&gt; *).
+Quote m =&gt;
+ConstraintNameDB -&gt; Code m ConstraintNameDB
+$clift :: forall (m :: * -&gt; *). Quote m =&gt; ConstraintNameDB -&gt; m Exp
+lift :: forall (m :: * -&gt; *). Quote m =&gt; ConstraintNameDB -&gt; m Exp
+$cliftTyped :: forall (m :: * -&gt; *).
+Quote m =&gt;
+ConstraintNameDB -&gt; Code m ConstraintNameDB
+liftTyped :: forall (m :: * -&gt; *).
+Quote m =&gt;
+ConstraintNameDB -&gt; Code m ConstraintNameDB
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Lift</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-62"></span><span>
+</span><span id="line-63"></span><span class="annot"><span class="hs-comment">-- | @since 2.12.0.0</span></span><span>
+</span><span id="line-64"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Database.Persist.Names.html#DatabaseName"><span class="hs-identifier hs-type">DatabaseName</span></a></span><span> </span><span class="annot"><a href="Database.Persist.Names.html#ConstraintNameDB"><span class="hs-identifier hs-type">ConstraintNameDB</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-65"></span><span>  </span><span id="local-6989586621679779652"><span class="annot"><span class="annottext">escapeWith :: forall str. (Text -&gt; str) -&gt; ConstraintNameDB -&gt; str
+</span><a href="Database.Persist.Names.html#escapeWith"><span class="hs-identifier hs-var hs-var hs-var hs-var">escapeWith</span></a></span></span><span> </span><span id="local-6989586621679779653"><span class="annot"><span class="annottext">Text -&gt; str
+</span><a href="#local-6989586621679779653"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Persist.Names.html#ConstraintNameDB"><span class="hs-identifier hs-type">ConstraintNameDB</span></a></span><span> </span><span id="local-6989586621679779654"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679779654"><span class="hs-identifier hs-var">n</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; str
+</span><a href="#local-6989586621679779653"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679779654"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-66"></span><span>
+</span><span id="line-67"></span><span class="hs-comment">-- | An 'ConstraintNameHS' represents the Haskell-side name that @persistent@</span><span>
+</span><span id="line-68"></span><span class="hs-comment">-- will use for a constraint.</span><span>
+</span><span id="line-69"></span><span class="hs-comment">--</span><span>
+</span><span id="line-70"></span><span class="hs-comment">-- @since 2.12.0.0</span><span>
+</span><span id="line-71"></span><span class="hs-keyword">newtype</span><span> </span><span id="ConstraintNameHS"><span class="annot"><a href="Database.Persist.Names.html#ConstraintNameHS"><span class="hs-identifier hs-var">ConstraintNameHS</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ConstraintNameHS"><span class="annot"><a href="Database.Persist.Names.html#ConstraintNameHS"><span class="hs-identifier hs-var">ConstraintNameHS</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unConstraintNameHS"><span class="annot"><span class="annottext">ConstraintNameHS -&gt; Text
+</span><a href="Database.Persist.Names.html#unConstraintNameHS"><span class="hs-identifier hs-var hs-var">unConstraintNameHS</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-72"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679779658"><span id="local-6989586621679779662"><span id="local-6989586621679779666"><span class="annot"><span class="annottext">Int -&gt; ConstraintNameHS -&gt; ShowS
+[ConstraintNameHS] -&gt; ShowS
+ConstraintNameHS -&gt; String
+(Int -&gt; ConstraintNameHS -&gt; ShowS)
+-&gt; (ConstraintNameHS -&gt; String)
+-&gt; ([ConstraintNameHS] -&gt; ShowS)
+-&gt; Show ConstraintNameHS
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ConstraintNameHS -&gt; ShowS
+showsPrec :: Int -&gt; ConstraintNameHS -&gt; ShowS
+$cshow :: ConstraintNameHS -&gt; String
+show :: ConstraintNameHS -&gt; String
+$cshowList :: [ConstraintNameHS] -&gt; ShowS
+showList :: [ConstraintNameHS] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779669"><span id="local-6989586621679779673"><span class="annot"><span class="annottext">ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+(ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool)
+-&gt; (ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool)
+-&gt; Eq ConstraintNameHS
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+== :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+$c/= :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+/= :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779678"><span id="local-6989586621679779682"><span id="local-6989586621679779685"><span id="local-6989586621679779693"><span class="annot"><span class="annottext">ReadPrec [ConstraintNameHS]
+ReadPrec ConstraintNameHS
+Int -&gt; ReadS ConstraintNameHS
+ReadS [ConstraintNameHS]
+(Int -&gt; ReadS ConstraintNameHS)
+-&gt; ReadS [ConstraintNameHS]
+-&gt; ReadPrec ConstraintNameHS
+-&gt; ReadPrec [ConstraintNameHS]
+-&gt; Read ConstraintNameHS
+forall a.
+(Int -&gt; ReadS a)
+-&gt; ReadS [a] -&gt; ReadPrec a -&gt; ReadPrec [a] -&gt; Read a
+$creadsPrec :: Int -&gt; ReadS ConstraintNameHS
+readsPrec :: Int -&gt; ReadS ConstraintNameHS
+$creadList :: ReadS [ConstraintNameHS]
+readList :: ReadS [ConstraintNameHS]
+$creadPrec :: ReadPrec ConstraintNameHS
+readPrec :: ReadPrec ConstraintNameHS
+$creadListPrec :: ReadPrec [ConstraintNameHS]
+readListPrec :: ReadPrec [ConstraintNameHS]
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Read</span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779698"><span id="local-6989586621679779702"><span id="local-6989586621679779706"><span id="local-6989586621679779710"><span id="local-6989586621679779714"><span id="local-6989586621679779718"><span id="local-6989586621679779722"><span class="annot"><span class="annottext">Eq ConstraintNameHS
+Eq ConstraintNameHS =&gt;
+(ConstraintNameHS -&gt; ConstraintNameHS -&gt; Ordering)
+-&gt; (ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool)
+-&gt; (ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool)
+-&gt; (ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool)
+-&gt; (ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool)
+-&gt; (ConstraintNameHS -&gt; ConstraintNameHS -&gt; ConstraintNameHS)
+-&gt; (ConstraintNameHS -&gt; ConstraintNameHS -&gt; ConstraintNameHS)
+-&gt; Ord ConstraintNameHS
+ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+ConstraintNameHS -&gt; ConstraintNameHS -&gt; Ordering
+ConstraintNameHS -&gt; ConstraintNameHS -&gt; ConstraintNameHS
+forall a.
+Eq a =&gt;
+(a -&gt; a -&gt; Ordering)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; Ord a
+$ccompare :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Ordering
+compare :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Ordering
+$c&lt; :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+&lt; :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+$c&lt;= :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+&lt;= :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+$c&gt; :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+&gt; :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+$c&gt;= :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+&gt;= :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; Bool
+$cmax :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; ConstraintNameHS
+max :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; ConstraintNameHS
+$cmin :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; ConstraintNameHS
+min :: ConstraintNameHS -&gt; ConstraintNameHS -&gt; ConstraintNameHS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Ord</span></span></span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679779727"><span id="local-6989586621679779733"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Quote m =&gt; ConstraintNameHS -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *).
+    Quote m =&gt;
+    ConstraintNameHS -&gt; Code m ConstraintNameHS)
+-&gt; Lift ConstraintNameHS
+forall t.
+(forall (m :: * -&gt; *). Quote m =&gt; t -&gt; m Exp)
+-&gt; (forall (m :: * -&gt; *). Quote m =&gt; t -&gt; Code m t) -&gt; Lift t
+forall (m :: * -&gt; *). Quote m =&gt; ConstraintNameHS -&gt; m Exp
+forall (m :: * -&gt; *).
+Quote m =&gt;
+ConstraintNameHS -&gt; Code m ConstraintNameHS
+$clift :: forall (m :: * -&gt; *). Quote m =&gt; ConstraintNameHS -&gt; m Exp
+lift :: forall (m :: * -&gt; *). Quote m =&gt; ConstraintNameHS -&gt; m Exp
+$cliftTyped :: forall (m :: * -&gt; *).
+Quote m =&gt;
+ConstraintNameHS -&gt; Code m ConstraintNameHS
+liftTyped :: forall (m :: * -&gt; *).
+Quote m =&gt;
+ConstraintNameHS -&gt; Code m ConstraintNameHS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Lift</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-73"></span></pre></body></html>

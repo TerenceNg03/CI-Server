@@ -1,0 +1,367 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-comment">{- Acknowledgements
+~~~~~~~~~~~~~~~~~~~
+
+* 'prefixF', 'suffixF', 'padBothF', 'groupInt' are taken from
+      &lt;https://hackage.haskell.org/package/formatting&gt;
+  Written by Github user @mwm
+      &lt;https://github.com/mwm&gt;
+
+* 'ordinalF' is taken from
+      &lt;https://hackage.haskell.org/package/formatting&gt;
+  Written by Chris Done
+      &lt;https://github.com/chrisdone&gt;
+
+* 'atBase' is taken from
+      &lt;https://hackage.haskell.org/package/formatting&gt;, originally from
+      &lt;https://hackage.haskell.org/package/lens&gt;
+  Seems to be written by Johan Kiviniemi
+      &lt;https://github.com/ion1&gt;
+-}</span><span>
+</span><span id="line-20"></span><span>
+</span><span id="line-21"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Fmt</span><span>
+</span><span id="line-22"></span><span class="hs-special">(</span><span>
+</span><span id="line-23"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Overloaded strings</span></span><span>
+</span><span id="line-24"></span><span>  </span><span class="annot"><span class="hs-comment">-- $overloadedstrings</span></span><span>
+</span><span id="line-25"></span><span>
+</span><span id="line-26"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Examples</span></span><span>
+</span><span id="line-27"></span><span>  </span><span class="annot"><span class="hs-comment">-- $examples</span></span><span>
+</span><span id="line-28"></span><span>
+</span><span id="line-29"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Migration guide from @formatting@</span></span><span>
+</span><span id="line-30"></span><span>  </span><span class="annot"><span class="hs-comment">-- $migration</span></span><span>
+</span><span id="line-31"></span><span>
+</span><span id="line-32"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Basic formatting</span></span><span>
+</span><span id="line-33"></span><span>  </span><span class="annot"><span class="hs-comment">-- $brackets</span></span><span>
+</span><span id="line-34"></span><span>
+</span><span id="line-35"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Ordinary brackets</span></span><span>
+</span><span id="line-36"></span><span>  </span><span class="annot"><span class="hs-comment">-- $god1</span></span><span>
+</span><span id="line-37"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#%2B%7C"><span class="hs-operator">(+|)</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-38"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#%7C%2B"><span class="hs-operator">(|+)</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-39"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** 'Show' brackets</span></span><span>
+</span><span id="line-40"></span><span>  </span><span class="annot"><span class="hs-comment">-- $god2</span></span><span>
+</span><span id="line-41"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#%2B%7C%7C"><span class="hs-operator">(+||)</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-42"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#%7C%7C%2B"><span class="hs-operator">(||+)</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-43"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Combinations</span></span><span>
+</span><span id="line-44"></span><span>  </span><span class="annot"><span class="hs-comment">-- $god3</span></span><span>
+</span><span id="line-45"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#%7C%2B%2B%7C"><span class="hs-operator">(|++|)</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-46"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#%7C%7C%2B%2B%7C%7C"><span class="hs-operator">(||++||)</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-47"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#%7C%2B%2B%7C%7C"><span class="hs-operator">(|++||)</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-48"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#%7C%7C%2B%2B%7C"><span class="hs-operator">(||++|)</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-49"></span><span>
+</span><span id="line-50"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Old-style formatting</span></span><span>
+</span><span id="line-51"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Template.html#format"><span class="hs-identifier">format</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-52"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Template.html#formatLn"><span class="hs-identifier">formatLn</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-53"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Template.html#Format"><span class="hs-identifier">Format</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-54"></span><span>
+</span><span id="line-55"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Helper functions</span></span><span>
+</span><span id="line-56"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#fmt"><span class="hs-identifier">fmt</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Core.html#fmtLn"><span class="hs-identifier">fmtLn</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-57"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Core.html#pretty"><span class="hs-identifier">pretty</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Core.html#prettyLn"><span class="hs-identifier">prettyLn</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-58"></span><span>
+</span><span id="line-59"></span><span>  </span><span class="annot"><span class="hs-identifier">Builder</span></span><span class="hs-special">,</span><span>
+</span><span id="line-60"></span><span>  </span><span class="annot"><span class="hs-identifier">Buildable</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-61"></span><span>
+</span><span id="line-62"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Formatters</span></span><span>
+</span><span id="line-63"></span><span>
+</span><span id="line-64"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Time</span></span><span>
+</span><span id="line-65"></span><span>  </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Fmt.Time.html"><span class="hs-identifier">Fmt.Time</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-66"></span><span>
+</span><span id="line-67"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Text</span></span><span>
+</span><span id="line-68"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#indentF"><span class="hs-identifier">indentF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html#indentF%27"><span class="hs-identifier">indentF'</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-69"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#nameF"><span class="hs-identifier">nameF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-70"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#unwordsF"><span class="hs-identifier">unwordsF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-71"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#unlinesF"><span class="hs-identifier">unlinesF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-72"></span><span>
+</span><span id="line-73"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Lists</span></span><span>
+</span><span id="line-74"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#listF"><span class="hs-identifier">listF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html#listF%27"><span class="hs-identifier">listF'</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-75"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#blockListF"><span class="hs-identifier">blockListF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html#blockListF%27"><span class="hs-identifier">blockListF'</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-76"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#jsonListF"><span class="hs-identifier">jsonListF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html#jsonListF%27"><span class="hs-identifier">jsonListF'</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-77"></span><span>
+</span><span id="line-78"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Maps</span></span><span>
+</span><span id="line-79"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#mapF"><span class="hs-identifier">mapF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html#mapF%27"><span class="hs-identifier">mapF'</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-80"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#blockMapF"><span class="hs-identifier">blockMapF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html#blockMapF%27"><span class="hs-identifier">blockMapF'</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-81"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#jsonMapF"><span class="hs-identifier">jsonMapF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html#jsonMapF%27"><span class="hs-identifier">jsonMapF'</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-82"></span><span>
+</span><span id="line-83"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Tuples</span></span><span>
+</span><span id="line-84"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Tuple.html#tupleF"><span class="hs-identifier">tupleF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-85"></span><span>
+</span><span id="line-86"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** ADTs</span></span><span>
+</span><span id="line-87"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#maybeF"><span class="hs-identifier">maybeF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-88"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#eitherF"><span class="hs-identifier">eitherF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-89"></span><span>
+</span><span id="line-90"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Padding/trimming</span></span><span>
+</span><span id="line-91"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#prefixF"><span class="hs-identifier">prefixF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-92"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#suffixF"><span class="hs-identifier">suffixF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-93"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#padLeftF"><span class="hs-identifier">padLeftF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-94"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#padRightF"><span class="hs-identifier">padRightF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-95"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#padBothF"><span class="hs-identifier">padBothF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-96"></span><span>
+</span><span id="line-97"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Hex</span></span><span>
+</span><span id="line-98"></span><span>  </span><span class="annot"><a href="Fmt.Internal.html#hexF"><span class="hs-identifier">hexF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-99"></span><span>
+</span><span id="line-100"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Bytestrings</span></span><span>
+</span><span id="line-101"></span><span>  </span><span class="annot"><a href="Fmt.Internal.html#base64F"><span class="hs-identifier">base64F</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-102"></span><span>  </span><span class="annot"><a href="Fmt.Internal.html#base64UrlF"><span class="hs-identifier">base64UrlF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-103"></span><span>
+</span><span id="line-104"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Integers</span></span><span>
+</span><span id="line-105"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Numeric.html#ordinalF"><span class="hs-identifier">ordinalF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-106"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Numeric.html#commaizeF"><span class="hs-identifier">commaizeF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-107"></span><span>  </span><span class="annot"><span class="hs-comment">-- *** Base conversion</span></span><span>
+</span><span id="line-108"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Numeric.html#octF"><span class="hs-identifier">octF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-109"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Numeric.html#binF"><span class="hs-identifier">binF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-110"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Numeric.html#baseF"><span class="hs-identifier">baseF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-111"></span><span>
+</span><span id="line-112"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Floating-point</span></span><span>
+</span><span id="line-113"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Numeric.html#floatF"><span class="hs-identifier">floatF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-114"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Numeric.html#exptF"><span class="hs-identifier">exptF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-115"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Numeric.html#fixedF"><span class="hs-identifier">fixedF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-116"></span><span>
+</span><span id="line-117"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Conditional formatting</span></span><span>
+</span><span id="line-118"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#whenF"><span class="hs-identifier">whenF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-119"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Formatters.html#unlessF"><span class="hs-identifier">unlessF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-120"></span><span>
+</span><span id="line-121"></span><span>  </span><span class="annot"><span class="hs-comment">-- ** Generic formatting</span></span><span>
+</span><span id="line-122"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Generic.html#genericF"><span class="hs-identifier">genericF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-123"></span><span>  </span><span class="annot"><a href="Fmt.Internal.Generic.html#GenericBuildable"><span class="hs-identifier">GenericBuildable</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-124"></span><span class="hs-special">)</span><span>
+</span><span id="line-125"></span><span class="hs-keyword">where</span><span>
+</span><span id="line-126"></span><span>
+</span><span id="line-127"></span><span>
+</span><span id="line-128"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Formatting.Buildable</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Buildable</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-129"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy.Builder</span></span><span>
+</span><span id="line-130"></span><span>
+</span><span id="line-131"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Fmt.Internal.html"><span class="hs-identifier">Fmt.Internal</span></a></span><span>
+</span><span id="line-132"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Fmt.Time.html"><span class="hs-identifier">Fmt.Time</span></a></span><span>
+</span><span id="line-133"></span><span>
+</span><span id="line-134"></span><span>
+</span><span id="line-135"></span><span class="hs-comment">-- $setup</span><span>
+</span><span id="line-136"></span><span class="hs-comment">-- &gt;&gt;&gt; :set -XOverloadedStrings</span><span>
+</span><span id="line-137"></span><span class="hs-comment">-- &gt;&gt;&gt; :set -XDeriveGeneric</span><span>
+</span><span id="line-138"></span><span class="hs-comment">-- &gt;&gt;&gt; import Data.Text (Text)</span><span>
+</span><span id="line-139"></span><span>
+</span><span id="line-140"></span><span class="annot"><span class="hs-comment">{- $overloadedstrings
+
+You need @OverloadedStrings@ enabled to use this library. There are three
+ways to do it:
+
+  * __In GHCi:__ do @:set -XOverloadedStrings@.
+
+  * __In a module:__ add @\{\-\# LANGUAGE OverloadedStrings \#\-\}@
+    to the beginning of your module.
+
+  * __In a project:__ add @OverloadedStrings@ to the @default-extensions@
+    section of your @.cabal@ file.
+-}</span></span><span>
+</span><span id="line-153"></span><span>
+</span><span id="line-154"></span><span class="annot"><span class="hs-comment">{- $examples
+
+Here's a bunch of examples because some people learn better by looking at
+examples.
+
+Insert some variables into a string:
+
+&gt;&gt;&gt; let (a, b, n) = (&quot;foo&quot;, &quot;bar&quot;, 25)
+&gt;&gt;&gt; (&quot;Here are some words: &quot;+|a|+&quot;, &quot;+|b|+&quot;\nAlso a number: &quot;+|n|+&quot;&quot;) :: String
+&quot;Here are some words: foo, bar\nAlso a number: 25&quot;
+
+Print it:
+
+&gt;&gt;&gt; fmtLn (&quot;Here are some words: &quot;+|a|+&quot;, &quot;+|b|+&quot;\nAlso a number: &quot;+|n|+&quot;&quot;)
+Here are some words: foo, bar
+Also a number: 25
+
+Format a list in various ways:
+
+&gt;&gt;&gt; let xs = [&quot;John&quot;, &quot;Bob&quot;]
+
+&gt;&gt;&gt; fmtLn (&quot;Using show: &quot;+||xs||+&quot;\nUsing listF: &quot;+|listF xs|+&quot;&quot;)
+Using show: [&quot;John&quot;,&quot;Bob&quot;]
+Using listF: [John, Bob]
+
+&gt;&gt;&gt; fmt (&quot;YAML-like:\n&quot;+|blockListF xs|+&quot;&quot;)
+YAML-like:
+- John
+- Bob
+
+&gt;&gt;&gt; fmt (&quot;JSON-like: &quot;+|jsonListF xs|+&quot;&quot;)
+JSON-like: [
+  John
+, Bob
+]
+
+-}</span></span><span>
+</span><span id="line-191"></span><span>
+</span><span id="line-192"></span><span class="annot"><span class="hs-comment">{- $migration
+
+Instead of using @%@, surround variables with '+|' and '|+'. You don't have
+to use @sformat@ or anything else, and also where you were using @build@,
+@int@, @text@, etc in @formatting@, you don't have to use anything in @fmt@:
+
+@
+formatting    __sformat (&quot;Foo: &quot;%build%&quot;, bar: &quot;%int) foo bar__
+       fmt    __&quot;Foo: &quot;+|foo|+&quot;, bar: &quot;+|bar|+&quot;&quot;__
+@
+
+The resulting formatted string is polymorphic and can be used as 'String',
+'Text', 'Builder' or even 'IO' (i.e. the string will be printed to the
+screen). However, when printing it is recommended to use 'fmt' or 'fmtLn'
+for clarity.
+
+@fmt@ provides lots of formatters (which are simply functions that produce
+'Builder'):
+
+@
+formatting    __sformat (&quot;Got another byte (&quot;%hex%&quot;)&quot;) x__
+       fmt    __&quot;Got another byte (&quot;+|hexF x|+&quot;)&quot;__
+@
+
+Instead of the @shown@ formatter, either just use 'show' or double brackets:
+
+@
+formatting    __sformat (&quot;This uses Show: &quot;%shown%&quot;) foo__
+    fmt #1    __&quot;This uses Show: &quot;+|show foo|+&quot;&quot;__
+    fmt #2    __&quot;This uses Show: &quot;+||foo||+&quot;&quot;__
+@
+
+Many formatters from @formatting@ have the same names in @fmt@, but with
+added &#8220;F&#8221;: 'hexF', 'exptF', etc. Some have been renamed, though:
+
+@
+__Cutting:__
+  fitLeft  -\&gt; 'prefixF'
+  fitRight -\&gt; 'suffixF'
+
+__Padding:__
+  left   -\&gt; 'padLeftF'
+  right  -\&gt; 'padRightF'
+  center -\&gt; 'padBothF'
+
+__Stuff with numbers:__
+  ords   -\&gt; 'ordinalF'
+  commas -\&gt; 'commaizeF'
+@
+
+Also, some formatters from @formatting@ haven't been added to @fmt@
+yet. Specifically:
+
+* @plural@ and @asInt@ (but instead of @asInt@ you can use 'fromEnum')
+* @prefixBin@, @prefixOrd@, @prefixHex@, and @bytes@
+* formatters that use @Scientific@ (@sci@ and @scifmt@)
+
+They will be added later. (On the other hand, @fmt@ provides some useful
+formatters not available in @formatting@, such as 'listF', 'mapF', 'tupleF'
+and so on.)
+-}</span></span><span>
+</span><span id="line-253"></span><span>
+</span><span id="line-254"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-255"></span><span class="hs-comment">-- Documentation for operators</span><span>
+</span><span id="line-256"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-257"></span><span>
+</span><span id="line-258"></span><span class="annot"><span class="hs-comment">{- $brackets
+
+To format strings, put variables between ('+|') and ('|+'):
+
+&gt;&gt;&gt; let name = &quot;Alice&quot; :: String
+&gt;&gt;&gt; &quot;Meet &quot;+|name|+&quot;!&quot; :: String
+&quot;Meet Alice!&quot;
+
+Of course, 'Text' is supported as well:
+
+&gt;&gt;&gt; &quot;Meet &quot;+|name|+&quot;!&quot; :: Text
+&quot;Meet Alice!&quot;
+
+You don't actually need any type signatures; however, if you're toying with
+this library in GHCi, it's recommended to either add a type signature or use
+'fmtLn':
+
+&gt;&gt;&gt; fmtLn (&quot;Meet &quot;+|name|+&quot;!&quot;)
+Meet Alice!
+
+Otherwise the type of the formatted string would be resolved to @IO ()@ and
+printed without a newline, which is not very convenient when you're in GHCi.
+On the other hand, it's useful for quick-and-dirty scripts:
+
+@
+main = do
+  [fin, fout] \&lt;- words \&lt;$\&gt; getArgs
+  __&quot;Reading data from &quot;+|fin|+&quot;\\n&quot;__
+  xs \&lt;- readFile fin
+  __&quot;Writing processed data to &quot;+|fout|+&quot;\\n&quot;__
+  writeFile fout (show (process xs))
+@
+
+Anyway, let's proceed. Anything 'Buildable', including numbers, booleans,
+characters and dates, can be put between ('+|') and ('|+'):
+
+&gt;&gt;&gt; let starCount = &quot;173&quot;
+&gt;&gt;&gt; fmtLn (&quot;Meet &quot;+|name|+&quot;! She's got &quot;+|starCount|+&quot; stars on Github.&quot;)
+Meet Alice! She's got 173 stars on Github.
+
+Since the only thing ('+|') and ('|+') do is concatenate strings and do
+conversion, you can use any functions you want inside them. In this case,
+'length':
+
+&gt;&gt;&gt; fmtLn (&quot;&quot;+|name|+&quot;'s name has &quot;+|length name|+&quot; letters&quot;)
+Alice's name has 5 letters
+
+If something isn't 'Buildable', just use 'show' on it:
+
+&gt;&gt;&gt; let pos = (3, 5)
+&gt;&gt;&gt; fmtLn (&quot;Character's position: &quot;+|show pos|+&quot;&quot;)
+Character's position: (3,5)
+
+Or one of many formatters provided by this library &#8211; for instance, for tuples
+of various sizes there's 'tupleF':
+
+&gt;&gt;&gt; fmtLn (&quot;Character's position: &quot;+|tupleF pos|+&quot;&quot;)
+Character's position: (3, 5)
+
+Finally, for convenience there's the ('|++|') operator, which can be used if
+you've got one variable following the other:
+
+&gt;&gt;&gt; let (a, op, b, res) = (2, &quot;*&quot;, 2, 4)
+&gt;&gt;&gt; fmtLn (&quot;&quot;+|a|++|op|++|b|+&quot; = &quot;+|res|+&quot;&quot;)
+2*2 = 4
+
+Also, since in some codebases there are /lots/ of types which aren't
+'Buildable', there are operators ('+||') and ('||+'), which use 'show'
+instead of 'build':
+
+prop&gt; (&quot;&quot;+|show foo|++|show bar|+&quot;&quot;) == (&quot;&quot;+||foo||++||bar||+&quot;&quot;)
+-}</span></span><span>
+</span><span id="line-330"></span><span>
+</span><span id="line-331"></span><span class="hs-comment">-- $god1</span><span>
+</span><span id="line-332"></span><span class="hs-comment">-- Operators for the operators god!</span><span>
+</span><span id="line-333"></span><span>
+</span><span id="line-334"></span><span class="hs-comment">-- $god2</span><span>
+</span><span id="line-335"></span><span class="hs-comment">-- More operators for the operators god!</span><span>
+</span><span id="line-336"></span><span>
+</span><span id="line-337"></span><span class="annot"><span class="hs-comment">{- $god3
+
+Z&#864;&#824;A&#863;&#789;&#864;&#821;L&#864;&#801;&#832;&#833;G&#822;&#795;O&#861; &#820;&#847;&#832;&#160;I&#862;S&#802;&#824;&#824;&#864;&#160; &#802;&#866;&#856;&#795;C&#823;&#865;&#863;O&#807;&#862;&#808;&#833;&#807;M&#856;&#801;&#863;&#862;I&#860;&#823;N&#823;&#789;G&#832;&#823;&#789;
+
+(Though you can just use @&quot;&quot;@ between @+| |+@ instead of using these
+operators, and 'Show'-brackets don't have to be used at all because there's
+'show' available.)
+-}</span></span><span>
+</span><span id="line-345"></span><span>
+</span><span id="line-346"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-347"></span><span class="hs-comment">-- TODOs</span><span>
+</span><span id="line-348"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-349"></span><span>
+</span><span id="line-350"></span><span class="hs-comment">{- docs
+~~~~~~~~~~~~~~~~~~~~
+* mention that fmt doesn't do the neat thing that formatting does with (&lt;&gt;)
+  (or maybe it does? there's a monoid instance for functions after all,
+  though I might also have to write a IsString instance for (a -&gt; Builder))
+* write that if +| |+ are hated or if it's inconvenient in some cases,
+  you can just use provided formatters and &lt;&gt; (add Fmt.DIY for that?)
+  (e.g. &quot;pub:&quot; &lt;&gt; base16F foo)
+* write that it can be used in parallel with formatting? can it, actually?
+* clarify what exactly is hard about writing `formatting` formatters
+-}</span><span>
+</span><span id="line-361"></span><span>
+</span><span id="line-362"></span><span class="hs-comment">{- others
+~~~~~~~~~~~~~~~~~~~~
+* what effect does it have on compilation time? what effect do
+  other formatting libraries have on compilation time?
+-}</span><span>
+</span><span id="line-367"></span></pre></body></html>

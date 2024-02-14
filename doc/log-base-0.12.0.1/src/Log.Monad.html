@@ -1,0 +1,768 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">-- | The 'LogT' monad transformer for adding logging capabilities to any monad.</span></span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE CPP #-}</span><span>
+</span><span id="line-3"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Log.Monad</span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-4"></span><span>    </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier">Logger</span></a></span><span>
+</span><span id="line-5"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Logger.html#LoggerEnv"><span class="hs-identifier">LoggerEnv</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-6"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Monad.html#InnerLogT"><span class="hs-identifier">InnerLogT</span></a></span><span>
+</span><span id="line-7"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier">LogT</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-8"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Monad.html#runLogT"><span class="hs-identifier">runLogT</span></a></span><span>
+</span><span id="line-9"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Monad.html#mapLogT"><span class="hs-identifier">mapLogT</span></a></span><span>
+</span><span id="line-10"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Monad.html#logMessageIO"><span class="hs-identifier">logMessageIO</span></a></span><span>
+</span><span id="line-11"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Monad.html#getLoggerIO"><span class="hs-identifier">getLoggerIO</span></a></span><span>
+</span><span id="line-12"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-13"></span><span>
+</span><span id="line-14"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Applicative</span></span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.DeepSeq</span></span><span>
+</span><span id="line-16"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad</span></span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Base</span></span><span>
+</span><span id="line-18"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Catch</span></span><span>
+</span><span id="line-19"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Error.Class</span></span><span>
+</span><span id="line-20"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.IO.Unlift</span></span><span>
+</span><span id="line-21"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Morph</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MFunctor</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-22"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Reader</span></span><span>
+</span><span id="line-23"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.State.Class</span></span><span>
+</span><span id="line-24"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Trans.Control</span></span><span>
+</span><span id="line-25"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Writer.Class</span></span><span>
+</span><span id="line-26"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson</span></span><span>
+</span><span id="line-27"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-28"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Time</span></span><span>
+</span><span id="line-29"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Fail</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">MF</span></span><span>
+</span><span id="line-30"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Exception</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">E</span></span><span>
+</span><span id="line-31"></span><span>
+</span><span id="line-32"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Log.Class.html"><span class="hs-identifier">Log.Class</span></a></span><span>
+</span><span id="line-33"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Log.Data.html"><span class="hs-identifier">Log.Data</span></a></span><span>
+</span><span id="line-34"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Log.Logger.html"><span class="hs-identifier">Log.Logger</span></a></span><span>
+</span><span id="line-35"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Log.Internal.Aeson.Compat.html"><span class="hs-identifier">Log.Internal.Aeson.Compat</span></a></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">AC</span></span><span>
+</span><span id="line-36"></span><span>
+</span><span id="line-37"></span><span class="hs-keyword">type</span><span> </span><span id="InnerLogT"><span class="annot"><a href="Log.Monad.html#InnerLogT"><span class="hs-identifier hs-var">InnerLogT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ReaderT</span></span><span> </span><span class="annot"><a href="Log.Logger.html#LoggerEnv"><span class="hs-identifier hs-type">LoggerEnv</span></a></span><span>
+</span><span id="line-38"></span><span>
+</span><span id="line-39"></span><span class="annot"><span class="hs-comment">-- | Monad transformer that adds logging capabilities to the underlying monad.</span></span><span>
+</span><span id="line-40"></span><span class="hs-keyword">newtype</span><span> </span><span id="LogT"><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span></span><span> </span><span id="local-6989586621679095416"><span class="annot"><a href="#local-6989586621679095416"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span id="local-6989586621679095417"><span class="annot"><a href="#local-6989586621679095417"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="LogT"><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unLogT"><span class="annot"><span class="annottext">forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a
+</span><a href="Log.Monad.html#unLogT"><span class="hs-identifier hs-var hs-var">unLogT</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Monad.html#InnerLogT"><span class="hs-identifier hs-type">InnerLogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095416"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095417"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-41"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679095794"><span id="local-6989586621679095799"><span id="local-6989586621679095803"><span id="local-6989586621679095807"><span class="annot"><span class="annottext">Applicative (LogT m)
+Applicative (LogT m) =&gt;
+(forall a. LogT m a)
+-&gt; (forall a. LogT m a -&gt; LogT m a -&gt; LogT m a)
+-&gt; (forall a. LogT m a -&gt; LogT m [a])
+-&gt; (forall a. LogT m a -&gt; LogT m [a])
+-&gt; Alternative (LogT m)
+forall a. LogT m a
+forall a. LogT m a -&gt; LogT m [a]
+forall a. LogT m a -&gt; LogT m a -&gt; LogT m a
+forall (f :: * -&gt; *).
+Applicative f =&gt;
+(forall a. f a)
+-&gt; (forall a. f a -&gt; f a -&gt; f a)
+-&gt; (forall a. f a -&gt; f [a])
+-&gt; (forall a. f a -&gt; f [a])
+-&gt; Alternative f
+forall (m :: * -&gt; *). Alternative m =&gt; Applicative (LogT m)
+forall (m :: * -&gt; *) a. Alternative m =&gt; LogT m a
+forall (m :: * -&gt; *) a. Alternative m =&gt; LogT m a -&gt; LogT m [a]
+forall (m :: * -&gt; *) a.
+Alternative m =&gt;
+LogT m a -&gt; LogT m a -&gt; LogT m a
+$cempty :: forall (m :: * -&gt; *) a. Alternative m =&gt; LogT m a
+empty :: forall a. LogT m a
+$c&lt;|&gt; :: forall (m :: * -&gt; *) a.
+Alternative m =&gt;
+LogT m a -&gt; LogT m a -&gt; LogT m a
+&lt;|&gt; :: forall a. LogT m a -&gt; LogT m a -&gt; LogT m a
+$csome :: forall (m :: * -&gt; *) a. Alternative m =&gt; LogT m a -&gt; LogT m [a]
+some :: forall a. LogT m a -&gt; LogT m [a]
+$cmany :: forall (m :: * -&gt; *) a. Alternative m =&gt; LogT m a -&gt; LogT m [a]
+many :: forall a. LogT m a -&gt; LogT m [a]
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Alternative</span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679095819"><span id="local-6989586621679095824"><span id="local-6989586621679095828"><span id="local-6989586621679095832"><span id="local-6989586621679095836"><span class="annot"><span class="annottext">Functor (LogT m)
+Functor (LogT m) =&gt;
+(forall a. a -&gt; LogT m a)
+-&gt; (forall a b. LogT m (a -&gt; b) -&gt; LogT m a -&gt; LogT m b)
+-&gt; (forall a b c.
+    (a -&gt; b -&gt; c) -&gt; LogT m a -&gt; LogT m b -&gt; LogT m c)
+-&gt; (forall a b. LogT m a -&gt; LogT m b -&gt; LogT m b)
+-&gt; (forall a b. LogT m a -&gt; LogT m b -&gt; LogT m a)
+-&gt; Applicative (LogT m)
+forall a. a -&gt; LogT m a
+forall a b. LogT m a -&gt; LogT m b -&gt; LogT m a
+forall a b. LogT m a -&gt; LogT m b -&gt; LogT m b
+forall a b. LogT m (a -&gt; b) -&gt; LogT m a -&gt; LogT m b
+forall a b c. (a -&gt; b -&gt; c) -&gt; LogT m a -&gt; LogT m b -&gt; LogT m c
+forall (f :: * -&gt; *).
+Functor f =&gt;
+(forall a. a -&gt; f a)
+-&gt; (forall a b. f (a -&gt; b) -&gt; f a -&gt; f b)
+-&gt; (forall a b c. (a -&gt; b -&gt; c) -&gt; f a -&gt; f b -&gt; f c)
+-&gt; (forall a b. f a -&gt; f b -&gt; f b)
+-&gt; (forall a b. f a -&gt; f b -&gt; f a)
+-&gt; Applicative f
+forall (m :: * -&gt; *). Applicative m =&gt; Functor (LogT m)
+forall (m :: * -&gt; *) a. Applicative m =&gt; a -&gt; LogT m a
+forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+LogT m a -&gt; LogT m b -&gt; LogT m a
+forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+LogT m a -&gt; LogT m b -&gt; LogT m b
+forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+LogT m (a -&gt; b) -&gt; LogT m a -&gt; LogT m b
+forall (m :: * -&gt; *) a b c.
+Applicative m =&gt;
+(a -&gt; b -&gt; c) -&gt; LogT m a -&gt; LogT m b -&gt; LogT m c
+$cpure :: forall (m :: * -&gt; *) a. Applicative m =&gt; a -&gt; LogT m a
+pure :: forall a. a -&gt; LogT m a
+$c&lt;*&gt; :: forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+LogT m (a -&gt; b) -&gt; LogT m a -&gt; LogT m b
+&lt;*&gt; :: forall a b. LogT m (a -&gt; b) -&gt; LogT m a -&gt; LogT m b
+$cliftA2 :: forall (m :: * -&gt; *) a b c.
+Applicative m =&gt;
+(a -&gt; b -&gt; c) -&gt; LogT m a -&gt; LogT m b -&gt; LogT m c
+liftA2 :: forall a b c. (a -&gt; b -&gt; c) -&gt; LogT m a -&gt; LogT m b -&gt; LogT m c
+$c*&gt; :: forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+LogT m a -&gt; LogT m b -&gt; LogT m b
+*&gt; :: forall a b. LogT m a -&gt; LogT m b -&gt; LogT m b
+$c&lt;* :: forall (m :: * -&gt; *) a b.
+Applicative m =&gt;
+LogT m a -&gt; LogT m b -&gt; LogT m a
+&lt;* :: forall a b. LogT m a -&gt; LogT m b -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Applicative</span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679095843"><span id="local-6989586621679095848"><span class="annot"><span class="annottext">(forall a b. (a -&gt; b) -&gt; LogT m a -&gt; LogT m b)
+-&gt; (forall a b. a -&gt; LogT m b -&gt; LogT m a) -&gt; Functor (LogT m)
+forall a b. a -&gt; LogT m b -&gt; LogT m a
+forall a b. (a -&gt; b) -&gt; LogT m a -&gt; LogT m b
+forall (m :: * -&gt; *) a b. Functor m =&gt; a -&gt; LogT m b -&gt; LogT m a
+forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+(a -&gt; b) -&gt; LogT m a -&gt; LogT m b
+forall (f :: * -&gt; *).
+(forall a b. (a -&gt; b) -&gt; f a -&gt; f b)
+-&gt; (forall a b. a -&gt; f b -&gt; f a) -&gt; Functor f
+$cfmap :: forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+(a -&gt; b) -&gt; LogT m a -&gt; LogT m b
+fmap :: forall a b. (a -&gt; b) -&gt; LogT m a -&gt; LogT m b
+$c&lt;$ :: forall (m :: * -&gt; *) a b. Functor m =&gt; a -&gt; LogT m b -&gt; LogT m a
+&lt;$ :: forall a b. a -&gt; LogT m b -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Functor</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679095857"><span id="local-6989586621679095862"><span id="local-6989586621679095866"><span class="annot"><span class="annottext">Applicative (LogT m)
+Applicative (LogT m) =&gt;
+(forall a b. LogT m a -&gt; (a -&gt; LogT m b) -&gt; LogT m b)
+-&gt; (forall a b. LogT m a -&gt; LogT m b -&gt; LogT m b)
+-&gt; (forall a. a -&gt; LogT m a)
+-&gt; Monad (LogT m)
+forall a. a -&gt; LogT m a
+forall a b. LogT m a -&gt; LogT m b -&gt; LogT m b
+forall a b. LogT m a -&gt; (a -&gt; LogT m b) -&gt; LogT m b
+forall (m :: * -&gt; *). Monad m =&gt; Applicative (LogT m)
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; LogT m a
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+LogT m a -&gt; LogT m b -&gt; LogT m b
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+LogT m a -&gt; (a -&gt; LogT m b) -&gt; LogT m b
+forall (m :: * -&gt; *).
+Applicative m =&gt;
+(forall a b. m a -&gt; (a -&gt; m b) -&gt; m b)
+-&gt; (forall a b. m a -&gt; m b -&gt; m b)
+-&gt; (forall a. a -&gt; m a)
+-&gt; Monad m
+$c&gt;&gt;= :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+LogT m a -&gt; (a -&gt; LogT m b) -&gt; LogT m b
+&gt;&gt;= :: forall a b. LogT m a -&gt; (a -&gt; LogT m b) -&gt; LogT m b
+$c&gt;&gt; :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+LogT m a -&gt; LogT m b -&gt; LogT m b
+&gt;&gt; :: forall a b. LogT m a -&gt; LogT m b -&gt; LogT m b
+$creturn :: forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; LogT m a
+return :: forall a. a -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Monad</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679095872"><span id="local-6989586621679095887"><span class="annot"><span class="hs-identifier hs-type">MonadBase</span></span><span> </span><span class="annot"><a href="#local-6989586621679095872"><span class="hs-identifier hs-type">b</span></a></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679095908"><span class="annot"><span class="annottext">MonadThrow (LogT m)
+MonadThrow (LogT m) =&gt;
+(forall e a.
+ (HasCallStack, Exception e) =&gt;
+ LogT m a -&gt; (e -&gt; LogT m a) -&gt; LogT m a)
+-&gt; MonadCatch (LogT m)
+forall e a.
+(HasCallStack, Exception e) =&gt;
+LogT m a -&gt; (e -&gt; LogT m a) -&gt; LogT m a
+forall (m :: * -&gt; *). MonadCatch m =&gt; MonadThrow (LogT m)
+forall (m :: * -&gt; *) e a.
+(MonadCatch m, HasCallStack, Exception e) =&gt;
+LogT m a -&gt; (e -&gt; LogT m a) -&gt; LogT m a
+forall (m :: * -&gt; *).
+MonadThrow m =&gt;
+(forall e a.
+ (HasCallStack, Exception e) =&gt;
+ m a -&gt; (e -&gt; m a) -&gt; m a)
+-&gt; MonadCatch m
+$ccatch :: forall (m :: * -&gt; *) e a.
+(MonadCatch m, HasCallStack, Exception e) =&gt;
+LogT m a -&gt; (e -&gt; LogT m a) -&gt; LogT m a
+catch :: forall e a.
+(HasCallStack, Exception e) =&gt;
+LogT m a -&gt; (e -&gt; LogT m a) -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadCatch</span></span></span><span>
+</span><span id="line-42"></span><span>           </span><span class="hs-special">,</span><span id="local-6989586621679095925"><span class="annot"><span class="annottext">Monad (LogT m)
+Monad (LogT m) =&gt; (forall a. IO a -&gt; LogT m a) -&gt; MonadIO (LogT m)
+forall a. IO a -&gt; LogT m a
+forall (m :: * -&gt; *).
+Monad m =&gt;
+(forall a. IO a -&gt; m a) -&gt; MonadIO m
+forall (m :: * -&gt; *). MonadIO m =&gt; Monad (LogT m)
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; LogT m a
+$cliftIO :: forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; LogT m a
+liftIO :: forall a. IO a -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadIO</span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679095940"><span id="local-6989586621679095951"><span id="local-6989586621679095961"><span class="annot"><span class="annottext">MonadCatch (LogT m)
+MonadCatch (LogT m) =&gt;
+(forall b.
+ HasCallStack =&gt;
+ ((forall a. LogT m a -&gt; LogT m a) -&gt; LogT m b) -&gt; LogT m b)
+-&gt; (forall b.
+    HasCallStack =&gt;
+    ((forall a. LogT m a -&gt; LogT m a) -&gt; LogT m b) -&gt; LogT m b)
+-&gt; (forall a b c.
+    HasCallStack =&gt;
+    LogT m a
+    -&gt; (a -&gt; ExitCase b -&gt; LogT m c)
+    -&gt; (a -&gt; LogT m b)
+    -&gt; LogT m (b, c))
+-&gt; MonadMask (LogT m)
+forall b.
+HasCallStack =&gt;
+((forall a. LogT m a -&gt; LogT m a) -&gt; LogT m b) -&gt; LogT m b
+forall a b c.
+HasCallStack =&gt;
+LogT m a
+-&gt; (a -&gt; ExitCase b -&gt; LogT m c)
+-&gt; (a -&gt; LogT m b)
+-&gt; LogT m (b, c)
+forall (m :: * -&gt; *). MonadMask m =&gt; MonadCatch (LogT m)
+forall (m :: * -&gt; *) b.
+(MonadMask m, HasCallStack) =&gt;
+((forall a. LogT m a -&gt; LogT m a) -&gt; LogT m b) -&gt; LogT m b
+forall (m :: * -&gt; *) a b c.
+(MonadMask m, HasCallStack) =&gt;
+LogT m a
+-&gt; (a -&gt; ExitCase b -&gt; LogT m c)
+-&gt; (a -&gt; LogT m b)
+-&gt; LogT m (b, c)
+forall (m :: * -&gt; *).
+MonadCatch m =&gt;
+(forall b. HasCallStack =&gt; ((forall a. m a -&gt; m a) -&gt; m b) -&gt; m b)
+-&gt; (forall b.
+    HasCallStack =&gt;
+    ((forall a. m a -&gt; m a) -&gt; m b) -&gt; m b)
+-&gt; (forall a b c.
+    HasCallStack =&gt;
+    m a -&gt; (a -&gt; ExitCase b -&gt; m c) -&gt; (a -&gt; m b) -&gt; m (b, c))
+-&gt; MonadMask m
+$cmask :: forall (m :: * -&gt; *) b.
+(MonadMask m, HasCallStack) =&gt;
+((forall a. LogT m a -&gt; LogT m a) -&gt; LogT m b) -&gt; LogT m b
+mask :: forall b.
+HasCallStack =&gt;
+((forall a. LogT m a -&gt; LogT m a) -&gt; LogT m b) -&gt; LogT m b
+$cuninterruptibleMask :: forall (m :: * -&gt; *) b.
+(MonadMask m, HasCallStack) =&gt;
+((forall a. LogT m a -&gt; LogT m a) -&gt; LogT m b) -&gt; LogT m b
+uninterruptibleMask :: forall b.
+HasCallStack =&gt;
+((forall a. LogT m a -&gt; LogT m a) -&gt; LogT m b) -&gt; LogT m b
+$cgeneralBracket :: forall (m :: * -&gt; *) a b c.
+(MonadMask m, HasCallStack) =&gt;
+LogT m a
+-&gt; (a -&gt; ExitCase b -&gt; LogT m c)
+-&gt; (a -&gt; LogT m b)
+-&gt; LogT m (b, c)
+generalBracket :: forall a b c.
+HasCallStack =&gt;
+LogT m a
+-&gt; (a -&gt; ExitCase b -&gt; LogT m c)
+-&gt; (a -&gt; LogT m b)
+-&gt; LogT m (b, c)
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">MonadMask</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679095978"><span id="local-6989586621679095983"><span class="annot"><span class="annottext">Monad (LogT m)
+Alternative (LogT m)
+(Alternative (LogT m), Monad (LogT m)) =&gt;
+(forall a. LogT m a)
+-&gt; (forall a. LogT m a -&gt; LogT m a -&gt; LogT m a)
+-&gt; MonadPlus (LogT m)
+forall a. LogT m a
+forall a. LogT m a -&gt; LogT m a -&gt; LogT m a
+forall (m :: * -&gt; *). MonadPlus m =&gt; Monad (LogT m)
+forall (m :: * -&gt; *). MonadPlus m =&gt; Alternative (LogT m)
+forall (m :: * -&gt; *) a. MonadPlus m =&gt; LogT m a
+forall (m :: * -&gt; *) a.
+MonadPlus m =&gt;
+LogT m a -&gt; LogT m a -&gt; LogT m a
+forall (m :: * -&gt; *).
+(Alternative m, Monad m) =&gt;
+(forall a. m a) -&gt; (forall a. m a -&gt; m a -&gt; m a) -&gt; MonadPlus m
+$cmzero :: forall (m :: * -&gt; *) a. MonadPlus m =&gt; LogT m a
+mzero :: forall a. LogT m a
+$cmplus :: forall (m :: * -&gt; *) a.
+MonadPlus m =&gt;
+LogT m a -&gt; LogT m a -&gt; LogT m a
+mplus :: forall a. LogT m a -&gt; LogT m a -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">MonadPlus</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679096000"><span class="annot"><span class="annottext">Monad (LogT m)
+Monad (LogT m) =&gt;
+(forall e a. (HasCallStack, Exception e) =&gt; e -&gt; LogT m a)
+-&gt; MonadThrow (LogT m)
+forall e a. (HasCallStack, Exception e) =&gt; e -&gt; LogT m a
+forall (m :: * -&gt; *).
+Monad m =&gt;
+(forall e a. (HasCallStack, Exception e) =&gt; e -&gt; m a)
+-&gt; MonadThrow m
+forall (m :: * -&gt; *). MonadThrow m =&gt; Monad (LogT m)
+forall (m :: * -&gt; *) e a.
+(MonadThrow m, HasCallStack, Exception e) =&gt;
+e -&gt; LogT m a
+$cthrowM :: forall (m :: * -&gt; *) e a.
+(MonadThrow m, HasCallStack, Exception e) =&gt;
+e -&gt; LogT m a
+throwM :: forall e a. (HasCallStack, Exception e) =&gt; e -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadThrow</span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679096016"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Monad m =&gt; Monad (LogT m)) =&gt;
+(forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; LogT m a)
+-&gt; MonadTrans LogT
+forall (m :: * -&gt; *). Monad m =&gt; Monad (LogT m)
+forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; LogT m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *).
+(forall (m :: * -&gt; *). Monad m =&gt; Monad (t m)) =&gt;
+(forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; t m a) -&gt; MonadTrans t
+$clift :: forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; LogT m a
+lift :: forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadTrans</span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679096029"><span class="annot"><span class="annottext">Monad (LogT m)
+Monad (LogT m) =&gt;
+(forall a. String -&gt; LogT m a) -&gt; MonadFail (LogT m)
+forall a. String -&gt; LogT m a
+forall (m :: * -&gt; *).
+Monad m =&gt;
+(forall a. String -&gt; m a) -&gt; MonadFail m
+forall (m :: * -&gt; *). MonadFail m =&gt; Monad (LogT m)
+forall (m :: * -&gt; *) a. MonadFail m =&gt; String -&gt; LogT m a
+$cfail :: forall (m :: * -&gt; *) a. MonadFail m =&gt; String -&gt; LogT m a
+fail :: forall a. String -&gt; LogT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MF.MonadFail</span></span></span><span>
+</span><span id="line-43"></span><span>           </span><span class="hs-special">,</span><span id="local-6989586621679096036"><span id="local-6989586621679096042"><span id="local-6989586621679096047"><span class="annot"><span class="hs-identifier hs-type">MonadError</span></span><span> </span><span class="annot"><a href="#local-6989586621679096036"><span class="hs-identifier hs-type">e</span></a></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679096053"><span id="local-6989586621679096062"><span id="local-6989586621679096067"><span id="local-6989586621679096071"><span id="local-6989586621679096075"><span class="annot"><span class="hs-identifier hs-type">MonadWriter</span></span><span> </span><span class="annot"><a href="#local-6989586621679096053"><span class="hs-identifier hs-type">w</span></a></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679096082"><span id="local-6989586621679096088"><span id="local-6989586621679096093"><span id="local-6989586621679096097"><span class="annot"><span class="hs-identifier hs-type">MonadState</span></span><span> </span><span class="annot"><a href="#local-6989586621679096082"><span class="hs-identifier hs-type">s</span></a></span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-44"></span><span>
+</span><span id="line-45"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679095626"><span id="local-6989586621679095627"><span id="local-6989586621679096110"><span class="annot"><span class="hs-identifier hs-type">MonadReader</span></span><span> </span><span class="annot"><a href="#local-6989586621679095626"><span class="hs-identifier hs-type">r</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095627"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadReader</span></span><span> </span><span class="annot"><a href="#local-6989586621679095626"><span class="hs-identifier hs-type">r</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095627"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-46"></span><span>    </span><span id="local-6989586621679096118"><span class="annot"><span class="annottext">ask :: LogT m r
+</span><a href="#local-6989586621679096118"><span class="hs-identifier hs-var hs-var hs-var hs-var">ask</span></a></span></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">m r -&gt; LogT m r
+forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; LogT m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *) (m :: * -&gt; *) a.
+(MonadTrans t, Monad m) =&gt;
+m a -&gt; t m a
+</span><span class="hs-identifier hs-var">lift</span></span><span> </span><span class="annot"><span class="annottext">m r
+forall r (m :: * -&gt; *). MonadReader r m =&gt; m r
+</span><span class="hs-identifier hs-var">ask</span></span><span>
+</span><span id="line-47"></span><span>    </span><span id="local-6989586621679096122"><span class="annot"><span class="annottext">local :: forall a. (r -&gt; r) -&gt; LogT m a -&gt; LogT m a
+</span><a href="#local-6989586621679096122"><span class="hs-identifier hs-var hs-var hs-var hs-var">local</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(m a -&gt; m a) -&gt; LogT m a -&gt; LogT m a
+forall (m :: * -&gt; *) a (n :: * -&gt; *) b.
+(m a -&gt; n b) -&gt; LogT m a -&gt; LogT n b
+</span><a href="Log.Monad.html#mapLogT"><span class="hs-identifier hs-var">mapLogT</span></a></span><span> </span><span class="annot"><span class="annottext">((m a -&gt; m a) -&gt; LogT m a -&gt; LogT m a)
+-&gt; ((r -&gt; r) -&gt; m a -&gt; m a) -&gt; (r -&gt; r) -&gt; LogT m a -&gt; LogT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(r -&gt; r) -&gt; m a -&gt; m a
+forall a. (r -&gt; r) -&gt; m a -&gt; m a
+forall r (m :: * -&gt; *) a. MonadReader r m =&gt; (r -&gt; r) -&gt; m a -&gt; m a
+</span><span class="hs-identifier hs-var">local</span></span><span>
+</span><span id="line-48"></span><span>
+</span><span id="line-49"></span><span class="hs-comment">-- | Run a 'LogT' computation.</span><span>
+</span><span id="line-50"></span><span class="hs-comment">--</span><span>
+</span><span id="line-51"></span><span class="hs-comment">-- Note that in the case of asynchronous/bulk loggers 'runLogT'</span><span>
+</span><span id="line-52"></span><span class="hs-comment">-- doesn't guarantee that all messages are actually written to the log</span><span>
+</span><span id="line-53"></span><span class="hs-comment">-- once it finishes. Use 'withPGLogger' or 'withElasticSearchLogger'</span><span>
+</span><span id="line-54"></span><span class="hs-comment">-- for that.</span><span>
+</span><span id="line-55"></span><span id="local-6989586621679095638"><span id="local-6989586621679095639"><span class="annot"><a href="Log.Monad.html#runLogT"><span class="hs-identifier hs-type">runLogT</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>     </span><span class="annot"><span class="hs-comment">-- ^ Application component name to use.</span></span><span>
+</span><span id="line-56"></span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span>   </span><span class="annot"><span class="hs-comment">-- ^ The logging back-end to use.</span></span><span>
+</span><span id="line-57"></span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Data.html#LogLevel"><span class="hs-identifier hs-type">LogLevel</span></a></span><span> </span><span class="hs-comment">-- ^ The maximum log level allowed to be logged.</span><span>
+</span><span id="line-58"></span><span>                    </span><span class="hs-comment">--   Only messages less or equal than this level with be logged.</span><span>
+</span><span id="line-59"></span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095638"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095639"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><span class="hs-comment">-- ^ The 'LogT' computation to run.</span></span><span>
+</span><span id="line-60"></span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679095638"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095639"><span class="hs-identifier hs-type">a</span></a></span></span></span><span>
+</span><span id="line-61"></span><span id="runLogT"><span class="annot"><span class="annottext">runLogT :: forall (m :: * -&gt; *) a.
+Text -&gt; Logger -&gt; LogLevel -&gt; LogT m a -&gt; m a
+</span><a href="Log.Monad.html#runLogT"><span class="hs-identifier hs-var hs-var">runLogT</span></a></span></span><span> </span><span id="local-6989586621679096125"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679096125"><span class="hs-identifier hs-var">component</span></a></span></span><span> </span><span id="local-6989586621679096126"><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679096126"><span class="hs-identifier hs-var">logger</span></a></span></span><span> </span><span id="local-6989586621679096127"><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096127"><span class="hs-identifier hs-var">maxLogLevel</span></a></span></span><span> </span><span id="local-6989586621679096128"><span class="annot"><span class="annottext">LogT m a
+</span><a href="#local-6989586621679096128"><span class="hs-identifier hs-var">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ReaderT LoggerEnv m a -&gt; LoggerEnv -&gt; m a
+forall r (m :: * -&gt; *) a. ReaderT r m a -&gt; r -&gt; m a
+</span><span class="hs-identifier hs-var">runReaderT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">LogT m a -&gt; ReaderT LoggerEnv m a
+forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a
+</span><a href="Log.Monad.html#unLogT"><span class="hs-identifier hs-var">unLogT</span></a></span><span> </span><span class="annot"><span class="annottext">LogT m a
+</span><a href="#local-6989586621679096128"><span class="hs-identifier hs-var">m</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><a href="Log.Logger.html#LoggerEnv"><span class="hs-identifier hs-type">LoggerEnv</span></a></span><span> </span><span class="hs-special">{</span><span>
+</span><span id="line-62"></span><span>  </span><span class="annot"><span class="annottext">leLogger :: Logger
+</span><a href="Log.Logger.html#leLogger"><span class="hs-identifier hs-var">leLogger</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679096126"><span class="hs-identifier hs-var">logger</span></a></span><span>
+</span><span id="line-63"></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">leComponent :: Text
+</span><a href="Log.Logger.html#leComponent"><span class="hs-identifier hs-var">leComponent</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679096125"><span class="hs-identifier hs-var">component</span></a></span><span>
+</span><span id="line-64"></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">leDomain :: [Text]
+</span><a href="Log.Logger.html#leDomain"><span class="hs-identifier hs-var">leDomain</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-65"></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">leData :: [Pair]
+</span><a href="Log.Logger.html#leData"><span class="hs-identifier hs-var">leData</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-66"></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">leMaxLogLevel :: LogLevel
+</span><a href="Log.Logger.html#leMaxLogLevel"><span class="hs-identifier hs-var">leMaxLogLevel</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096127"><span class="hs-identifier hs-var">maxLogLevel</span></a></span><span>
+</span><span id="line-67"></span><span class="hs-special">}</span><span> </span><span class="hs-comment">-- We can't do synchronisation here, since 'runLogT' can be invoked</span><span>
+</span><span id="line-68"></span><span>  </span><span class="hs-comment">-- quite often from the application (e.g. on every request).</span><span>
+</span><span id="line-69"></span><span>
+</span><span id="line-70"></span><span class="annot"><span class="hs-comment">-- | Transform the computation inside a 'LogT'.</span></span><span>
+</span><span id="line-71"></span><span id="local-6989586621679095629"><span id="local-6989586621679095630"><span id="local-6989586621679095631"><span id="local-6989586621679095632"><span class="annot"><a href="Log.Monad.html#mapLogT"><span class="hs-identifier hs-type">mapLogT</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679095629"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095630"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679095631"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095632"><span class="hs-identifier hs-type">b</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095629"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095630"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095631"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095632"><span class="hs-identifier hs-type">b</span></a></span></span></span></span></span><span>
+</span><span id="line-72"></span><span id="mapLogT"><span class="annot"><span class="annottext">mapLogT :: forall (m :: * -&gt; *) a (n :: * -&gt; *) b.
+(m a -&gt; n b) -&gt; LogT m a -&gt; LogT n b
+</span><a href="Log.Monad.html#mapLogT"><span class="hs-identifier hs-var hs-var">mapLogT</span></a></span></span><span> </span><span id="local-6989586621679096136"><span class="annot"><span class="annottext">m a -&gt; n b
+</span><a href="#local-6989586621679096136"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">InnerLogT n b -&gt; LogT n b
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span> </span><span class="annot"><span class="annottext">(InnerLogT n b -&gt; LogT n b)
+-&gt; (LogT m a -&gt; InnerLogT n b) -&gt; LogT m a -&gt; LogT n b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(m a -&gt; n b) -&gt; ReaderT LoggerEnv m a -&gt; InnerLogT n b
+forall (m :: * -&gt; *) a (n :: * -&gt; *) b r.
+(m a -&gt; n b) -&gt; ReaderT r m a -&gt; ReaderT r n b
+</span><span class="hs-identifier hs-var">mapReaderT</span></span><span> </span><span class="annot"><span class="annottext">m a -&gt; n b
+</span><a href="#local-6989586621679096136"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="annot"><span class="annottext">(ReaderT LoggerEnv m a -&gt; InnerLogT n b)
+-&gt; (LogT m a -&gt; ReaderT LoggerEnv m a) -&gt; LogT m a -&gt; InnerLogT n b
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">LogT m a -&gt; ReaderT LoggerEnv m a
+forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a
+</span><a href="Log.Monad.html#unLogT"><span class="hs-identifier hs-var">unLogT</span></a></span><span>
+</span><span id="line-73"></span><span>
+</span><span id="line-74"></span><span class="hs-comment">-- | Base implementation of 'logMessage' for use with a specific</span><span>
+</span><span id="line-75"></span><span class="hs-comment">-- 'LoggerEnv'. Useful for reimplementation of 'MonadLog' instance.</span><span>
+</span><span id="line-76"></span><span class="annot"><a href="Log.Monad.html#logMessageIO"><span class="hs-identifier hs-type">logMessageIO</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Logger.html#LoggerEnv"><span class="hs-identifier hs-type">LoggerEnv</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">UTCTime</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Data.html#LogLevel"><span class="hs-identifier hs-type">LogLevel</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Value</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-77"></span><span id="logMessageIO"><span class="annot"><span class="annottext">logMessageIO :: LoggerEnv -&gt; UTCTime -&gt; LogLevel -&gt; Text -&gt; Value -&gt; IO ()
+</span><a href="Log.Monad.html#logMessageIO"><span class="hs-identifier hs-var hs-var">logMessageIO</span></a></span></span><span> </span><span class="annot"><a href="Log.Logger.html#LoggerEnv"><span class="hs-identifier hs-type">LoggerEnv</span></a></span><span class="hs-special">{</span><span id="local-6989586621679096139"><span id="local-6989586621679096140"><span id="local-6989586621679096141"><span id="local-6989586621679096142"><span id="local-6989586621679096143"><span class="annot"><span class="annottext">[Pair]
+[Text]
+Text
+LogLevel
+Logger
+leLogger :: LoggerEnv -&gt; Logger
+leComponent :: LoggerEnv -&gt; Text
+leDomain :: LoggerEnv -&gt; [Text]
+leData :: LoggerEnv -&gt; [Pair]
+leMaxLogLevel :: LoggerEnv -&gt; LogLevel
+leLogger :: Logger
+leComponent :: Text
+leDomain :: [Text]
+leData :: [Pair]
+leMaxLogLevel :: LogLevel
+</span><a href="Log.Logger.html#leLogger"><span class="hs-glyph hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">..</span></a></span></span></span></span></span></span><span class="hs-special">}</span><span> </span><span id="local-6989586621679096144"><span class="annot"><span class="annottext">UTCTime
+</span><a href="#local-6989586621679096144"><span class="hs-identifier hs-var">time</span></a></span></span><span> </span><span id="local-6989586621679096145"><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096145"><span class="hs-identifier hs-var">level</span></a></span></span><span> </span><span id="local-6989586621679096146"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679096146"><span class="hs-identifier hs-var">message</span></a></span></span><span> </span><span id="local-6989586621679096147"><span class="annot"><span class="annottext">Value
+</span><a href="#local-6989586621679096147"><span class="hs-identifier hs-var">data_</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-78"></span><span>  </span><span class="annot"><span class="annottext">Bool -&gt; IO () -&gt; IO ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096145"><span class="hs-identifier hs-var">level</span></a></span><span> </span><span class="annot"><span class="annottext">LogLevel -&gt; LogLevel -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;=</span></span><span> </span><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096143"><span class="hs-identifier hs-var">leMaxLogLevel</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span>
+</span><span id="line-79"></span><span>    </span><span class="annot"><span class="annottext">Logger -&gt; LogMessage -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#execLogger"><span class="hs-identifier hs-var">execLogger</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679096139"><span class="hs-identifier hs-var">leLogger</span></a></span><span> </span><span class="annot"><span class="annottext">(LogMessage -&gt; IO ()) -&gt; IO LogMessage -&gt; IO ()
+forall (m :: * -&gt; *) a b. Monad m =&gt; (a -&gt; m b) -&gt; m a -&gt; m b
+</span><span class="hs-operator hs-var">=&lt;&lt;</span></span><span> </span><span class="annot"><span class="annottext">LogMessage -&gt; IO LogMessage
+forall a. a -&gt; IO a
+</span><span class="hs-identifier hs-var">E.evaluate</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">LogMessage -&gt; LogMessage
+forall a. NFData a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">force</span></span><span> </span><span class="annot"><span class="annottext">LogMessage
+</span><a href="#local-6989586621679096154"><span class="hs-identifier hs-var">lm</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-80"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-81"></span><span>    </span><span id="local-6989586621679096154"><span class="annot"><span class="annottext">lm :: LogMessage
+</span><a href="#local-6989586621679096154"><span class="hs-identifier hs-var hs-var">lm</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Log.Data.html#LogMessage"><span class="hs-identifier hs-type">LogMessage</span></a></span><span>
+</span><span id="line-82"></span><span>      </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">lmComponent :: Text
+</span><a href="Log.Data.html#lmComponent"><span class="hs-identifier hs-var">lmComponent</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679096140"><span class="hs-identifier hs-var">leComponent</span></a></span><span>
+</span><span id="line-83"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">lmDomain :: [Text]
+</span><a href="Log.Data.html#lmDomain"><span class="hs-identifier hs-var">lmDomain</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[Text]
+</span><a href="#local-6989586621679096141"><span class="hs-identifier hs-var">leDomain</span></a></span><span>
+</span><span id="line-84"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">lmTime :: UTCTime
+</span><a href="Log.Data.html#lmTime"><span class="hs-identifier hs-var">lmTime</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">UTCTime
+</span><a href="#local-6989586621679096144"><span class="hs-identifier hs-var">time</span></a></span><span>
+</span><span id="line-85"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">lmLevel :: LogLevel
+</span><a href="Log.Data.html#lmLevel"><span class="hs-identifier hs-var">lmLevel</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096145"><span class="hs-identifier hs-var">level</span></a></span><span>
+</span><span id="line-86"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">lmMessage :: Text
+</span><a href="Log.Data.html#lmMessage"><span class="hs-identifier hs-var">lmMessage</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679096146"><span class="hs-identifier hs-var">message</span></a></span><span>
+</span><span id="line-87"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">lmData :: Value
+</span><a href="Log.Data.html#lmData"><span class="hs-identifier hs-var">lmData</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Value
+</span><a href="#local-6989586621679096147"><span class="hs-identifier hs-var">data_</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-88"></span><span>          </span><span class="hs-comment">-- If lmData is not an object, we make it so and put previous data as</span><span>
+</span><span id="line-89"></span><span>          </span><span class="hs-comment">-- the singleton value with key reflecting its type. It's required for</span><span>
+</span><span id="line-90"></span><span>          </span><span class="hs-comment">-- ElasticSearch as ES needs fields with the same name to be of the</span><span>
+</span><span id="line-91"></span><span>          </span><span class="hs-comment">-- same type in all log messages.</span><span>
+</span><span id="line-92"></span><span>          </span><span class="annot"><span class="hs-identifier hs-type">Object</span></span><span> </span><span id="local-6989586621679096163"><span class="annot"><span class="annottext">Object
+</span><a href="#local-6989586621679096163"><span class="hs-identifier hs-var">obj</span></a></span></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Object -&gt; Value
+</span><span class="hs-identifier hs-var">Object</span></span><span> </span><span class="annot"><span class="annottext">(Object -&gt; Value) -&gt; (Object -&gt; Object) -&gt; Object -&gt; Value
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Object -&gt; Object -&gt; Object
+forall v. KeyMap v -&gt; KeyMap v -&gt; KeyMap v
+</span><span class="hs-identifier hs-var">AC.union</span></span><span> </span><span class="annot"><span class="annottext">Object
+</span><a href="#local-6989586621679096163"><span class="hs-identifier hs-var">obj</span></a></span><span> </span><span class="annot"><span class="annottext">(Object -&gt; Value) -&gt; Object -&gt; Value
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[Pair] -&gt; Object
+forall v. [(Key, v)] -&gt; KeyMap v
+</span><span class="hs-identifier hs-var">AC.fromList</span></span><span> </span><span class="annot"><span class="annottext">[Pair]
+</span><a href="#local-6989586621679096142"><span class="hs-identifier hs-var">leData</span></a></span><span>
+</span><span id="line-93"></span><span>          </span><span class="annot"><span class="annottext">Value
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">[Pair] -&gt; Bool
+forall a. [a] -&gt; Bool
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Bool
+</span><span class="hs-identifier hs-var">null</span></span><span> </span><span class="annot"><span class="annottext">[Pair]
+</span><a href="#local-6989586621679096142"><span class="hs-identifier hs-var">leData</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Pair] -&gt; Value
+</span><span class="hs-identifier hs-var">object</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Value -&gt; Key
+</span><a href="#local-6989586621679096168"><span class="hs-identifier hs-var">dataTyped</span></a></span><span> </span><span class="annot"><span class="annottext">Value
+</span><a href="#local-6989586621679096147"><span class="hs-identifier hs-var">data_</span></a></span><span> </span><span class="annot"><span class="annottext">Key -&gt; Value -&gt; Pair
+forall kv v. (KeyValue kv, ToJSON v) =&gt; Key -&gt; v -&gt; kv
+forall v. ToJSON v =&gt; Key -&gt; v -&gt; Pair
+</span><span class="hs-operator hs-var">.=</span></span><span> </span><span class="annot"><span class="annottext">Value
+</span><a href="#local-6989586621679096147"><span class="hs-identifier hs-var">data_</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-94"></span><span>            </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">otherwise</span></span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Pair] -&gt; Value
+</span><span class="hs-identifier hs-var">object</span></span><span> </span><span class="annot"><span class="annottext">([Pair] -&gt; Value) -&gt; [Pair] -&gt; Value
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Value -&gt; Key
+</span><a href="#local-6989586621679096168"><span class="hs-identifier hs-var">dataTyped</span></a></span><span> </span><span class="annot"><span class="annottext">Value
+</span><a href="#local-6989586621679096147"><span class="hs-identifier hs-var">data_</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Value
+</span><a href="#local-6989586621679096147"><span class="hs-identifier hs-var">data_</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Pair -&gt; [Pair] -&gt; [Pair]
+forall a. a -&gt; [a] -&gt; [a]
+</span><span class="hs-glyph hs-var">:</span></span><span> </span><span class="annot"><span class="annottext">[Pair]
+</span><a href="#local-6989586621679096142"><span class="hs-identifier hs-var">leData</span></a></span><span>
+</span><span id="line-95"></span><span>      </span><span class="hs-special">}</span><span>
+</span><span id="line-96"></span><span>
+</span><span id="line-97"></span><span>    </span><span id="local-6989586621679096168"><span class="annot"><span class="annottext">dataTyped :: Value -&gt; Key
+</span><a href="#local-6989586621679096168"><span class="hs-identifier hs-var hs-var">dataTyped</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-98"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Object</span></span><span class="hs-special">{</span><span class="hs-special">}</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Key
+</span><span class="hs-string">&quot;__data_object&quot;</span></span><span>
+</span><span id="line-99"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Array</span></span><span class="hs-special">{</span><span class="hs-special">}</span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Key
+</span><span class="hs-string">&quot;__data_array&quot;</span></span><span>
+</span><span id="line-100"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">{</span><span class="hs-special">}</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Key
+</span><span class="hs-string">&quot;__data_string&quot;</span></span><span>
+</span><span id="line-101"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Number</span></span><span class="hs-special">{</span><span class="hs-special">}</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Key
+</span><span class="hs-string">&quot;__data_number&quot;</span></span><span>
+</span><span id="line-102"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span class="hs-special">{</span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Key
+</span><span class="hs-string">&quot;__data_bool&quot;</span></span><span>
+</span><span id="line-103"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Null</span></span><span class="hs-special">{</span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Key
+</span><span class="hs-string">&quot;__data_null&quot;</span></span><span>
+</span><span id="line-104"></span><span>
+</span><span id="line-105"></span><span class="hs-comment">-- | Return an IO action that logs messages using the current 'MonadLog'</span><span>
+</span><span id="line-106"></span><span class="hs-comment">-- context. Useful for interfacing with libraries such as @aws@ or @amazonka@</span><span>
+</span><span id="line-107"></span><span class="hs-comment">-- that accept logging callbacks operating in IO.</span><span>
+</span><span id="line-108"></span><span id="local-6989586621679095673"><span class="annot"><a href="Log.Monad.html#getLoggerIO"><span class="hs-identifier hs-type">getLoggerIO</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Class.html#MonadLog"><span class="hs-identifier hs-type">MonadLog</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095673"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679095673"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">UTCTime</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Data.html#LogLevel"><span class="hs-identifier hs-type">LogLevel</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Value</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span></span><span>
+</span><span id="line-109"></span><span id="getLoggerIO"><span class="annot"><span class="annottext">getLoggerIO :: forall (m :: * -&gt; *).
+MonadLog m =&gt;
+m (UTCTime -&gt; LogLevel -&gt; Text -&gt; Value -&gt; IO ())
+</span><a href="Log.Monad.html#getLoggerIO"><span class="hs-identifier hs-var hs-var">getLoggerIO</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">LoggerEnv -&gt; UTCTime -&gt; LogLevel -&gt; Text -&gt; Value -&gt; IO ()
+</span><a href="Log.Monad.html#logMessageIO"><span class="hs-identifier hs-var">logMessageIO</span></a></span><span> </span><span class="annot"><span class="annottext">(LoggerEnv -&gt; UTCTime -&gt; LogLevel -&gt; Text -&gt; Value -&gt; IO ())
+-&gt; m LoggerEnv -&gt; m (UTCTime -&gt; LogLevel -&gt; Text -&gt; Value -&gt; IO ())
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">m LoggerEnv
+forall (m :: * -&gt; *). MonadLog m =&gt; m LoggerEnv
+</span><a href="Log.Class.html#getLoggerEnv"><span class="hs-identifier hs-var">getLoggerEnv</span></a></span><span>
+</span><span id="line-110"></span><span>
+</span><span id="line-111"></span><span class="hs-comment">-- | @'hoist' = 'mapLogT'@</span><span>
+</span><span id="line-112"></span><span class="hs-comment">--</span><span>
+</span><span id="line-113"></span><span class="hs-comment">-- @since 0.7.2</span><span>
+</span><span id="line-114"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MFunctor</span></span><span> </span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-115"></span><span>    </span><span id="local-6989586621679096196"><span class="annot"><span class="annottext">hoist :: forall (m :: * -&gt; *) (n :: * -&gt; *) b.
+Monad m =&gt;
+(forall a. m a -&gt; n a) -&gt; LogT m b -&gt; LogT n b
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">hoist</span></span></span><span> </span><span id="local-6989586621679096197"><span class="annot"><span class="annottext">forall a. m a -&gt; n a
+</span><a href="#local-6989586621679096197"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(m b -&gt; n b) -&gt; LogT m b -&gt; LogT n b
+forall (m :: * -&gt; *) a (n :: * -&gt; *) b.
+(m a -&gt; n b) -&gt; LogT m a -&gt; LogT n b
+</span><a href="Log.Monad.html#mapLogT"><span class="hs-identifier hs-var">mapLogT</span></a></span><span> </span><span class="annot"><span class="annottext">m b -&gt; n b
+forall a. m a -&gt; n a
+</span><a href="#local-6989586621679096197"><span class="hs-identifier hs-var">f</span></a></span><span>
+</span><span id="line-116"></span><span>
+</span><span id="line-117"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadTransControl</span></span><span> </span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-118"></span><span>  </span><span class="hs-keyword">type</span><span> </span><span id="StT"><span class="annot"><span class="hs-identifier hs-var">StT</span></span></span><span> </span><span id="local-6989586621679096204"><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679096204"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StT</span></span><span> </span><span class="annot"><a href="Log.Monad.html#InnerLogT"><span class="hs-identifier hs-type">InnerLogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679096204"><span class="hs-identifier hs-type">m</span></a></span><span>
+</span><span id="line-119"></span><span>  </span><span id="local-6989586621679096209"><span class="annot"><span class="annottext">liftWith :: forall (m :: * -&gt; *) a. Monad m =&gt; (Run LogT -&gt; m a) -&gt; LogT m a
+</span><a href="#local-6989586621679096209"><span class="hs-identifier hs-var hs-var hs-var hs-var">liftWith</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(forall b. ReaderT LoggerEnv m b -&gt; LogT m b)
+-&gt; (forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a)
+-&gt; (RunDefault LogT (ReaderT LoggerEnv) -&gt; m a)
+-&gt; LogT m a
+forall (m :: * -&gt; *) (n :: (* -&gt; *) -&gt; * -&gt; *)
+       (t :: (* -&gt; *) -&gt; * -&gt; *) a.
+(Monad m, MonadTransControl n) =&gt;
+(forall b. n m b -&gt; t m b)
+-&gt; (forall (o :: * -&gt; *) b. t o b -&gt; n o b)
+-&gt; (RunDefault t n -&gt; m a)
+-&gt; t m a
+</span><span class="hs-identifier hs-var">defaultLiftWith</span></span><span> </span><span class="annot"><span class="annottext">InnerLogT m b -&gt; LogT m b
+forall b. ReaderT LoggerEnv m b -&gt; LogT m b
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span> </span><span class="annot"><span class="annottext">LogT o b -&gt; InnerLogT o b
+forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a
+</span><a href="Log.Monad.html#unLogT"><span class="hs-identifier hs-var">unLogT</span></a></span><span>
+</span><span id="line-120"></span><span>  </span><span id="local-6989586621679096217"><span class="annot"><span class="annottext">restoreT :: forall (m :: * -&gt; *) a. Monad m =&gt; m (StT LogT a) -&gt; LogT m a
+</span><a href="#local-6989586621679096217"><span class="hs-identifier hs-var hs-var hs-var hs-var">restoreT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(ReaderT LoggerEnv m a -&gt; LogT m a)
+-&gt; m (StT (ReaderT LoggerEnv) a) -&gt; LogT m a
+forall (m :: * -&gt; *) (n :: (* -&gt; *) -&gt; * -&gt; *) a
+       (t :: (* -&gt; *) -&gt; * -&gt; *).
+(Monad m, MonadTransControl n) =&gt;
+(n m a -&gt; t m a) -&gt; m (StT n a) -&gt; t m a
+</span><span class="hs-identifier hs-var">defaultRestoreT</span></span><span> </span><span class="annot"><span class="annottext">ReaderT LoggerEnv m a -&gt; LogT m a
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span>
+</span><span id="line-121"></span><span>
+</span><span id="line-122"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679095728"><span id="local-6989586621679095729"><span class="annot"><span class="hs-identifier hs-type">MonadBaseControl</span></span><span> </span><span class="annot"><a href="#local-6989586621679095728"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095729"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadBaseControl</span></span><span> </span><span class="annot"><a href="#local-6989586621679095728"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095729"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-123"></span><span>  </span><span class="hs-keyword">type</span><span> </span><span id="StM"><span class="annot"><span class="hs-identifier hs-var">StM</span></span></span><span> </span><span id="local-6989586621679096229"><span class="hs-special">(</span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095729"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><a href="#local-6989586621679096229"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ComposeSt</span></span><span> </span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095729"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679096229"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-124"></span><span>  </span><span id="local-6989586621679096232"><span class="annot"><span class="annottext">liftBaseWith :: forall a. (RunInBase (LogT m) b -&gt; b a) -&gt; LogT m a
+</span><a href="#local-6989586621679096232"><span class="hs-identifier hs-var hs-var hs-var hs-var">liftBaseWith</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(RunInBaseDefault LogT m b -&gt; b a) -&gt; LogT m a
+(RunInBase (LogT m) b -&gt; b a) -&gt; LogT m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *) (b :: * -&gt; *) (m :: * -&gt; *) a.
+(MonadTransControl t, MonadBaseControl b m) =&gt;
+(RunInBaseDefault t m b -&gt; b a) -&gt; t m a
+</span><span class="hs-identifier hs-var">defaultLiftBaseWith</span></span><span>
+</span><span id="line-125"></span><span>  </span><span id="local-6989586621679096237"><span class="annot"><span class="annottext">restoreM :: forall a. StM (LogT m) a -&gt; LogT m a
+</span><a href="#local-6989586621679096237"><span class="hs-identifier hs-var hs-var hs-var hs-var">restoreM</span></a></span></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ComposeSt LogT m a -&gt; LogT m a
+StM (LogT m) a -&gt; LogT m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *) (b :: * -&gt; *) (m :: * -&gt; *) a.
+(MonadTransControl t, MonadBaseControl b m) =&gt;
+ComposeSt t m a -&gt; t m a
+</span><span class="hs-identifier hs-var">defaultRestoreM</span></span><span>
+</span><span id="line-126"></span><span>
+</span><span id="line-127"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679095747"><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679095747"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095747"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-128"></span><span>  </span><span id="local-6989586621679096250"><span class="annot"><span class="annottext">withRunInIO :: forall b. ((forall a. LogT m a -&gt; IO a) -&gt; IO b) -&gt; LogT m b
+</span><a href="#local-6989586621679096250"><span class="hs-identifier hs-var hs-var hs-var hs-var">withRunInIO</span></a></span></span><span> </span><span id="local-6989586621679096252"><span class="annot"><span class="annottext">(forall a. LogT m a -&gt; IO a) -&gt; IO b
+</span><a href="#local-6989586621679096252"><span class="hs-identifier hs-var">inner</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">InnerLogT m b -&gt; LogT m b
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span> </span><span class="annot"><span class="annottext">(InnerLogT m b -&gt; LogT m b) -&gt; InnerLogT m b -&gt; LogT m b
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">((forall a. ReaderT LoggerEnv m a -&gt; IO a) -&gt; IO b)
+-&gt; InnerLogT m b
+forall b.
+((forall a. ReaderT LoggerEnv m a -&gt; IO a) -&gt; IO b)
+-&gt; ReaderT LoggerEnv m b
+forall (m :: * -&gt; *) b.
+MonadUnliftIO m =&gt;
+((forall a. m a -&gt; IO a) -&gt; IO b) -&gt; m b
+</span><span class="hs-identifier hs-var">withRunInIO</span></span><span> </span><span class="annot"><span class="annottext">(((forall a. ReaderT LoggerEnv m a -&gt; IO a) -&gt; IO b)
+ -&gt; InnerLogT m b)
+-&gt; ((forall a. ReaderT LoggerEnv m a -&gt; IO a) -&gt; IO b)
+-&gt; InnerLogT m b
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679096253"><span class="annot"><span class="annottext">forall a. ReaderT LoggerEnv m a -&gt; IO a
+</span><a href="#local-6989586621679096253"><span class="hs-identifier hs-var">run</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">(forall a. LogT m a -&gt; IO a) -&gt; IO b
+</span><a href="#local-6989586621679096252"><span class="hs-identifier hs-var">inner</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ReaderT LoggerEnv m a -&gt; IO a
+forall a. ReaderT LoggerEnv m a -&gt; IO a
+</span><a href="#local-6989586621679096253"><span class="hs-identifier hs-var">run</span></a></span><span> </span><span class="annot"><span class="annottext">(ReaderT LoggerEnv m a -&gt; IO a)
+-&gt; (LogT m a -&gt; ReaderT LoggerEnv m a) -&gt; LogT m a -&gt; IO a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">LogT m a -&gt; ReaderT LoggerEnv m a
+forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a
+</span><a href="Log.Monad.html#unLogT"><span class="hs-identifier hs-var">unLogT</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-129"></span><span>
+</span><span id="line-130"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679095756"><span class="annot"><span class="hs-identifier hs-type">MonadBase</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="#local-6989586621679095756"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Log.Class.html#MonadLog"><span class="hs-identifier hs-type">MonadLog</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-type">LogT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679095756"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-131"></span><span>  </span><span id="local-6989586621679096268"><span class="annot"><span class="annottext">logMessage :: LogLevel -&gt; Text -&gt; Value -&gt; LogT m ()
+</span><a href="Log.Class.html#logMessage"><span class="hs-identifier hs-var hs-var hs-var hs-var">logMessage</span></a></span></span><span> </span><span id="local-6989586621679096269"><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096269"><span class="hs-identifier hs-var">level</span></a></span></span><span> </span><span id="local-6989586621679096270"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679096270"><span class="hs-identifier hs-var">message</span></a></span></span><span> </span><span id="local-6989586621679096271"><span class="annot"><span class="annottext">Value
+</span><a href="#local-6989586621679096271"><span class="hs-identifier hs-var">data_</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">InnerLogT m () -&gt; LogT m ()
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span> </span><span class="annot"><span class="annottext">(InnerLogT m () -&gt; LogT m ())
+-&gt; ((LoggerEnv -&gt; m ()) -&gt; InnerLogT m ())
+-&gt; (LoggerEnv -&gt; m ())
+-&gt; LogT m ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(LoggerEnv -&gt; m ()) -&gt; InnerLogT m ()
+forall r (m :: * -&gt; *) a. (r -&gt; m a) -&gt; ReaderT r m a
+</span><span class="hs-identifier hs-var">ReaderT</span></span><span> </span><span class="annot"><span class="annottext">((LoggerEnv -&gt; m ()) -&gt; LogT m ())
+-&gt; (LoggerEnv -&gt; m ()) -&gt; LogT m ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679096273"><span class="annot"><span class="annottext">LoggerEnv
+</span><a href="#local-6989586621679096273"><span class="hs-identifier hs-var">logEnv</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">IO () -&gt; m ()
+forall &#945;. IO &#945; -&gt; m &#945;
+forall (b :: * -&gt; *) (m :: * -&gt; *) &#945;. MonadBase b m =&gt; b &#945; -&gt; m &#945;
+</span><span class="hs-identifier hs-var">liftBase</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; m ()) -&gt; IO () -&gt; m ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-132"></span><span>    </span><span id="local-6989586621679096275"><span class="annot"><span class="annottext">UTCTime
+</span><a href="#local-6989586621679096275"><span class="hs-identifier hs-var">time</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO UTCTime
+</span><span class="hs-identifier hs-var">getCurrentTime</span></span><span>
+</span><span id="line-133"></span><span>    </span><span class="annot"><span class="annottext">LoggerEnv -&gt; UTCTime -&gt; LogLevel -&gt; Text -&gt; Value -&gt; IO ()
+</span><a href="Log.Monad.html#logMessageIO"><span class="hs-identifier hs-var">logMessageIO</span></a></span><span> </span><span class="annot"><span class="annottext">LoggerEnv
+</span><a href="#local-6989586621679096273"><span class="hs-identifier hs-var">logEnv</span></a></span><span> </span><span class="annot"><span class="annottext">UTCTime
+</span><a href="#local-6989586621679096275"><span class="hs-identifier hs-var">time</span></a></span><span> </span><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096269"><span class="hs-identifier hs-var">level</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679096270"><span class="hs-identifier hs-var">message</span></a></span><span> </span><span class="annot"><span class="annottext">Value
+</span><a href="#local-6989586621679096271"><span class="hs-identifier hs-var">data_</span></a></span><span>
+</span><span id="line-134"></span><span>
+</span><span id="line-135"></span><span>  </span><span id="local-6989586621679096279"><span class="annot"><span class="annottext">localData :: forall a. [Pair] -&gt; LogT m a -&gt; LogT m a
+</span><a href="#local-6989586621679096279"><span class="hs-identifier hs-var hs-var hs-var hs-var">localData</span></a></span></span><span> </span><span id="local-6989586621679096281"><span class="annot"><span class="annottext">[Pair]
+</span><a href="#local-6989586621679096281"><span class="hs-identifier hs-var">data_</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-136"></span><span>    </span><span class="annot"><span class="annottext">InnerLogT m a -&gt; LogT m a
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span> </span><span class="annot"><span class="annottext">(InnerLogT m a -&gt; LogT m a)
+-&gt; (LogT m a -&gt; InnerLogT m a) -&gt; LogT m a -&gt; LogT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(LoggerEnv -&gt; LoggerEnv) -&gt; InnerLogT m a -&gt; InnerLogT m a
+forall a.
+(LoggerEnv -&gt; LoggerEnv)
+-&gt; ReaderT LoggerEnv m a -&gt; ReaderT LoggerEnv m a
+forall r (m :: * -&gt; *) a. MonadReader r m =&gt; (r -&gt; r) -&gt; m a -&gt; m a
+</span><span class="hs-identifier hs-var">local</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679096282"><span class="annot"><span class="annottext">LoggerEnv
+</span><a href="#local-6989586621679096282"><span class="hs-identifier hs-var">e</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">LoggerEnv
+</span><a href="#local-6989586621679096282"><span class="hs-identifier hs-var">e</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Log.Logger.html#leData"><span class="hs-identifier hs-var">leData</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679096281"><span class="hs-identifier hs-type">data_</span></a></span><span> </span><span class="annot"><span class="hs-operator hs-type">++</span></span><span> </span><span class="annot"><a href="Log.Logger.html#leData"><span class="hs-identifier hs-var">leData</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679096282"><span class="hs-identifier hs-type">e</span></a></span><span> </span><span class="hs-special">}</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(InnerLogT m a -&gt; InnerLogT m a)
+-&gt; (LogT m a -&gt; InnerLogT m a) -&gt; LogT m a -&gt; InnerLogT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">LogT m a -&gt; InnerLogT m a
+forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a
+</span><a href="Log.Monad.html#unLogT"><span class="hs-identifier hs-var">unLogT</span></a></span><span>
+</span><span id="line-137"></span><span>
+</span><span id="line-138"></span><span>  </span><span id="local-6989586621679096284"><span class="annot"><span class="annottext">localDomain :: forall a. Text -&gt; LogT m a -&gt; LogT m a
+</span><a href="#local-6989586621679096284"><span class="hs-identifier hs-var hs-var hs-var hs-var">localDomain</span></a></span></span><span> </span><span id="local-6989586621679096286"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679096286"><span class="hs-identifier hs-var">domain</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-139"></span><span>    </span><span class="annot"><span class="annottext">InnerLogT m a -&gt; LogT m a
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span> </span><span class="annot"><span class="annottext">(InnerLogT m a -&gt; LogT m a)
+-&gt; (LogT m a -&gt; InnerLogT m a) -&gt; LogT m a -&gt; LogT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(LoggerEnv -&gt; LoggerEnv) -&gt; InnerLogT m a -&gt; InnerLogT m a
+forall a.
+(LoggerEnv -&gt; LoggerEnv)
+-&gt; ReaderT LoggerEnv m a -&gt; ReaderT LoggerEnv m a
+forall r (m :: * -&gt; *) a. MonadReader r m =&gt; (r -&gt; r) -&gt; m a -&gt; m a
+</span><span class="hs-identifier hs-var">local</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679096287"><span class="annot"><span class="annottext">LoggerEnv
+</span><a href="#local-6989586621679096287"><span class="hs-identifier hs-var">e</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">LoggerEnv
+</span><a href="#local-6989586621679096287"><span class="hs-identifier hs-var">e</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Log.Logger.html#leDomain"><span class="hs-identifier hs-var">leDomain</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Log.Logger.html#leDomain"><span class="hs-identifier hs-var">leDomain</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679096287"><span class="hs-identifier hs-type">e</span></a></span><span> </span><span class="annot"><span class="hs-operator hs-type">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="#local-6989586621679096286"><span class="hs-identifier hs-type">domain</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-special">}</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(InnerLogT m a -&gt; InnerLogT m a)
+-&gt; (LogT m a -&gt; InnerLogT m a) -&gt; LogT m a -&gt; InnerLogT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">LogT m a -&gt; InnerLogT m a
+forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a
+</span><a href="Log.Monad.html#unLogT"><span class="hs-identifier hs-var">unLogT</span></a></span><span>
+</span><span id="line-140"></span><span>
+</span><span id="line-141"></span><span>  </span><span id="local-6989586621679096289"><span class="annot"><span class="annottext">localMaxLogLevel :: forall a. LogLevel -&gt; LogT m a -&gt; LogT m a
+</span><a href="#local-6989586621679096289"><span class="hs-identifier hs-var hs-var hs-var hs-var">localMaxLogLevel</span></a></span></span><span> </span><span id="local-6989586621679096291"><span class="annot"><span class="annottext">LogLevel
+</span><a href="#local-6989586621679096291"><span class="hs-identifier hs-var">level</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-142"></span><span>    </span><span class="annot"><span class="annottext">InnerLogT m a -&gt; LogT m a
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span> </span><span class="annot"><span class="annottext">(InnerLogT m a -&gt; LogT m a)
+-&gt; (LogT m a -&gt; InnerLogT m a) -&gt; LogT m a -&gt; LogT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(LoggerEnv -&gt; LoggerEnv) -&gt; InnerLogT m a -&gt; InnerLogT m a
+forall a.
+(LoggerEnv -&gt; LoggerEnv)
+-&gt; ReaderT LoggerEnv m a -&gt; ReaderT LoggerEnv m a
+forall r (m :: * -&gt; *) a. MonadReader r m =&gt; (r -&gt; r) -&gt; m a -&gt; m a
+</span><span class="hs-identifier hs-var">local</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679096292"><span class="annot"><span class="annottext">LoggerEnv
+</span><a href="#local-6989586621679096292"><span class="hs-identifier hs-var">e</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">LoggerEnv
+</span><a href="#local-6989586621679096292"><span class="hs-identifier hs-var">e</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Log.Logger.html#leMaxLogLevel"><span class="hs-identifier hs-var">leMaxLogLevel</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679096291"><span class="hs-identifier hs-type">level</span></a></span><span> </span><span class="hs-special">}</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(InnerLogT m a -&gt; InnerLogT m a)
+-&gt; (LogT m a -&gt; InnerLogT m a) -&gt; LogT m a -&gt; InnerLogT m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">LogT m a -&gt; InnerLogT m a
+forall (m :: * -&gt; *) a. LogT m a -&gt; InnerLogT m a
+</span><a href="Log.Monad.html#unLogT"><span class="hs-identifier hs-var">unLogT</span></a></span><span>
+</span><span id="line-143"></span><span>
+</span><span id="line-144"></span><span>  </span><span id="local-6989586621679096294"><span class="annot"><span class="annottext">getLoggerEnv :: LogT m LoggerEnv
+</span><a href="Log.Class.html#getLoggerEnv"><span class="hs-identifier hs-var hs-var hs-var hs-var">getLoggerEnv</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">InnerLogT m LoggerEnv -&gt; LogT m LoggerEnv
+forall (m :: * -&gt; *) a. InnerLogT m a -&gt; LogT m a
+</span><a href="Log.Monad.html#LogT"><span class="hs-identifier hs-var">LogT</span></a></span><span> </span><span class="annot"><span class="annottext">InnerLogT m LoggerEnv
+forall r (m :: * -&gt; *). MonadReader r m =&gt; m r
+</span><span class="hs-identifier hs-var">ask</span></span><span>
+</span><span id="line-145"></span></pre></body></html>

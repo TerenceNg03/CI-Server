@@ -1,0 +1,849 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-2"></span><span>
+</span><span id="line-3"></span><span class="annot"><span class="hs-comment">{-|
+  This module contains PostgreSQL-specific JSON functions.
+
+  A couple of things to keep in mind about this module:
+
+      * The @Type@ column in the PostgreSQL documentation tables
+      are the types of the right operand, the left is always @jsonb@.
+      * Since these operators can all take @NULL@ values as their input,
+      and most can also output @NULL@ values (even when the inputs are
+      guaranteed to not be NULL), all 'JSONB' values are wrapped in
+      'Maybe'. This also makes it easier to chain them. (cf. 'JSONBExpr')
+      Just use the 'just' function to lift any non-'Maybe' JSONB values
+      in case it doesn't type check.
+      * As long as the previous operator's resulting value is
+      a 'JSONBExpr', any other JSON operator can be used to transform
+      the JSON further. (e.g. @[1,2,3] -&gt; 1 \@&gt; 2@)
+
+  /The PostgreSQL version the functions work with are included/
+  /in their description./
+
+  @since 3.1.0
+-}</span></span><span>
+</span><span id="line-25"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Database.Esqueleto.PostgreSQL.JSON</span><span>
+</span><span id="line-26"></span><span>    </span><span class="hs-special">(</span><span> </span><span class="annot"><span class="hs-comment">-- * JSONB Newtype</span></span><span>
+</span><span id="line-27"></span><span>      </span><span class="hs-comment">--</span><span>
+</span><span id="line-28"></span><span>      </span><span class="hs-comment">-- | With 'JSONB', you can use your Haskell types in your</span><span>
+</span><span id="line-29"></span><span>      </span><span class="hs-comment">-- database table models as long as your type has 'FromJSON'</span><span>
+</span><span id="line-30"></span><span>      </span><span class="hs-comment">-- and 'ToJSON' instances.</span><span>
+</span><span id="line-31"></span><span>      </span><span class="hs-comment">--</span><span>
+</span><span id="line-32"></span><span>      </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-33"></span><span>      </span><span class="hs-comment">-- import Database.Persist.TH</span><span>
+</span><span id="line-34"></span><span>      </span><span class="hs-comment">--</span><span>
+</span><span id="line-35"></span><span>      </span><span class="hs-comment">-- share [mkPersist sqlSettings, mkMigrate &quot;migrateAll&quot;] [persistUpperCase|</span><span>
+</span><span id="line-36"></span><span>      </span><span class="hs-comment">--   Example</span><span>
+</span><span id="line-37"></span><span>      </span><span class="hs-comment">--     json (JSONB MyType)</span><span>
+</span><span id="line-38"></span><span>      </span><span class="hs-comment">-- |]</span><span>
+</span><span id="line-39"></span><span>      </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-40"></span><span>      </span><span class="hs-comment">--</span><span>
+</span><span id="line-41"></span><span>      </span><span class="hs-comment">-- CAUTION: Remember that changing the 'FromJSON' instance</span><span>
+</span><span id="line-42"></span><span>      </span><span class="hs-comment">-- of your type might result in old data becoming unparsable!</span><span>
+</span><span id="line-43"></span><span>      </span><span class="hs-comment">-- You can use (@JSONB Data.Aeson.Value@) for unstructured/variable JSON.</span><span>
+</span><span id="line-44"></span><span>      </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONB"><span class="hs-identifier">JSONB</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-45"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier">JSONBExpr</span></a></span><span>
+</span><span id="line-46"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#jsonbVal"><span class="hs-identifier">jsonbVal</span></a></span><span>
+</span><span id="line-47"></span><span>    </span><span class="annot"><span class="hs-comment">-- * JSONAccessor</span></span><span>
+</span><span id="line-48"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONAccessor"><span class="hs-identifier">JSONAccessor</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-49"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Arrow operators</span></span><span>
+</span><span id="line-50"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-51"></span><span>    </span><span class="hs-comment">-- | /Better documentation included with individual functions/</span><span>
+</span><span id="line-52"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-53"></span><span>    </span><span class="hs-comment">-- The arrow operators are selection functions to select values</span><span>
+</span><span id="line-54"></span><span>    </span><span class="hs-comment">-- from JSON arrays or objects.</span><span>
+</span><span id="line-55"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-56"></span><span>    </span><span class="hs-comment">-- === PostgreSQL Documentation</span><span>
+</span><span id="line-57"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-58"></span><span>    </span><span class="hs-comment">-- /Requires PostgreSQL version &gt;= 9.3/</span><span>
+</span><span id="line-59"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-60"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-61"></span><span>    </span><span class="hs-comment">--      | Type   | Description                                |  Example                                         | Example Result</span><span>
+</span><span id="line-62"></span><span>    </span><span class="hs-comment">-- -----+--------+--------------------------------------------+--------------------------------------------------+----------------</span><span>
+</span><span id="line-63"></span><span>    </span><span class="hs-comment">--  -&gt;  | int    | Get JSON array element (indexed from zero, | '[{&quot;a&quot;:&quot;foo&quot;},{&quot;b&quot;:&quot;bar&quot;},{&quot;c&quot;:&quot;baz&quot;}]'::json-&gt;2 | {&quot;c&quot;:&quot;baz&quot;}</span><span>
+</span><span id="line-64"></span><span>    </span><span class="hs-comment">--      |        | negative integers count from the end)      |                                                  |</span><span>
+</span><span id="line-65"></span><span>    </span><span class="hs-comment">--  -&gt;  | text   | Get JSON object field by key               | '{&quot;a&quot;: {&quot;b&quot;:&quot;foo&quot;}}'::json-&gt;'a'                  | {&quot;b&quot;:&quot;foo&quot;}</span><span>
+</span><span id="line-66"></span><span>    </span><span class="hs-comment">--  -&gt;&gt; | int    | Get JSON array element as text             | '[1,2,3]'::json-&gt;&gt;2                              | 3</span><span>
+</span><span id="line-67"></span><span>    </span><span class="hs-comment">--  -&gt;&gt; | text   | Get JSON object field as text              | '{&quot;a&quot;:1,&quot;b&quot;:2}'::json-&gt;&gt;'b'                      | 2</span><span>
+</span><span id="line-68"></span><span>    </span><span class="hs-comment">--  \#&gt;  | text[] | Get JSON object at specified path          | '{&quot;a&quot;: {&quot;b&quot;:{&quot;c&quot;: &quot;foo&quot;}}}'::json#&gt;'{a,b}'       | {&quot;c&quot;: &quot;foo&quot;}</span><span>
+</span><span id="line-69"></span><span>    </span><span class="hs-comment">--  \#&gt;&gt; | text[] | Get JSON object at specified path as text  | '{&quot;a&quot;:[1,2,3],&quot;b&quot;:[4,5,6]}'::json#&gt;&gt;'{a,2}'      | 3</span><span>
+</span><span id="line-70"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-71"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E."><span class="hs-operator">(-&gt;.)</span></a></span><span>
+</span><span id="line-72"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E%3E."><span class="hs-operator">(-&gt;&gt;.)</span></a></span><span>
+</span><span id="line-73"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23%3E."><span class="hs-operator">(#&gt;.)</span></a></span><span>
+</span><span id="line-74"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23%3E%3E."><span class="hs-operator">(#&gt;&gt;.)</span></a></span><span>
+</span><span id="line-75"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Filter operators</span></span><span>
+</span><span id="line-76"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-77"></span><span>    </span><span class="hs-comment">-- | /Better documentation included with individual functions/</span><span>
+</span><span id="line-78"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-79"></span><span>    </span><span class="hs-comment">-- These functions test certain properties of JSON values</span><span>
+</span><span id="line-80"></span><span>    </span><span class="hs-comment">-- and return booleans, so are mainly used in WHERE clauses.</span><span>
+</span><span id="line-81"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-82"></span><span>    </span><span class="hs-comment">-- === PostgreSQL Documentation</span><span>
+</span><span id="line-83"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-84"></span><span>    </span><span class="hs-comment">-- /Requires PostgreSQL version &gt;= 9.4/</span><span>
+</span><span id="line-85"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-86"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-87"></span><span>    </span><span class="hs-comment">--     | Type   | Description                                                     |  Example</span><span>
+</span><span id="line-88"></span><span>    </span><span class="hs-comment">-- ----+--------+-----------------------------------------------------------------+---------------------------------------------------</span><span>
+</span><span id="line-89"></span><span>    </span><span class="hs-comment">--  \@&gt; | jsonb  | Does the left JSON value contain within it the right value?     | '{&quot;a&quot;:1, &quot;b&quot;:2}'::jsonb \@&gt; '{&quot;b&quot;:2}'::jsonb</span><span>
+</span><span id="line-90"></span><span>    </span><span class="hs-comment">--  &lt;\@ | jsonb  | Is the left JSON value contained within the right value?        | '{&quot;b&quot;:2}'::jsonb &lt;\@ '{&quot;a&quot;:1, &quot;b&quot;:2}'::jsonb</span><span>
+</span><span id="line-91"></span><span>    </span><span class="hs-comment">--  ?  | text   | Does the string exist as a top-level key within the JSON value? | '{&quot;a&quot;:1, &quot;b&quot;:2}'::jsonb ? 'b'</span><span>
+</span><span id="line-92"></span><span>    </span><span class="hs-comment">--  ?| | text[] | Do any of these array strings exist as top-level keys?          | '{&quot;a&quot;:1, &quot;b&quot;:2, &quot;c&quot;:3}'::jsonb ?| array['b', 'c']</span><span>
+</span><span id="line-93"></span><span>    </span><span class="hs-comment">--  ?&amp; | text[] | Do all of these array strings exist as top-level keys?          | '[&quot;a&quot;, &quot;b&quot;]'::jsonb ?&amp; array['a', 'b']</span><span>
+</span><span id="line-94"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-95"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%40%3E."><span class="hs-operator">(@&gt;.)</span></a></span><span>
+</span><span id="line-96"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3C%40."><span class="hs-operator">(&lt;@.)</span></a></span><span>
+</span><span id="line-97"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F."><span class="hs-operator">(?.)</span></a></span><span>
+</span><span id="line-98"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F%7C."><span class="hs-operator">(?|.)</span></a></span><span>
+</span><span id="line-99"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F%26."><span class="hs-operator">(?&amp;.)</span></a></span><span>
+</span><span id="line-100"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Deletion and concatenation operators</span></span><span>
+</span><span id="line-101"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-102"></span><span>    </span><span class="hs-comment">-- | /Better documentation included with individual functions/</span><span>
+</span><span id="line-103"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-104"></span><span>    </span><span class="hs-comment">-- These operators change the shape of the JSON value and</span><span>
+</span><span id="line-105"></span><span>    </span><span class="hs-comment">-- also have the highest risk of throwing an exception.</span><span>
+</span><span id="line-106"></span><span>    </span><span class="hs-comment">-- Please read the descriptions carefully before using these functions.</span><span>
+</span><span id="line-107"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-108"></span><span>    </span><span class="hs-comment">-- === PostgreSQL Documentation</span><span>
+</span><span id="line-109"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-110"></span><span>    </span><span class="hs-comment">-- /Requires PostgreSQL version &gt;= 9.5/</span><span>
+</span><span id="line-111"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-112"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-113"></span><span>    </span><span class="hs-comment">--     | Type    | Description                                                            |  Example</span><span>
+</span><span id="line-114"></span><span>    </span><span class="hs-comment">-- ----+---------+------------------------------------------------------------------------+-------------------------------------------------</span><span>
+</span><span id="line-115"></span><span>    </span><span class="hs-comment">--  || | jsonb   | Concatenate two jsonb values into a new jsonb value                    | '[&quot;a&quot;, &quot;b&quot;]'::jsonb || '[&quot;c&quot;, &quot;d&quot;]'::jsonb</span><span>
+</span><span id="line-116"></span><span>    </span><span class="hs-comment">--  -  | text    | Delete key/value pair or string element from left operand.             | '{&quot;a&quot;: &quot;b&quot;}'::jsonb - 'a'</span><span>
+</span><span id="line-117"></span><span>    </span><span class="hs-comment">--     |         | Key/value pairs are matched based on their key value.                  |</span><span>
+</span><span id="line-118"></span><span>    </span><span class="hs-comment">--  -  | integer | Delete the array element with specified index (Negative integers count | '[&quot;a&quot;, &quot;b&quot;]'::jsonb - 1</span><span>
+</span><span id="line-119"></span><span>    </span><span class="hs-comment">--     |         | from the end). Throws an error if top level container is not an array. |</span><span>
+</span><span id="line-120"></span><span>    </span><span class="hs-comment">--  \#- | text[]  | Delete the field or element with specified path                        | '[&quot;a&quot;, {&quot;b&quot;:1}]'::jsonb \#- '{1,b}'</span><span>
+</span><span id="line-121"></span><span>    </span><span class="hs-comment">--     |         | (for JSON arrays, negative integers count from the end)                |</span><span>
+</span><span id="line-122"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-123"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-124"></span><span>    </span><span class="hs-comment">-- /Requires PostgreSQL version &gt;= 10/</span><span>
+</span><span id="line-125"></span><span>    </span><span class="hs-comment">--</span><span>
+</span><span id="line-126"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-127"></span><span>    </span><span class="hs-comment">--     | Type    | Description                                                            |  Example</span><span>
+</span><span id="line-128"></span><span>    </span><span class="hs-comment">-- ----+---------+------------------------------------------------------------------------+-------------------------------------------------</span><span>
+</span><span id="line-129"></span><span>    </span><span class="hs-comment">--  -  | text[]  | Delete multiple key/value pairs or string elements from left operand.  | '{&quot;a&quot;: &quot;b&quot;, &quot;c&quot;: &quot;d&quot;}'::jsonb - '{a,c}'::text[]</span><span>
+</span><span id="line-130"></span><span>    </span><span class="hs-comment">--     |         | Key/value pairs are matched based on their key value.                  |</span><span>
+</span><span id="line-131"></span><span>    </span><span class="hs-comment">-- @</span><span>
+</span><span id="line-132"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-."><span class="hs-operator">(-.)</span></a></span><span>
+</span><span id="line-133"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#--."><span class="hs-operator">(--.)</span></a></span><span>
+</span><span id="line-134"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23-."><span class="hs-operator">(#-.)</span></a></span><span>
+</span><span id="line-135"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%7C%7C."><span class="hs-operator">(||.)</span></a></span><span>
+</span><span id="line-136"></span><span>    </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-137"></span><span>
+</span><span id="line-138"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-139"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html"><span class="hs-identifier">Database.Esqueleto.Internal.Internal</span></a></span><span> </span><span class="hs-keyword">hiding</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#-."><span class="hs-operator">(-.)</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#%3F."><span class="hs-operator">(?.)</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#%7C%7C."><span class="hs-operator">(||.)</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-140"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.PersistentImport.html"><span class="hs-identifier">Database.Esqueleto.Internal.PersistentImport</span></a></span><span>
+</span><span id="line-141"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html"><span class="hs-identifier">Database.Esqueleto.PostgreSQL.JSON.Instances</span></a></span><span>
+</span><span id="line-142"></span><span>
+</span><span id="line-143"></span><span class="hs-keyword">infixl</span><span> </span><span class="hs-number">6</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E."><span class="hs-operator hs-type">-&gt;.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E%3E."><span class="hs-operator hs-type">-&gt;&gt;.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23%3E."><span class="hs-operator hs-type">#&gt;.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23%3E%3E."><span class="hs-operator hs-type">#&gt;&gt;.</span></a></span><span>
+</span><span id="line-144"></span><span class="hs-keyword">infixl</span><span> </span><span class="hs-number">6</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%40%3E."><span class="hs-operator hs-type">@&gt;.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3C%40."><span class="hs-operator hs-type">&lt;@.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F."><span class="hs-operator hs-type">?.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F%7C."><span class="hs-operator hs-type">?|.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F%26."><span class="hs-operator hs-type">?&amp;.</span></a></span><span>
+</span><span id="line-145"></span><span class="hs-keyword">infixl</span><span> </span><span class="hs-number">6</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%7C%7C."><span class="hs-operator hs-type">||.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-."><span class="hs-operator hs-type">-.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#--."><span class="hs-operator hs-type">--.</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23-."><span class="hs-operator hs-type">#-.</span></a></span><span>
+</span><span id="line-146"></span><span>
+</span><span id="line-147"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.3/</span><span>
+</span><span id="line-148"></span><span class="hs-comment">--</span><span>
+</span><span id="line-149"></span><span class="hs-comment">-- This function extracts the jsonb value from a JSON array or object,</span><span>
+</span><span id="line-150"></span><span class="hs-comment">-- depending on whether you use an @int@ or a @text@. (cf. 'JSONAccessor')</span><span>
+</span><span id="line-151"></span><span class="hs-comment">--</span><span>
+</span><span id="line-152"></span><span class="hs-comment">-- As long as the left operand is @jsonb@, this function will not</span><span>
+</span><span id="line-153"></span><span class="hs-comment">-- throw an exception, but will return @NULL@ when an @int@ is used on</span><span>
+</span><span id="line-154"></span><span class="hs-comment">-- anything other than a JSON array, or a @text@ is used on anything</span><span>
+</span><span id="line-155"></span><span class="hs-comment">-- other than a JSON object.</span><span>
+</span><span id="line-156"></span><span class="hs-comment">--</span><span>
+</span><span id="line-157"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-158"></span><span class="hs-comment">--</span><span>
+</span><span id="line-159"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-160"></span><span class="hs-comment">--     | Type | Description                                |  Example                                         | Example Result</span><span>
+</span><span id="line-161"></span><span class="hs-comment">-- ----+------+--------------------------------------------+--------------------------------------------------+----------------</span><span>
+</span><span id="line-162"></span><span class="hs-comment">--  -&gt; | int  | Get JSON array element (indexed from zero) | '[{&quot;a&quot;:&quot;foo&quot;},{&quot;b&quot;:&quot;bar&quot;},{&quot;c&quot;:&quot;baz&quot;}]'::json-&gt;2 | {&quot;c&quot;:&quot;baz&quot;}</span><span>
+</span><span id="line-163"></span><span class="hs-comment">--  -&gt; | text | Get JSON object field by key               | '{&quot;a&quot;: {&quot;b&quot;:&quot;foo&quot;}}'::json-&gt;'a'                  | {&quot;b&quot;:&quot;foo&quot;}</span><span>
+</span><span id="line-164"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-165"></span><span class="hs-comment">--</span><span>
+</span><span id="line-166"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-167"></span><span id="local-6989586621679310910"><span id="local-6989586621679310913"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E."><span class="hs-operator hs-type">(-&gt;.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310910"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONAccessor"><span class="hs-identifier hs-type">JSONAccessor</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310913"><span class="hs-identifier hs-type">b</span></a></span></span></span><span>
+</span><span id="line-168"></span><span id="-%3E."><span class="annot"><span class="annottext">-&gt;. :: forall a b. JSONBExpr a -&gt; JSONAccessor -&gt; JSONBExpr b
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E."><span class="hs-operator hs-var hs-var">(-&gt;.)</span></a></span></span><span> </span><span id="local-6989586621679310996"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679310996"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONKey"><span class="hs-identifier hs-type">JSONKey</span></a></span><span> </span><span id="local-6989586621679310998"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679310998"><span class="hs-identifier hs-var">txt</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value Text)
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; -&gt; &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679310996"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value Text) -&gt; SqlExpr (Value (Maybe (JSONB b))))
+-&gt; SqlExpr (Value Text) -&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; SqlExpr (Value Text)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><a href="Database.Esqueleto.Internal.Internal.html#val"><span class="hs-identifier hs-var">val</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679310998"><span class="hs-identifier hs-var">txt</span></a></span><span>
+</span><span id="line-169"></span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E."><span class="hs-operator hs-var">(-&gt;.)</span></a></span><span> </span><span id="local-6989586621679311001"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311001"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONIndex"><span class="hs-identifier hs-type">JSONIndex</span></a></span><span> </span><span id="local-6989586621679311003"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679311003"><span class="hs-identifier hs-var">i</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value Int)
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; -&gt; &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311001"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value Int) -&gt; SqlExpr (Value (Maybe (JSONB b))))
+-&gt; SqlExpr (Value Int) -&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; SqlExpr (Value Int)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><a href="Database.Esqueleto.Internal.Internal.html#val"><span class="hs-identifier hs-var">val</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679311003"><span class="hs-identifier hs-var">i</span></a></span><span>
+</span><span id="line-170"></span><span>
+</span><span id="line-171"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.3/</span><span>
+</span><span id="line-172"></span><span class="hs-comment">--</span><span>
+</span><span id="line-173"></span><span class="hs-comment">-- Identical to '-&gt;.', but the resulting DB type is a @text@,</span><span>
+</span><span id="line-174"></span><span class="hs-comment">-- so it could be chained with anything that uses @text@.</span><span>
+</span><span id="line-175"></span><span class="hs-comment">--</span><span>
+</span><span id="line-176"></span><span class="hs-comment">-- __CAUTION: if the &quot;scalar&quot; JSON value @null@ is the result__</span><span>
+</span><span id="line-177"></span><span class="hs-comment">-- __of this function, PostgreSQL will interpret it as a__</span><span>
+</span><span id="line-178"></span><span class="hs-comment">-- __PostgreSQL @NULL@ value, and will therefore be 'Nothing'__</span><span>
+</span><span id="line-179"></span><span class="hs-comment">-- __instead of (Just &quot;null&quot;)__</span><span>
+</span><span id="line-180"></span><span class="hs-comment">--</span><span>
+</span><span id="line-181"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-182"></span><span class="hs-comment">--</span><span>
+</span><span id="line-183"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-184"></span><span class="hs-comment">--      | Type | Description                    |  Example                    | Example Result</span><span>
+</span><span id="line-185"></span><span class="hs-comment">-- -----+------+--------------------------------+-----------------------------+----------------</span><span>
+</span><span id="line-186"></span><span class="hs-comment">--  -&gt;&gt; | int  | Get JSON array element as text | '[1,2,3]'::json-&gt;&gt;2         | 3</span><span>
+</span><span id="line-187"></span><span class="hs-comment">--  -&gt;&gt; | text | Get JSON object field as text  | '{&quot;a&quot;:1,&quot;b&quot;:2}'::json-&gt;&gt;'b' | 2</span><span>
+</span><span id="line-188"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-189"></span><span class="hs-comment">--</span><span>
+</span><span id="line-190"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-191"></span><span id="local-6989586621679310927"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E%3E."><span class="hs-operator hs-type">(-&gt;&gt;.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310927"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONAccessor"><span class="hs-identifier hs-type">JSONAccessor</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlExpr"><span class="hs-identifier hs-type">SqlExpr</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">)</span><span class="hs-special">)</span></span><span>
+</span><span id="line-192"></span><span id="-%3E%3E."><span class="annot"><span class="annottext">-&gt;&gt;. :: forall a.
+JSONBExpr a -&gt; JSONAccessor -&gt; SqlExpr (Value (Maybe Text))
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E%3E."><span class="hs-operator hs-var hs-var">(-&gt;&gt;.)</span></a></span></span><span> </span><span id="local-6989586621679311008"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311008"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONKey"><span class="hs-identifier hs-type">JSONKey</span></a></span><span> </span><span id="local-6989586621679311009"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679311009"><span class="hs-identifier hs-var">txt</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value Text)
+-&gt; SqlExpr (Value (Maybe Text))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; -&gt;&gt; &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311008"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value Text) -&gt; SqlExpr (Value (Maybe Text)))
+-&gt; SqlExpr (Value Text) -&gt; SqlExpr (Value (Maybe Text))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; SqlExpr (Value Text)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><a href="Database.Esqueleto.Internal.Internal.html#val"><span class="hs-identifier hs-var">val</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679311009"><span class="hs-identifier hs-var">txt</span></a></span><span>
+</span><span id="line-193"></span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-%3E%3E."><span class="hs-operator hs-var">(-&gt;&gt;.)</span></a></span><span> </span><span id="local-6989586621679311010"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311010"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONIndex"><span class="hs-identifier hs-type">JSONIndex</span></a></span><span> </span><span id="local-6989586621679311011"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679311011"><span class="hs-identifier hs-var">i</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value Int)
+-&gt; SqlExpr (Value (Maybe Text))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; -&gt;&gt; &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311010"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value Int) -&gt; SqlExpr (Value (Maybe Text)))
+-&gt; SqlExpr (Value Int) -&gt; SqlExpr (Value (Maybe Text))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; SqlExpr (Value Int)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><a href="Database.Esqueleto.Internal.Internal.html#val"><span class="hs-identifier hs-var">val</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679311011"><span class="hs-identifier hs-var">i</span></a></span><span>
+</span><span id="line-194"></span><span>
+</span><span id="line-195"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.3/</span><span>
+</span><span id="line-196"></span><span class="hs-comment">--</span><span>
+</span><span id="line-197"></span><span class="hs-comment">-- This operator can be used to select a JSON value from deep inside another one.</span><span>
+</span><span id="line-198"></span><span class="hs-comment">-- It only works on objects and arrays and will result in @NULL@ ('Nothing') when</span><span>
+</span><span id="line-199"></span><span class="hs-comment">-- encountering any other JSON type.</span><span>
+</span><span id="line-200"></span><span class="hs-comment">--</span><span>
+</span><span id="line-201"></span><span class="hs-comment">-- The 'Text's used in the right operand list will always select an object field, but</span><span>
+</span><span id="line-202"></span><span class="hs-comment">-- can also select an index from a JSON array if that text is parsable as an integer.</span><span>
+</span><span id="line-203"></span><span class="hs-comment">--</span><span>
+</span><span id="line-204"></span><span class="hs-comment">-- Consider the following:</span><span>
+</span><span id="line-205"></span><span class="hs-comment">--</span><span>
+</span><span id="line-206"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-207"></span><span class="hs-comment">-- x ^. TestBody #&gt;. [&quot;0&quot;,&quot;1&quot;]</span><span>
+</span><span id="line-208"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-209"></span><span class="hs-comment">--</span><span>
+</span><span id="line-210"></span><span class="hs-comment">-- The following JSON values in the @test@ table's @body@ column will be affected:</span><span>
+</span><span id="line-211"></span><span class="hs-comment">--</span><span>
+</span><span id="line-212"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-213"></span><span class="hs-comment">--  Values in column                     | Resulting value</span><span>
+</span><span id="line-214"></span><span class="hs-comment">-- --------------------------------------+----------------------------</span><span>
+</span><span id="line-215"></span><span class="hs-comment">-- {&quot;0&quot;:{&quot;1&quot;:&quot;Got it!&quot;}}                 | &quot;Got it!&quot;</span><span>
+</span><span id="line-216"></span><span class="hs-comment">-- {&quot;0&quot;:[null,[&quot;Got it!&quot;,&quot;Even here!&quot;]]} | [&quot;Got it!&quot;, &quot;Even here!&quot;]</span><span>
+</span><span id="line-217"></span><span class="hs-comment">-- [{&quot;1&quot;:&quot;Got it again!&quot;}]               | &quot;Got it again!&quot;</span><span>
+</span><span id="line-218"></span><span class="hs-comment">-- [[null,{\&quot;Wow\&quot;:&quot;so deep!&quot;}]]           | {\&quot;Wow\&quot;: &quot;so deep!&quot;}</span><span>
+</span><span id="line-219"></span><span class="hs-comment">-- false                                 | NULL</span><span>
+</span><span id="line-220"></span><span class="hs-comment">-- &quot;nope&quot;                                | NULL</span><span>
+</span><span id="line-221"></span><span class="hs-comment">-- 3.14                                  | NULL</span><span>
+</span><span id="line-222"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-223"></span><span class="hs-comment">--</span><span>
+</span><span id="line-224"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-225"></span><span class="hs-comment">--</span><span>
+</span><span id="line-226"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-227"></span><span class="hs-comment">--      | Type   | Description                       |  Example                                   | Example Result</span><span>
+</span><span id="line-228"></span><span class="hs-comment">-- -----+--------+-----------------------------------+--------------------------------------------+----------------</span><span>
+</span><span id="line-229"></span><span class="hs-comment">--  \#&gt;  | text[] | Get JSON object at specified path | '{&quot;a&quot;: {&quot;b&quot;:{&quot;c&quot;: &quot;foo&quot;}}}'::json#&gt;'{a,b}' | {&quot;c&quot;: &quot;foo&quot;}</span><span>
+</span><span id="line-230"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-231"></span><span class="hs-comment">--</span><span>
+</span><span id="line-232"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-233"></span><span id="local-6989586621679310929"><span id="local-6989586621679310930"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23%3E."><span class="hs-operator hs-type">(#&gt;.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310929"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310930"><span class="hs-identifier hs-type">b</span></a></span></span></span><span>
+</span><span id="line-234"></span><span id="%23%3E."><span class="annot"><span class="annottext">#&gt;. :: forall a b. JSONBExpr a -&gt; [Text] -&gt; JSONBExpr b
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23%3E."><span class="hs-operator hs-var hs-var">(#&gt;.)</span></a></span></span><span> </span><span id="local-6989586621679311013"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311013"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value PersistValue)
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; #&gt; &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311013"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value PersistValue) -&gt; SqlExpr (Value (Maybe (JSONB b))))
+-&gt; ([Text] -&gt; SqlExpr (Value PersistValue))
+-&gt; [Text]
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Text] -&gt; SqlExpr (Value PersistValue)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#mkTextArray"><span class="hs-identifier hs-var">mkTextArray</span></a></span><span>
+</span><span id="line-235"></span><span>
+</span><span id="line-236"></span><span>
+</span><span id="line-237"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.3/</span><span>
+</span><span id="line-238"></span><span class="hs-comment">--</span><span>
+</span><span id="line-239"></span><span class="hs-comment">-- This function is to '#&gt;.' as '-&gt;&gt;.' is to '-&gt;.'</span><span>
+</span><span id="line-240"></span><span class="hs-comment">--</span><span>
+</span><span id="line-241"></span><span class="hs-comment">-- __CAUTION: if the &quot;scalar&quot; JSON value @null@ is the result__</span><span>
+</span><span id="line-242"></span><span class="hs-comment">-- __of this function, PostgreSQL will interpret it as a__</span><span>
+</span><span id="line-243"></span><span class="hs-comment">-- __PostgreSQL @NULL@ value, and will therefore be 'Nothing'__</span><span>
+</span><span id="line-244"></span><span class="hs-comment">-- __instead of (Just &quot;null&quot;)__</span><span>
+</span><span id="line-245"></span><span class="hs-comment">--</span><span>
+</span><span id="line-246"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-247"></span><span class="hs-comment">--</span><span>
+</span><span id="line-248"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-249"></span><span class="hs-comment">--      | Type   | Description                               |  Example                                    | Example Result</span><span>
+</span><span id="line-250"></span><span class="hs-comment">-- -----+--------+-------------------------------------------+---------------------------------------------+----------------</span><span>
+</span><span id="line-251"></span><span class="hs-comment">--  \#&gt;&gt; | text[] | Get JSON object at specified path as text | '{&quot;a&quot;:[1,2,3],&quot;b&quot;:[4,5,6]}'::json#&gt;&gt;'{a,2}' | 3</span><span>
+</span><span id="line-252"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-253"></span><span class="hs-comment">--</span><span>
+</span><span id="line-254"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-255"></span><span id="local-6989586621679310936"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23%3E%3E."><span class="hs-operator hs-type">(#&gt;&gt;.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310936"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlExpr"><span class="hs-identifier hs-type">SqlExpr</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">)</span><span class="hs-special">)</span></span><span>
+</span><span id="line-256"></span><span id="%23%3E%3E."><span class="annot"><span class="annottext">#&gt;&gt;. :: forall a. JSONBExpr a -&gt; [Text] -&gt; SqlExpr (Value (Maybe Text))
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23%3E%3E."><span class="hs-operator hs-var hs-var">(#&gt;&gt;.)</span></a></span></span><span>  </span><span id="local-6989586621679311017"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311017"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value PersistValue)
+-&gt; SqlExpr (Value (Maybe Text))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; #&gt;&gt; &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311017"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value PersistValue) -&gt; SqlExpr (Value (Maybe Text)))
+-&gt; ([Text] -&gt; SqlExpr (Value PersistValue))
+-&gt; [Text]
+-&gt; SqlExpr (Value (Maybe Text))
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Text] -&gt; SqlExpr (Value PersistValue)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#mkTextArray"><span class="hs-identifier hs-var">mkTextArray</span></a></span><span>
+</span><span id="line-257"></span><span>
+</span><span id="line-258"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.4/</span><span>
+</span><span id="line-259"></span><span class="hs-comment">--</span><span>
+</span><span id="line-260"></span><span class="hs-comment">-- This operator checks for the JSON value on the right to be a subset</span><span>
+</span><span id="line-261"></span><span class="hs-comment">-- of the JSON value on the left.</span><span>
+</span><span id="line-262"></span><span class="hs-comment">--</span><span>
+</span><span id="line-263"></span><span class="hs-comment">-- Examples of the usage of this operator can be found in</span><span>
+</span><span id="line-264"></span><span class="hs-comment">-- the Database.Persist.Postgresql.JSON module.</span><span>
+</span><span id="line-265"></span><span class="hs-comment">--</span><span>
+</span><span id="line-266"></span><span class="hs-comment">-- (here: &lt;https://hackage.haskell.org/package/persistent-postgresql-2.10.0/docs/Database-Persist-Postgresql-JSON.html&gt;)</span><span>
+</span><span id="line-267"></span><span class="hs-comment">--</span><span>
+</span><span id="line-268"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-269"></span><span class="hs-comment">--</span><span>
+</span><span id="line-270"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-271"></span><span class="hs-comment">--     | Type  | Description                                                 |  Example</span><span>
+</span><span id="line-272"></span><span class="hs-comment">-- ----+-------+-------------------------------------------------------------+---------------------------------------------</span><span>
+</span><span id="line-273"></span><span class="hs-comment">--  \@&gt; | jsonb | Does the left JSON value contain within it the right value? | '{&quot;a&quot;:1, &quot;b&quot;:2}'::jsonb \@&gt; '{&quot;b&quot;:2}'::jsonb</span><span>
+</span><span id="line-274"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-275"></span><span class="hs-comment">--</span><span>
+</span><span id="line-276"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-277"></span><span id="local-6989586621679310938"><span id="local-6989586621679310939"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%40%3E."><span class="hs-operator hs-type">(@&gt;.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310938"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310939"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlExpr"><span class="hs-identifier hs-type">SqlExpr</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-278"></span><span id="%40%3E."><span class="annot"><span class="annottext">@&gt;. :: forall a b. JSONBExpr a -&gt; JSONBExpr b -&gt; SqlExpr (Value Bool)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%40%3E."><span class="hs-operator hs-var hs-var">(@&gt;.)</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; SqlExpr (Value (Maybe (JSONB a)))
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+-&gt; SqlExpr (Value Bool)
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; @&gt; &quot;</span></span><span>
+</span><span id="line-279"></span><span>
+</span><span id="line-280"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.4/</span><span>
+</span><span id="line-281"></span><span class="hs-comment">--</span><span>
+</span><span id="line-282"></span><span class="hs-comment">-- This operator works the same as '@&gt;.', just with the arguments flipped.</span><span>
+</span><span id="line-283"></span><span class="hs-comment">-- So it checks for the JSON value on the left to be a subset of JSON value on the right.</span><span>
+</span><span id="line-284"></span><span class="hs-comment">--</span><span>
+</span><span id="line-285"></span><span class="hs-comment">-- Examples of the usage of this operator can be found in</span><span>
+</span><span id="line-286"></span><span class="hs-comment">-- the Database.Persist.Postgresql.JSON module.</span><span>
+</span><span id="line-287"></span><span class="hs-comment">--</span><span>
+</span><span id="line-288"></span><span class="hs-comment">-- (here: &lt;https://hackage.haskell.org/package/persistent-postgresql-2.10.0/docs/Database-Persist-Postgresql-JSON.html&gt;)</span><span>
+</span><span id="line-289"></span><span class="hs-comment">--</span><span>
+</span><span id="line-290"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-291"></span><span class="hs-comment">--</span><span>
+</span><span id="line-292"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-293"></span><span class="hs-comment">--     | Type  | Description                                              |  Example</span><span>
+</span><span id="line-294"></span><span class="hs-comment">-- ----+-------+----------------------------------------------------------+---------------------------------------------</span><span>
+</span><span id="line-295"></span><span class="hs-comment">--  &lt;\@ | jsonb | Is the left JSON value contained within the right value? | '{&quot;b&quot;:2}'::jsonb &lt;\@ '{&quot;a&quot;:1, &quot;b&quot;:2}'::jsonb</span><span>
+</span><span id="line-296"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-297"></span><span class="hs-comment">--</span><span>
+</span><span id="line-298"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-299"></span><span id="local-6989586621679311019"><span id="local-6989586621679311020"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3C%40."><span class="hs-operator hs-type">(&lt;@.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311019"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311020"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlExpr"><span class="hs-identifier hs-type">SqlExpr</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-300"></span><span id="%3C%40."><span class="annot"><span class="annottext">&lt;@. :: forall a b. JSONBExpr a -&gt; JSONBExpr b -&gt; SqlExpr (Value Bool)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3C%40."><span class="hs-operator hs-var hs-var">(&lt;@.)</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; SqlExpr (Value (Maybe (JSONB a)))
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+-&gt; SqlExpr (Value Bool)
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; &lt;@ &quot;</span></span><span>
+</span><span id="line-301"></span><span>
+</span><span id="line-302"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.4/</span><span>
+</span><span id="line-303"></span><span class="hs-comment">--</span><span>
+</span><span id="line-304"></span><span class="hs-comment">-- This operator checks if the given text is a top-level member of the</span><span>
+</span><span id="line-305"></span><span class="hs-comment">-- JSON value on the left. This means a top-level field in an object, a</span><span>
+</span><span id="line-306"></span><span class="hs-comment">-- top-level string in an array or just a string value.</span><span>
+</span><span id="line-307"></span><span class="hs-comment">--</span><span>
+</span><span id="line-308"></span><span class="hs-comment">-- Examples of the usage of this operator can be found in</span><span>
+</span><span id="line-309"></span><span class="hs-comment">-- the Database.Persist.Postgresql.JSON module.</span><span>
+</span><span id="line-310"></span><span class="hs-comment">--</span><span>
+</span><span id="line-311"></span><span class="hs-comment">-- (here: &lt;https://hackage.haskell.org/package/persistent-postgresql-2.10.0/docs/Database-Persist-Postgresql-JSON.html&gt;)</span><span>
+</span><span id="line-312"></span><span class="hs-comment">--</span><span>
+</span><span id="line-313"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-314"></span><span class="hs-comment">--</span><span>
+</span><span id="line-315"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-316"></span><span class="hs-comment">--    | Type | Description                                                     |  Example</span><span>
+</span><span id="line-317"></span><span class="hs-comment">-- ---+------+-----------------------------------------------------------------+-------------------------------</span><span>
+</span><span id="line-318"></span><span class="hs-comment">--  ? | text | Does the string exist as a top-level key within the JSON value? | '{&quot;a&quot;:1, &quot;b&quot;:2}'::jsonb ? 'b'</span><span>
+</span><span id="line-319"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-320"></span><span class="hs-comment">--</span><span>
+</span><span id="line-321"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-322"></span><span id="local-6989586621679310944"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F."><span class="hs-operator hs-type">(?.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310944"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlExpr"><span class="hs-identifier hs-type">SqlExpr</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span class="hs-special">)</span></span><span>
+</span><span id="line-323"></span><span id="%3F."><span class="annot"><span class="annottext">?. :: forall a. JSONBExpr a -&gt; Text -&gt; SqlExpr (Value Bool)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F."><span class="hs-operator hs-var hs-var">(?.)</span></a></span></span><span> </span><span id="local-6989586621679311024"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311024"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a -&gt; SqlExpr (Value Text) -&gt; SqlExpr (Value Bool)
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; ?? &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311024"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value Text) -&gt; SqlExpr (Value Bool))
+-&gt; (Text -&gt; SqlExpr (Value Text)) -&gt; Text -&gt; SqlExpr (Value Bool)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; SqlExpr (Value Text)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><a href="Database.Esqueleto.Internal.Internal.html#val"><span class="hs-identifier hs-var">val</span></a></span><span>
+</span><span id="line-324"></span><span>
+</span><span id="line-325"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.4/</span><span>
+</span><span id="line-326"></span><span class="hs-comment">--</span><span>
+</span><span id="line-327"></span><span class="hs-comment">-- This operator checks if __ANY__ of the given texts is a top-level member</span><span>
+</span><span id="line-328"></span><span class="hs-comment">-- of the JSON value on the left. This means any top-level field in an object,</span><span>
+</span><span id="line-329"></span><span class="hs-comment">-- any top-level string in an array or just a string value.</span><span>
+</span><span id="line-330"></span><span class="hs-comment">--</span><span>
+</span><span id="line-331"></span><span class="hs-comment">-- Examples of the usage of this operator can be found in</span><span>
+</span><span id="line-332"></span><span class="hs-comment">-- the Database.Persist.Postgresql.JSON module.</span><span>
+</span><span id="line-333"></span><span class="hs-comment">--</span><span>
+</span><span id="line-334"></span><span class="hs-comment">-- (here: &lt;https://hackage.haskell.org/package/persistent-postgresql-2.10.0/docs/Database-Persist-Postgresql-JSON.html&gt;)</span><span>
+</span><span id="line-335"></span><span class="hs-comment">--</span><span>
+</span><span id="line-336"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-337"></span><span class="hs-comment">--</span><span>
+</span><span id="line-338"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-339"></span><span class="hs-comment">--     | Type   | Description                                            |  Example</span><span>
+</span><span id="line-340"></span><span class="hs-comment">-- ----+--------+--------------------------------------------------------+---------------------------------------------------</span><span>
+</span><span id="line-341"></span><span class="hs-comment">--  ?| | text[] | Do any of these array strings exist as top-level keys? | '{&quot;a&quot;:1, &quot;b&quot;:2, &quot;c&quot;:3}'::jsonb ?| array['b', 'c']</span><span>
+</span><span id="line-342"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-343"></span><span class="hs-comment">--</span><span>
+</span><span id="line-344"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-345"></span><span id="local-6989586621679310946"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F%7C."><span class="hs-operator hs-type">(?|.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310946"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlExpr"><span class="hs-identifier hs-type">SqlExpr</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span class="hs-special">)</span></span><span>
+</span><span id="line-346"></span><span id="%3F%7C."><span class="annot"><span class="annottext">?|. :: forall a. JSONBExpr a -&gt; [Text] -&gt; SqlExpr (Value Bool)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F%7C."><span class="hs-operator hs-var hs-var">(?|.)</span></a></span></span><span> </span><span id="local-6989586621679311026"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311026"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value PersistValue)
+-&gt; SqlExpr (Value Bool)
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; ??| &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311026"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value PersistValue) -&gt; SqlExpr (Value Bool))
+-&gt; ([Text] -&gt; SqlExpr (Value PersistValue))
+-&gt; [Text]
+-&gt; SqlExpr (Value Bool)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Text] -&gt; SqlExpr (Value PersistValue)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#mkTextArray"><span class="hs-identifier hs-var">mkTextArray</span></a></span><span>
+</span><span id="line-347"></span><span>
+</span><span id="line-348"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.4/</span><span>
+</span><span id="line-349"></span><span class="hs-comment">--</span><span>
+</span><span id="line-350"></span><span class="hs-comment">-- This operator checks if __ALL__ of the given texts are top-level members</span><span>
+</span><span id="line-351"></span><span class="hs-comment">-- of the JSON value on the left. This means a top-level field in an object,</span><span>
+</span><span id="line-352"></span><span class="hs-comment">-- a top-level string in an array or just a string value.</span><span>
+</span><span id="line-353"></span><span class="hs-comment">--</span><span>
+</span><span id="line-354"></span><span class="hs-comment">-- Examples of the usage of this operator can be found in</span><span>
+</span><span id="line-355"></span><span class="hs-comment">-- the Database.Persist.Postgresql.JSON module.</span><span>
+</span><span id="line-356"></span><span class="hs-comment">--</span><span>
+</span><span id="line-357"></span><span class="hs-comment">-- (here: &lt;https://hackage.haskell.org/package/persistent-postgresql-2.10.0/docs/Database-Persist-Postgresql-JSON.html&gt;)</span><span>
+</span><span id="line-358"></span><span class="hs-comment">--</span><span>
+</span><span id="line-359"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-360"></span><span class="hs-comment">--</span><span>
+</span><span id="line-361"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-362"></span><span class="hs-comment">--     | Type   | Description                                            |  Example</span><span>
+</span><span id="line-363"></span><span class="hs-comment">-- ----+--------+--------------------------------------------------------+----------------------------------------</span><span>
+</span><span id="line-364"></span><span class="hs-comment">--  ?&amp; | text[] | Do all of these array strings exist as top-level keys? | '[&quot;a&quot;, &quot;b&quot;]'::jsonb ?&amp; array['a', 'b']</span><span>
+</span><span id="line-365"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-366"></span><span class="hs-comment">--</span><span>
+</span><span id="line-367"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-368"></span><span id="local-6989586621679311027"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F%26."><span class="hs-operator hs-type">(?&amp;.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311027"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlExpr"><span class="hs-identifier hs-type">SqlExpr</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span class="hs-special">)</span></span><span>
+</span><span id="line-369"></span><span id="%3F%26."><span class="annot"><span class="annottext">?&amp;. :: forall a. JSONBExpr a -&gt; [Text] -&gt; SqlExpr (Value Bool)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%3F%26."><span class="hs-operator hs-var hs-var">(?&amp;.)</span></a></span></span><span> </span><span id="local-6989586621679311029"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311029"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value PersistValue)
+-&gt; SqlExpr (Value Bool)
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; ??&amp; &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311029"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value PersistValue) -&gt; SqlExpr (Value Bool))
+-&gt; ([Text] -&gt; SqlExpr (Value PersistValue))
+-&gt; [Text]
+-&gt; SqlExpr (Value Bool)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Text] -&gt; SqlExpr (Value PersistValue)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#mkTextArray"><span class="hs-identifier hs-var">mkTextArray</span></a></span><span>
+</span><span id="line-370"></span><span>
+</span><span id="line-371"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.5/</span><span>
+</span><span id="line-372"></span><span class="hs-comment">--</span><span>
+</span><span id="line-373"></span><span class="hs-comment">-- This operator concatenates two JSON values. The behaviour is</span><span>
+</span><span id="line-374"></span><span class="hs-comment">-- self-evident when used on two arrays, but the behaviour on different</span><span>
+</span><span id="line-375"></span><span class="hs-comment">-- combinations of JSON values might behave unexpectedly.</span><span>
+</span><span id="line-376"></span><span class="hs-comment">--</span><span>
+</span><span id="line-377"></span><span class="hs-comment">-- __CAUTION: THIS FUNCTION THROWS AN EXCEPTION WHEN CONCATENATING__</span><span>
+</span><span id="line-378"></span><span class="hs-comment">-- __A JSON OBJECT WITH A JSON SCALAR VALUE!__</span><span>
+</span><span id="line-379"></span><span class="hs-comment">--</span><span>
+</span><span id="line-380"></span><span class="hs-comment">-- === __Arrays__</span><span>
+</span><span id="line-381"></span><span class="hs-comment">--</span><span>
+</span><span id="line-382"></span><span class="hs-comment">-- This operator is a standard concatenation function when used on arrays:</span><span>
+</span><span id="line-383"></span><span class="hs-comment">--</span><span>
+</span><span id="line-384"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-385"></span><span class="hs-comment">-- [1,2]   || [2,3]   == [1,2,2,3]</span><span>
+</span><span id="line-386"></span><span class="hs-comment">-- []      || [1,2,3] == [1,2,3]</span><span>
+</span><span id="line-387"></span><span class="hs-comment">-- [1,2,3] || []      == [1,2,3]</span><span>
+</span><span id="line-388"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-389"></span><span class="hs-comment">--</span><span>
+</span><span id="line-390"></span><span class="hs-comment">-- === __Objects__</span><span>
+</span><span id="line-391"></span><span class="hs-comment">-- When concatenating JSON objects with other JSON objects, the fields</span><span>
+</span><span id="line-392"></span><span class="hs-comment">-- from the JSON object on the right are added to the JSON object on the</span><span>
+</span><span id="line-393"></span><span class="hs-comment">-- left. When concatenating a JSON object with a JSON array, the object</span><span>
+</span><span id="line-394"></span><span class="hs-comment">-- will be inserted into the array; either on the left or right, depending</span><span>
+</span><span id="line-395"></span><span class="hs-comment">-- on the position relative to the operator.</span><span>
+</span><span id="line-396"></span><span class="hs-comment">--</span><span>
+</span><span id="line-397"></span><span class="hs-comment">-- When concatening an object with a scalar value, an exception is thrown.</span><span>
+</span><span id="line-398"></span><span class="hs-comment">--</span><span>
+</span><span id="line-399"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-400"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14}                    || {&quot;b&quot;: true}         == {&quot;a&quot;: 3.14, &quot;b&quot;: true}</span><span>
+</span><span id="line-401"></span><span class="hs-comment">-- {&quot;a&quot;: &quot;b&quot;}                     || {&quot;a&quot;: null}         == {&quot;a&quot;: null}</span><span>
+</span><span id="line-402"></span><span class="hs-comment">-- {&quot;a&quot;: {&quot;b&quot;: true, &quot;c&quot;: false}} || {&quot;a&quot;: {&quot;b&quot;: false}} == {&quot;a&quot;: {&quot;b&quot;: false}}</span><span>
+</span><span id="line-403"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14}                    || [1,null]            == [{&quot;a&quot;: 3.14},1,null]</span><span>
+</span><span id="line-404"></span><span class="hs-comment">-- [1,null]                       || {&quot;a&quot;: 3.14}         == [1,null,{&quot;a&quot;: 3.14}]</span><span>
+</span><span id="line-405"></span><span class="hs-comment">-- 1                              || {&quot;a&quot;: 3.14}         == ERROR: invalid concatenation of jsonb objects</span><span>
+</span><span id="line-406"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14}                    || false               == ERROR: invalid concatenation of jsonb objects</span><span>
+</span><span id="line-407"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-408"></span><span class="hs-comment">--</span><span>
+</span><span id="line-409"></span><span class="hs-comment">-- === __Scalar values__</span><span>
+</span><span id="line-410"></span><span class="hs-comment">--</span><span>
+</span><span id="line-411"></span><span class="hs-comment">-- Scalar values can be thought of as being singleton arrays when</span><span>
+</span><span id="line-412"></span><span class="hs-comment">-- used with this operator. This rule does not apply when concatenating</span><span>
+</span><span id="line-413"></span><span class="hs-comment">-- with JSON objects.</span><span>
+</span><span id="line-414"></span><span class="hs-comment">--</span><span>
+</span><span id="line-415"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-416"></span><span class="hs-comment">-- 1          || null       == [1,null]</span><span>
+</span><span id="line-417"></span><span class="hs-comment">-- true       || &quot;a&quot;        == [true,&quot;a&quot;]</span><span>
+</span><span id="line-418"></span><span class="hs-comment">-- [1,2]      || false      == [1,2,false]</span><span>
+</span><span id="line-419"></span><span class="hs-comment">-- null       || [1,&quot;a&quot;]    == [null,1,&quot;a&quot;]</span><span>
+</span><span id="line-420"></span><span class="hs-comment">-- {&quot;a&quot;:3.14} || true       == ERROR: invalid concatenation of jsonb objects</span><span>
+</span><span id="line-421"></span><span class="hs-comment">-- 3.14       || {&quot;a&quot;:3.14} == ERROR: invalid concatenation of jsonb objects</span><span>
+</span><span id="line-422"></span><span class="hs-comment">-- {&quot;a&quot;:3.14} || [true]     == [{&quot;a&quot;:3.14},true]</span><span>
+</span><span id="line-423"></span><span class="hs-comment">-- [false]    || {&quot;a&quot;:3.14} == [false,{&quot;a&quot;:3.14}]</span><span>
+</span><span id="line-424"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-425"></span><span class="hs-comment">--</span><span>
+</span><span id="line-426"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-427"></span><span class="hs-comment">--</span><span>
+</span><span id="line-428"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-429"></span><span class="hs-comment">--     | Type  | Description                                         |  Example</span><span>
+</span><span id="line-430"></span><span class="hs-comment">-- ----+-------+-----------------------------------------------------+--------------------------------------------</span><span>
+</span><span id="line-431"></span><span class="hs-comment">--  || | jsonb | Concatenate two jsonb values into a new jsonb value | '[&quot;a&quot;, &quot;b&quot;]'::jsonb || '[&quot;c&quot;, &quot;d&quot;]'::jsonb</span><span>
+</span><span id="line-432"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-433"></span><span class="hs-comment">--</span><span>
+</span><span id="line-434"></span><span class="hs-comment">-- /Note: The @||@ operator concatenates the elements at the top level of/</span><span>
+</span><span id="line-435"></span><span class="hs-comment">-- /each of its operands. It does not operate recursively./</span><span>
+</span><span id="line-436"></span><span class="hs-comment">--</span><span>
+</span><span id="line-437"></span><span class="hs-comment">-- /For example, if both operands are objects with a common key field name,/</span><span>
+</span><span id="line-438"></span><span class="hs-comment">-- /the value of the field in the result will just be the value from the right/</span><span>
+</span><span id="line-439"></span><span class="hs-comment">-- /hand operand./</span><span>
+</span><span id="line-440"></span><span class="hs-comment">--</span><span>
+</span><span id="line-441"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-442"></span><span id="local-6989586621679310949"><span id="local-6989586621679310950"><span id="local-6989586621679310951"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%7C%7C."><span class="hs-operator hs-type">(||.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310949"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310950"><span class="hs-identifier hs-type">b</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679310951"><span class="hs-identifier hs-type">c</span></a></span></span></span></span><span>
+</span><span id="line-443"></span><span id="%7C%7C."><span class="annot"><span class="annottext">||. :: forall a b c. JSONBExpr a -&gt; JSONBExpr b -&gt; JSONBExpr c
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%7C%7C."><span class="hs-operator hs-var hs-var">(||.)</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; SqlExpr (Value (Maybe (JSONB a)))
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+-&gt; SqlExpr (Value (Maybe (JSONB c)))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; || &quot;</span></span><span>
+</span><span id="line-444"></span><span>
+</span><span id="line-445"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.5/</span><span>
+</span><span id="line-446"></span><span class="hs-comment">--</span><span>
+</span><span id="line-447"></span><span class="hs-comment">-- This operator can remove a key from an object or a string element from an array</span><span>
+</span><span id="line-448"></span><span class="hs-comment">-- when using text, and remove certain elements by index from an array when using</span><span>
+</span><span id="line-449"></span><span class="hs-comment">-- integers.</span><span>
+</span><span id="line-450"></span><span class="hs-comment">--</span><span>
+</span><span id="line-451"></span><span class="hs-comment">-- Negative integers delete counting from the end of the array.</span><span>
+</span><span id="line-452"></span><span class="hs-comment">-- (e.g. @-1@ being the last element, @-2@ being the second to last, etc.)</span><span>
+</span><span id="line-453"></span><span class="hs-comment">--</span><span>
+</span><span id="line-454"></span><span class="hs-comment">-- __CAUTION: THIS FUNCTION THROWS AN EXCEPTION WHEN USED ON ANYTHING OTHER__</span><span>
+</span><span id="line-455"></span><span class="hs-comment">-- __THAN OBJECTS OR ARRAYS WHEN USING TEXT, AND ANYTHING OTHER THAN ARRAYS__</span><span>
+</span><span id="line-456"></span><span class="hs-comment">-- __WHEN USING INTEGERS!__</span><span>
+</span><span id="line-457"></span><span class="hs-comment">--</span><span>
+</span><span id="line-458"></span><span class="hs-comment">-- === __Objects and arrays__</span><span>
+</span><span id="line-459"></span><span class="hs-comment">--</span><span>
+</span><span id="line-460"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-461"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14}            - &quot;a&quot;         == {}</span><span>
+</span><span id="line-462"></span><span class="hs-comment">-- {&quot;a&quot;: &quot;b&quot;}             - &quot;b&quot;         == {&quot;a&quot;: &quot;b&quot;}</span><span>
+</span><span id="line-463"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14}            - &quot;a&quot;         == {}</span><span>
+</span><span id="line-464"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14, &quot;c&quot;: true} - &quot;a&quot;         == {&quot;c&quot;: true}</span><span>
+</span><span id="line-465"></span><span class="hs-comment">-- [&quot;a&quot;, 2, &quot;c&quot;]          - &quot;a&quot;         == [2, &quot;c&quot;] -- can remove strings from arrays</span><span>
+</span><span id="line-466"></span><span class="hs-comment">-- [true, &quot;b&quot;, 5]         - 0           == [&quot;b&quot;, 5]</span><span>
+</span><span id="line-467"></span><span class="hs-comment">-- [true, &quot;b&quot;, 5]         - 3           == [true, &quot;b&quot;, 5]</span><span>
+</span><span id="line-468"></span><span class="hs-comment">-- [true, &quot;b&quot;, 5]         - -1          == [true, &quot;b&quot;]</span><span>
+</span><span id="line-469"></span><span class="hs-comment">-- [true, &quot;b&quot;, 5]         - -4          == [true, &quot;b&quot;, 5]</span><span>
+</span><span id="line-470"></span><span class="hs-comment">-- []                     - 1           == []</span><span>
+</span><span id="line-471"></span><span class="hs-comment">-- {&quot;1&quot;: true}            - 1           == ERROR: cannot delete from object using integer index</span><span>
+</span><span id="line-472"></span><span class="hs-comment">-- 1                      - \&lt;anything\&gt;  == ERROR: cannot delete from scalar</span><span>
+</span><span id="line-473"></span><span class="hs-comment">-- &quot;a&quot;                    - \&lt;anything\&gt;  == ERROR: cannot delete from scalar</span><span>
+</span><span id="line-474"></span><span class="hs-comment">-- true                   - \&lt;anything\&gt;  == ERROR: cannot delete from scalar</span><span>
+</span><span id="line-475"></span><span class="hs-comment">-- null                   - \&lt;anything\&gt;  == ERROR: cannot delete from scalar</span><span>
+</span><span id="line-476"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-477"></span><span class="hs-comment">--</span><span>
+</span><span id="line-478"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-479"></span><span class="hs-comment">--</span><span>
+</span><span id="line-480"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-481"></span><span class="hs-comment">--    | Type    | Description                                                            |  Example</span><span>
+</span><span id="line-482"></span><span class="hs-comment">-- ---+---------+------------------------------------------------------------------------+-------------------------------------------------</span><span>
+</span><span id="line-483"></span><span class="hs-comment">--  - | text    | Delete key/value pair or string element from left operand.             | '{&quot;a&quot;: &quot;b&quot;}'::jsonb - 'a'</span><span>
+</span><span id="line-484"></span><span class="hs-comment">--    |         | Key/value pairs are matched based on their key value.                  |</span><span>
+</span><span id="line-485"></span><span class="hs-comment">--  - | integer | Delete the array element with specified index (Negative integers count | '[&quot;a&quot;, &quot;b&quot;]'::jsonb - 1</span><span>
+</span><span id="line-486"></span><span class="hs-comment">--    |         | from the end). Throws an error if top level container is not an array. |</span><span>
+</span><span id="line-487"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-488"></span><span class="hs-comment">--</span><span>
+</span><span id="line-489"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-490"></span><span id="local-6989586621679311031"><span id="local-6989586621679311032"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-."><span class="hs-operator hs-type">(-.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311031"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONAccessor"><span class="hs-identifier hs-type">JSONAccessor</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311032"><span class="hs-identifier hs-type">b</span></a></span></span></span><span>
+</span><span id="line-491"></span><span id="-."><span class="annot"><span class="annottext">-. :: forall a b. JSONBExpr a -&gt; JSONAccessor -&gt; JSONBExpr b
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#-."><span class="hs-operator hs-var hs-var">(-.)</span></a></span></span><span> </span><span id="local-6989586621679311037"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311037"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONKey"><span class="hs-identifier hs-type">JSONKey</span></a></span><span> </span><span id="local-6989586621679311038"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679311038"><span class="hs-identifier hs-var">txt</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value Text)
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; - &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311037"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value Text) -&gt; SqlExpr (Value (Maybe (JSONB b))))
+-&gt; SqlExpr (Value Text) -&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; SqlExpr (Value Text)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><a href="Database.Esqueleto.Internal.Internal.html#val"><span class="hs-identifier hs-var">val</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679311038"><span class="hs-identifier hs-var">txt</span></a></span><span>
+</span><span id="line-492"></span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#-."><span class="hs-operator hs-var">(-.)</span></a></span><span> </span><span id="local-6989586621679311039"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311039"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONIndex"><span class="hs-identifier hs-type">JSONIndex</span></a></span><span> </span><span id="local-6989586621679311040"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679311040"><span class="hs-identifier hs-var">i</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value Int)
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; - &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311039"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value Int) -&gt; SqlExpr (Value (Maybe (JSONB b))))
+-&gt; SqlExpr (Value Int) -&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; SqlExpr (Value Int)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><a href="Database.Esqueleto.Internal.Internal.html#val"><span class="hs-identifier hs-var">val</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679311040"><span class="hs-identifier hs-var">i</span></a></span><span>
+</span><span id="line-493"></span><span>
+</span><span id="line-494"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 10/</span><span>
+</span><span id="line-495"></span><span class="hs-comment">--</span><span>
+</span><span id="line-496"></span><span class="hs-comment">-- Removes a set of keys from an object, or string elements from an array.</span><span>
+</span><span id="line-497"></span><span class="hs-comment">--</span><span>
+</span><span id="line-498"></span><span class="hs-comment">-- This is the same operator internally as `-.`, but the option to use a @text</span><span>
+</span><span id="line-499"></span><span class="hs-comment">-- array@, instead of @text@ or @integer@ was only added in version 10.</span><span>
+</span><span id="line-500"></span><span class="hs-comment">-- That's why this function is seperate from `-.`</span><span>
+</span><span id="line-501"></span><span class="hs-comment">--</span><span>
+</span><span id="line-502"></span><span class="hs-comment">-- NOTE: The following is equivalent:</span><span>
+</span><span id="line-503"></span><span class="hs-comment">--</span><span>
+</span><span id="line-504"></span><span class="hs-comment">-- @{some JSON expression} -. &quot;a&quot; -. &quot;b&quot;@</span><span>
+</span><span id="line-505"></span><span class="hs-comment">--</span><span>
+</span><span id="line-506"></span><span class="hs-comment">-- is equivalent to</span><span>
+</span><span id="line-507"></span><span class="hs-comment">--</span><span>
+</span><span id="line-508"></span><span class="hs-comment">-- @{some JSON expression} --. [&quot;a&quot;,&quot;b&quot;]@</span><span>
+</span><span id="line-509"></span><span class="hs-comment">--</span><span>
+</span><span id="line-510"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-511"></span><span class="hs-comment">--</span><span>
+</span><span id="line-512"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-513"></span><span class="hs-comment">--    | Type    | Description                                                            |  Example</span><span>
+</span><span id="line-514"></span><span class="hs-comment">-- ---+---------+------------------------------------------------------------------------+-------------------------------------------------</span><span>
+</span><span id="line-515"></span><span class="hs-comment">--  - | text[]  | Delete multiple key/value pairs or string elements from left operand.  | '{&quot;a&quot;: &quot;b&quot;, &quot;c&quot;: &quot;d&quot;}'::jsonb - '{a,c}'::text[]</span><span>
+</span><span id="line-516"></span><span class="hs-comment">--    |         | Key/value pairs are matched based on their key value.                  |</span><span>
+</span><span id="line-517"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-518"></span><span class="hs-comment">--</span><span>
+</span><span id="line-519"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-520"></span><span id="local-6989586621679311041"><span id="local-6989586621679311042"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#--."><span class="hs-operator hs-type">(--.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311041"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311042"><span class="hs-identifier hs-type">b</span></a></span></span></span><span>
+</span><span id="line-521"></span><span id="--."><span class="annot"><span class="annottext">--. :: forall a b. JSONBExpr a -&gt; [Text] -&gt; JSONBExpr b
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#--."><span class="hs-operator hs-var hs-var">(--.)</span></a></span></span><span> </span><span id="local-6989586621679311044"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311044"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value PersistValue)
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; - &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311044"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value PersistValue) -&gt; SqlExpr (Value (Maybe (JSONB b))))
+-&gt; ([Text] -&gt; SqlExpr (Value PersistValue))
+-&gt; [Text]
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Text] -&gt; SqlExpr (Value PersistValue)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#mkTextArray"><span class="hs-identifier hs-var">mkTextArray</span></a></span><span>
+</span><span id="line-522"></span><span>
+</span><span id="line-523"></span><span class="hs-comment">-- | /Requires PostgreSQL version &gt;= 9.5/</span><span>
+</span><span id="line-524"></span><span class="hs-comment">--</span><span>
+</span><span id="line-525"></span><span class="hs-comment">-- This operator can remove elements nested in an object.</span><span>
+</span><span id="line-526"></span><span class="hs-comment">--</span><span>
+</span><span id="line-527"></span><span class="hs-comment">-- If a 'Text' is not parsable as a number when selecting in an array</span><span>
+</span><span id="line-528"></span><span class="hs-comment">-- (even when halfway through the selection) an exception will be thrown.</span><span>
+</span><span id="line-529"></span><span class="hs-comment">--</span><span>
+</span><span id="line-530"></span><span class="hs-comment">-- Negative integers delete counting from the end of an array.</span><span>
+</span><span id="line-531"></span><span class="hs-comment">-- (e.g. @-1@ being the last element, @-2@ being the second to last, etc.)</span><span>
+</span><span id="line-532"></span><span class="hs-comment">--</span><span>
+</span><span id="line-533"></span><span class="hs-comment">-- __CAUTION: THIS FUNCTION THROWS AN EXCEPTION WHEN USED__</span><span>
+</span><span id="line-534"></span><span class="hs-comment">-- __ON ANYTHING OTHER THAN OBJECTS OR ARRAYS, AND WILL__</span><span>
+</span><span id="line-535"></span><span class="hs-comment">-- __ALSO THROW WHEN TRYING TO SELECT AN ARRAY ELEMENT WITH__</span><span>
+</span><span id="line-536"></span><span class="hs-comment">-- __A NON-INTEGER TEXT__</span><span>
+</span><span id="line-537"></span><span class="hs-comment">--</span><span>
+</span><span id="line-538"></span><span class="hs-comment">-- === __Objects__</span><span>
+</span><span id="line-539"></span><span class="hs-comment">--</span><span>
+</span><span id="line-540"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-541"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14, &quot;b&quot;: null}        #- []        == {&quot;a&quot;: 3.14, &quot;b&quot;: null}</span><span>
+</span><span id="line-542"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14, &quot;b&quot;: null}        #- [&quot;a&quot;]     == {&quot;b&quot;: null}</span><span>
+</span><span id="line-543"></span><span class="hs-comment">-- {&quot;a&quot;: 3.14, &quot;b&quot;: null}        #- [&quot;a&quot;,&quot;b&quot;] == {&quot;a&quot;: 3.14, &quot;b&quot;: null}</span><span>
+</span><span id="line-544"></span><span class="hs-comment">-- {&quot;a&quot;: {&quot;b&quot;:false}, &quot;b&quot;: null} #- [&quot;a&quot;,&quot;b&quot;] == {&quot;a&quot;: {}, &quot;b&quot;: null}</span><span>
+</span><span id="line-545"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-546"></span><span class="hs-comment">--</span><span>
+</span><span id="line-547"></span><span class="hs-comment">-- === __Arrays__</span><span>
+</span><span id="line-548"></span><span class="hs-comment">--</span><span>
+</span><span id="line-549"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-550"></span><span class="hs-comment">-- [true, {&quot;b&quot;:null}, 5]       #- []            == [true, {&quot;b&quot;:null}, 5]</span><span>
+</span><span id="line-551"></span><span class="hs-comment">-- [true, {&quot;b&quot;:null}, 5]       #- [&quot;0&quot;]         == [{&quot;b&quot;:null}, 5]</span><span>
+</span><span id="line-552"></span><span class="hs-comment">-- [true, {&quot;b&quot;:null}, 5]       #- [&quot;b&quot;]         == ERROR: path element at position 1 is not an integer: &quot;b&quot;</span><span>
+</span><span id="line-553"></span><span class="hs-comment">-- [true, {&quot;b&quot;:null}, 5]       #- [&quot;1&quot;,&quot;b&quot;]     == [true, {}, 5]</span><span>
+</span><span id="line-554"></span><span class="hs-comment">-- [true, {&quot;b&quot;:null}, 5]       #- [&quot;-2&quot;,&quot;b&quot;]    == [true, {}, 5]</span><span>
+</span><span id="line-555"></span><span class="hs-comment">-- {&quot;a&quot;: {&quot;b&quot;:[false,4,null]}} #- [&quot;a&quot;,&quot;b&quot;,&quot;2&quot;] == {&quot;a&quot;: {&quot;b&quot;:[false,4]}}</span><span>
+</span><span id="line-556"></span><span class="hs-comment">-- {&quot;a&quot;: {&quot;b&quot;:[false,4,null]}} #- [&quot;a&quot;,&quot;b&quot;,&quot;c&quot;] == ERROR: path element at position 3 is not an integer: &quot;c&quot;</span><span>
+</span><span id="line-557"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-558"></span><span class="hs-comment">--</span><span>
+</span><span id="line-559"></span><span class="hs-comment">-- === __Other values__</span><span>
+</span><span id="line-560"></span><span class="hs-comment">--</span><span>
+</span><span id="line-561"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-562"></span><span class="hs-comment">-- 1    \#- {anything} == ERROR: cannot delete from scalar</span><span>
+</span><span id="line-563"></span><span class="hs-comment">-- &quot;a&quot;  \#- {anything} == ERROR: cannot delete from scalar</span><span>
+</span><span id="line-564"></span><span class="hs-comment">-- true \#- {anything} == ERROR: cannot delete from scalar</span><span>
+</span><span id="line-565"></span><span class="hs-comment">-- null \#- {anything} == ERROR: cannot delete from scalar</span><span>
+</span><span id="line-566"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-567"></span><span class="hs-comment">--</span><span>
+</span><span id="line-568"></span><span class="hs-comment">-- === __PostgreSQL Documentation__</span><span>
+</span><span id="line-569"></span><span class="hs-comment">--</span><span>
+</span><span id="line-570"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-571"></span><span class="hs-comment">--     | Type   | Description                                             |  Example</span><span>
+</span><span id="line-572"></span><span class="hs-comment">-- ----+--------+---------------------------------------------------------+------------------------------------</span><span>
+</span><span id="line-573"></span><span class="hs-comment">--  \#- | text[] | Delete the field or element with specified path         | '[&quot;a&quot;, {&quot;b&quot;:1}]'::jsonb \#- '{1,b}'</span><span>
+</span><span id="line-574"></span><span class="hs-comment">--     |        | (for JSON arrays, negative integers count from the end) |</span><span>
+</span><span id="line-575"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-576"></span><span class="hs-comment">--</span><span>
+</span><span id="line-577"></span><span class="hs-comment">-- @since 3.1.0</span><span>
+</span><span id="line-578"></span><span id="local-6989586621679311045"><span id="local-6989586621679311046"><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23-."><span class="hs-operator hs-type">(#-.)</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311045"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.Instances.html#JSONBExpr"><span class="hs-identifier hs-type">JSONBExpr</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679311046"><span class="hs-identifier hs-type">b</span></a></span></span></span><span>
+</span><span id="line-579"></span><span id="%23-."><span class="annot"><span class="annottext">#-. :: forall a b. JSONBExpr a -&gt; [Text] -&gt; JSONBExpr b
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#%23-."><span class="hs-operator hs-var hs-var">(#-.)</span></a></span></span><span> </span><span id="local-6989586621679311048"><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311048"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+-&gt; JSONBExpr a
+-&gt; SqlExpr (Value PersistValue)
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall a b c.
+Builder
+-&gt; SqlExpr (Value a) -&gt; SqlExpr (Value b) -&gt; SqlExpr (Value c)
+</span><a href="Database.Esqueleto.Internal.Internal.html#unsafeSqlBinOp"><span class="hs-identifier hs-var">unsafeSqlBinOp</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; #- &quot;</span></span><span> </span><span class="annot"><span class="annottext">JSONBExpr a
+</span><a href="#local-6989586621679311048"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlExpr (Value PersistValue) -&gt; SqlExpr (Value (Maybe (JSONB b))))
+-&gt; ([Text] -&gt; SqlExpr (Value PersistValue))
+-&gt; [Text]
+-&gt; SqlExpr (Value (Maybe (JSONB b)))
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Text] -&gt; SqlExpr (Value PersistValue)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#mkTextArray"><span class="hs-identifier hs-var">mkTextArray</span></a></span><span>
+</span><span id="line-580"></span><span>
+</span><span id="line-581"></span><span class="annot"><a href="Database.Esqueleto.PostgreSQL.JSON.html#mkTextArray"><span class="hs-identifier hs-type">mkTextArray</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlExpr"><span class="hs-identifier hs-type">SqlExpr</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#Value"><span class="hs-identifier hs-type">Value</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">PersistValue</span></span><span class="hs-special">)</span><span>
+</span><span id="line-582"></span><span id="mkTextArray"><span class="annot"><span class="annottext">mkTextArray :: [Text] -&gt; SqlExpr (Value PersistValue)
+</span><a href="Database.Esqueleto.PostgreSQL.JSON.html#mkTextArray"><span class="hs-identifier hs-var hs-var">mkTextArray</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">PersistValue -&gt; SqlExpr (Value PersistValue)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><a href="Database.Esqueleto.Internal.Internal.html#val"><span class="hs-identifier hs-var">val</span></a></span><span> </span><span class="annot"><span class="annottext">(PersistValue -&gt; SqlExpr (Value PersistValue))
+-&gt; ([Text] -&gt; PersistValue)
+-&gt; [Text]
+-&gt; SqlExpr (Value PersistValue)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[PersistValue] -&gt; PersistValue
+</span><span class="hs-identifier hs-var">PersistArray</span></span><span> </span><span class="annot"><span class="annottext">([PersistValue] -&gt; PersistValue)
+-&gt; ([Text] -&gt; [PersistValue]) -&gt; [Text] -&gt; PersistValue
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; PersistValue) -&gt; [Text] -&gt; [PersistValue]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; PersistValue
+forall a. PersistField a =&gt; a -&gt; PersistValue
+</span><span class="hs-identifier hs-var">toPersistValue</span></span><span>
+</span><span id="line-583"></span></pre></body></html>

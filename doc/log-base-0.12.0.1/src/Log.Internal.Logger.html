@@ -1,0 +1,161 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="annot"><span class="hs-comment">-- | The 'Logger' type - implementation details.</span></span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# OPTIONS_HADDOCK hide #-}</span><span>
+</span><span id="line-3"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Log.Internal.Logger</span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-4"></span><span>    </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier">Logger</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-5"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#execLogger"><span class="hs-identifier">execLogger</span></a></span><span>
+</span><span id="line-6"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#waitForLogger"><span class="hs-identifier">waitForLogger</span></a></span><span>
+</span><span id="line-7"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#shutdownLogger"><span class="hs-identifier">shutdownLogger</span></a></span><span>
+</span><span id="line-8"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#withLogger"><span class="hs-identifier">withLogger</span></a></span><span>
+</span><span id="line-9"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-10"></span><span>
+</span><span id="line-11"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Exception</span></span><span>
+</span><span id="line-12"></span><span>
+</span><span id="line-13"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Log.Data.html"><span class="hs-identifier">Log.Data</span></a></span><span>
+</span><span id="line-14"></span><span>
+</span><span id="line-15"></span><span class="hs-comment">-- | An object used for communication with a logger thread that</span><span>
+</span><span id="line-16"></span><span class="hs-comment">-- outputs 'LogMessage's using e.g. PostgreSQL, Elasticsearch or</span><span>
+</span><span id="line-17"></span><span class="hs-comment">-- stdout (depending on the back-end chosen).</span><span>
+</span><span id="line-18"></span><span class="hs-keyword">data</span><span> </span><span id="Logger"><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-var">Logger</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Logger"><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-var">Logger</span></a></span></span><span> </span><span class="hs-special">{</span><span>
+</span><span id="line-19"></span><span>  </span><span id="loggerWriteMessage"><span class="annot"><span class="annottext">Logger -&gt; LogMessage -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-identifier hs-var hs-var">loggerWriteMessage</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><a href="Log.Data.html#LogMessage"><span class="hs-identifier hs-type">LogMessage</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="hs-comment">-- ^ Output a 'LogMessage'.</span></span><span>
+</span><span id="line-20"></span><span class="hs-special">,</span><span> </span><span id="loggerWaitForWrite"><span class="annot"><span class="annottext">Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWaitForWrite"><span class="hs-identifier hs-var hs-var">loggerWaitForWrite</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-21"></span><span>                     </span><span class="hs-comment">-- ^ Wait for the logger to output all messages</span><span>
+</span><span id="line-22"></span><span>                     </span><span class="hs-comment">-- in its input queue (in the case logging is</span><span>
+</span><span id="line-23"></span><span>                     </span><span class="hs-comment">-- done asynchronously).</span><span>
+</span><span id="line-24"></span><span class="hs-special">,</span><span> </span><span id="loggerShutdown"><span class="annot"><span class="annottext">Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerShutdown"><span class="hs-identifier hs-var hs-var">loggerShutdown</span></a></span></span><span>     </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-25"></span><span>                     </span><span class="hs-comment">-- ^ Kill the logger thread. Subsequent attempts</span><span>
+</span><span id="line-26"></span><span>                     </span><span class="hs-comment">-- to write messages to the logger will raise an</span><span>
+</span><span id="line-27"></span><span>                     </span><span class="hs-comment">-- exception.</span><span>
+</span><span id="line-28"></span><span class="hs-special">}</span><span>
+</span><span id="line-29"></span><span>
+</span><span id="line-30"></span><span class="annot"><span class="hs-comment">-- | Execute logger to serialize a 'LogMessage'.</span></span><span>
+</span><span id="line-31"></span><span class="annot"><a href="Log.Internal.Logger.html#execLogger"><span class="hs-identifier hs-type">execLogger</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Log.Data.html#LogMessage"><span class="hs-identifier hs-type">LogMessage</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-32"></span><span id="execLogger"><span class="annot"><span class="annottext">execLogger :: Logger -&gt; LogMessage -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#execLogger"><span class="hs-identifier hs-var hs-var">execLogger</span></a></span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span class="hs-special">{</span><span id="local-6989586621679094616"><span id="local-6989586621679094617"><span id="local-6989586621679094618"><span class="annot"><span class="annottext">IO ()
+LogMessage -&gt; IO ()
+loggerWriteMessage :: Logger -&gt; LogMessage -&gt; IO ()
+loggerWaitForWrite :: Logger -&gt; IO ()
+loggerShutdown :: Logger -&gt; IO ()
+loggerWriteMessage :: LogMessage -&gt; IO ()
+loggerWaitForWrite :: IO ()
+loggerShutdown :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-glyph hs-var hs-var hs-var hs-var hs-var hs-var">..</span></a></span></span></span></span><span class="hs-special">}</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">LogMessage -&gt; IO ()
+</span><a href="#local-6989586621679094616"><span class="hs-identifier hs-var">loggerWriteMessage</span></a></span><span>
+</span><span id="line-33"></span><span>
+</span><span id="line-34"></span><span class="hs-comment">-- | Wait until all 'LogMessage's stored in the internal queue are</span><span>
+</span><span id="line-35"></span><span class="hs-comment">-- serialized.</span><span>
+</span><span id="line-36"></span><span class="annot"><a href="Log.Internal.Logger.html#waitForLogger"><span class="hs-identifier hs-type">waitForLogger</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-37"></span><span id="waitForLogger"><span class="annot"><span class="annottext">waitForLogger :: Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#waitForLogger"><span class="hs-identifier hs-var hs-var">waitForLogger</span></a></span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span class="hs-special">{</span><span id="local-6989586621679094619"><span id="local-6989586621679094620"><span id="local-6989586621679094621"><span class="annot"><span class="annottext">IO ()
+LogMessage -&gt; IO ()
+loggerWriteMessage :: Logger -&gt; LogMessage -&gt; IO ()
+loggerWaitForWrite :: Logger -&gt; IO ()
+loggerShutdown :: Logger -&gt; IO ()
+loggerWriteMessage :: LogMessage -&gt; IO ()
+loggerWaitForWrite :: IO ()
+loggerShutdown :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-glyph hs-var hs-var hs-var hs-var hs-var hs-var">..</span></a></span></span></span></span><span class="hs-special">}</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679094620"><span class="hs-identifier hs-var">loggerWaitForWrite</span></a></span><span>
+</span><span id="line-38"></span><span>
+</span><span id="line-39"></span><span class="hs-comment">-- | Shutdown the logger thread associated with this 'Logger'</span><span>
+</span><span id="line-40"></span><span class="hs-comment">-- object. Subsequent attempts to write messages via this 'Logger'</span><span>
+</span><span id="line-41"></span><span class="hs-comment">-- will result in an exception.</span><span>
+</span><span id="line-42"></span><span class="annot"><a href="Log.Internal.Logger.html#shutdownLogger"><span class="hs-identifier hs-type">shutdownLogger</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-43"></span><span id="shutdownLogger"><span class="annot"><span class="annottext">shutdownLogger :: Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#shutdownLogger"><span class="hs-identifier hs-var hs-var">shutdownLogger</span></a></span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span class="hs-special">{</span><span id="local-6989586621679094622"><span id="local-6989586621679094623"><span id="local-6989586621679094624"><span class="annot"><span class="annottext">IO ()
+LogMessage -&gt; IO ()
+loggerWriteMessage :: Logger -&gt; LogMessage -&gt; IO ()
+loggerWaitForWrite :: Logger -&gt; IO ()
+loggerShutdown :: Logger -&gt; IO ()
+loggerWriteMessage :: LogMessage -&gt; IO ()
+loggerWaitForWrite :: IO ()
+loggerShutdown :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-glyph hs-var hs-var hs-var hs-var hs-var hs-var">..</span></a></span></span></span></span><span class="hs-special">}</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679094624"><span class="hs-identifier hs-var">loggerShutdown</span></a></span><span>
+</span><span id="line-44"></span><span>
+</span><span id="line-45"></span><span class="hs-comment">-- | 'bracket'-like execution of an 'IO' action, verifying all messages</span><span>
+</span><span id="line-46"></span><span class="hs-comment">-- are properly logged. See 'mkBulkLogger'.</span><span>
+</span><span id="line-47"></span><span id="local-6989586621679094590"><span class="annot"><a href="Log.Internal.Logger.html#withLogger"><span class="hs-identifier hs-type">withLogger</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="#local-6989586621679094590"><span class="hs-identifier hs-type">r</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="#local-6989586621679094590"><span class="hs-identifier hs-type">r</span></a></span></span><span>
+</span><span id="line-48"></span><span id="withLogger"><span class="annot"><span class="annottext">withLogger :: forall r. Logger -&gt; (Logger -&gt; IO r) -&gt; IO r
+</span><a href="Log.Internal.Logger.html#withLogger"><span class="hs-identifier hs-var hs-var">withLogger</span></a></span></span><span> </span><span id="local-6989586621679094628"><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094628"><span class="hs-identifier hs-var">logger</span></a></span></span><span> </span><span id="local-6989586621679094629"><span class="annot"><span class="annottext">Logger -&gt; IO r
+</span><a href="#local-6989586621679094629"><span class="hs-identifier hs-var">act</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Logger -&gt; IO r
+</span><a href="#local-6989586621679094629"><span class="hs-identifier hs-var">act</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094628"><span class="hs-identifier hs-var">logger</span></a></span><span> </span><span class="annot"><span class="annottext">IO r -&gt; IO () -&gt; IO r
+forall a b. IO a -&gt; IO b -&gt; IO a
+</span><span class="hs-operator hs-var">`finally`</span></span><span> </span><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679094631"><span class="hs-identifier hs-var">cleanup</span></a></span><span>
+</span><span id="line-49"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-50"></span><span>    </span><span id="local-6989586621679094631"><span class="annot"><span class="annottext">cleanup :: IO ()
+</span><a href="#local-6989586621679094631"><span class="hs-identifier hs-var hs-var">cleanup</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#waitForLogger"><span class="hs-identifier hs-var">waitForLogger</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094628"><span class="hs-identifier hs-var">logger</span></a></span><span> </span><span class="annot"><span class="annottext">IO () -&gt; IO () -&gt; IO ()
+forall a b. IO a -&gt; IO b -&gt; IO b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; m b -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#shutdownLogger"><span class="hs-identifier hs-var">shutdownLogger</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094628"><span class="hs-identifier hs-var">logger</span></a></span><span>
+</span><span id="line-51"></span><span class="hs-comment">-- Prevent GHC from inlining this function so its callers are small and</span><span>
+</span><span id="line-52"></span><span class="hs-comment">-- considered for inlining instead (as they will be generalized to MonadIO or</span><span>
+</span><span id="line-53"></span><span class="hs-comment">-- MonadUnliftIO).</span><span>
+</span><span id="line-54"></span><span class="hs-pragma">{-# NOINLINE</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#withLogger"><span class="hs-pragma hs-type">withLogger</span></a></span><span> </span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-55"></span><span>
+</span><span id="line-56"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679094634"><span id="local-6989586621679094638"><span class="annot"><span class="hs-identifier hs-type">Semigroup</span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-57"></span><span>  </span><span id="local-6989586621679094646"><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094646"><span class="hs-identifier hs-var">l1</span></a></span></span><span> </span><span id="local-6989586621679094647"><span class="annot"><span class="annottext">&lt;&gt; :: Logger -&gt; Logger -&gt; Logger
+</span><span class="hs-operator hs-var hs-var hs-var hs-var">&lt;&gt;</span></span></span><span> </span><span id="local-6989586621679094648"><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094648"><span class="hs-identifier hs-var">l2</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span><span> </span><span class="hs-special">{</span><span>
+</span><span id="line-58"></span><span>    </span><span class="annot"><span class="annottext">loggerWriteMessage :: LogMessage -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-identifier hs-var">loggerWriteMessage</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679094649"><span class="annot"><span class="annottext">LogMessage
+</span><a href="#local-6989586621679094649"><span class="hs-identifier hs-var">msg</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-59"></span><span>      </span><span class="annot"><span class="annottext">Logger -&gt; LogMessage -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-identifier hs-var">loggerWriteMessage</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094646"><span class="hs-identifier hs-var">l1</span></a></span><span> </span><span class="annot"><span class="annottext">LogMessage
+</span><a href="#local-6989586621679094649"><span class="hs-identifier hs-var">msg</span></a></span><span>
+</span><span id="line-60"></span><span>      </span><span class="annot"><span class="annottext">Logger -&gt; LogMessage -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWriteMessage"><span class="hs-identifier hs-var">loggerWriteMessage</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094648"><span class="hs-identifier hs-var">l2</span></a></span><span> </span><span class="annot"><span class="annottext">LogMessage
+</span><a href="#local-6989586621679094649"><span class="hs-identifier hs-var">msg</span></a></span><span>
+</span><span id="line-61"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">loggerWaitForWrite :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerWaitForWrite"><span class="hs-identifier hs-var">loggerWaitForWrite</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-62"></span><span>      </span><span class="annot"><span class="annottext">Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWaitForWrite"><span class="hs-identifier hs-var">loggerWaitForWrite</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094646"><span class="hs-identifier hs-var">l1</span></a></span><span>
+</span><span id="line-63"></span><span>      </span><span class="annot"><span class="annottext">Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerWaitForWrite"><span class="hs-identifier hs-var">loggerWaitForWrite</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094648"><span class="hs-identifier hs-var">l2</span></a></span><span>
+</span><span id="line-64"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">loggerShutdown :: IO ()
+</span><a href="Log.Internal.Logger.html#loggerShutdown"><span class="hs-identifier hs-var">loggerShutdown</span></a></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-65"></span><span>      </span><span class="annot"><span class="annottext">Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerShutdown"><span class="hs-identifier hs-var">loggerShutdown</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094646"><span class="hs-identifier hs-var">l1</span></a></span><span>
+</span><span id="line-66"></span><span>      </span><span class="annot"><span class="annottext">Logger -&gt; IO ()
+</span><a href="Log.Internal.Logger.html#loggerShutdown"><span class="hs-identifier hs-var">loggerShutdown</span></a></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679094648"><span class="hs-identifier hs-var">l2</span></a></span><span>
+</span><span id="line-67"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-68"></span><span>
+</span><span id="line-69"></span><span class="annot"><span class="hs-comment">-- | Composition of 'Logger' objects.</span></span><span>
+</span><span id="line-70"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679094655"><span class="annot"><span class="hs-identifier hs-type">Monoid</span></span><span> </span><span class="annot"><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-type">Logger</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-71"></span><span>  </span><span id="local-6989586621679094662"><span class="annot"><span class="annottext">mempty :: Logger
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">mempty</span></span></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(LogMessage -&gt; IO ()) -&gt; IO () -&gt; IO () -&gt; Logger
+</span><a href="Log.Internal.Logger.html#Logger"><span class="hs-identifier hs-var">Logger</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">IO () -&gt; LogMessage -&gt; IO ()
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; LogMessage -&gt; IO ()) -&gt; IO () -&gt; LogMessage -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">() -&gt; IO ()
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">() -&gt; IO ()
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">() -&gt; IO ()
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-72"></span><span>  </span><span id="local-6989586621679094665"><span class="annot"><span class="annottext">mappend :: Logger -&gt; Logger -&gt; Logger
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">mappend</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Logger -&gt; Logger -&gt; Logger
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">(&lt;&gt;)</span></span><span>
+</span><span id="line-73"></span></pre></body></html>

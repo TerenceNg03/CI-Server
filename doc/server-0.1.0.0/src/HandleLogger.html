@@ -1,0 +1,68 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-2"></span><span>
+</span><span id="line-3"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">HandleLogger</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="HandleLogger.html#withHandleLogger"><span class="hs-identifier">withHandleLogger</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-4"></span><span>
+</span><span id="line-5"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.IO.Unlift</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadUnliftIO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">withRunInIO</span></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-6"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.IO</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-7"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">System.IO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Handle</span></span><span class="hs-special">)</span><span>
+</span><span id="line-8"></span><span>
+</span><span id="line-9"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">GHC.IO.Handle</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-10"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Log</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Logger</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">mkBulkLogger</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">showLogMessage</span></span><span class="hs-special">)</span><span>
+</span><span id="line-11"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Log.Internal.Logger</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">withLogger</span></span><span class="hs-special">)</span><span>
+</span><span id="line-12"></span><span>
+</span><span id="line-13"></span><span class="annot"><span class="hs-comment">-- | Print log to a handle with flushing on each write</span></span><span>
+</span><span id="line-14"></span><span id="local-6989586621679157120"><span id="local-6989586621679157124"><span class="annot"><a href="HandleLogger.html#withHandleLogger"><span class="hs-identifier hs-type">withHandleLogger</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadUnliftIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679157120"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Handle</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Logger</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679157120"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679157124"><span class="hs-identifier hs-type">r</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679157120"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679157124"><span class="hs-identifier hs-type">r</span></a></span></span></span><span>
+</span><span id="line-15"></span><span id="withHandleLogger"><span class="annot"><span class="annottext">withHandleLogger :: forall (m :: * -&gt; *) r.
+MonadUnliftIO m =&gt;
+Handle -&gt; (Logger -&gt; m r) -&gt; m r
+</span><a href="HandleLogger.html#withHandleLogger"><span class="hs-identifier hs-var hs-var">withHandleLogger</span></a></span></span><span> </span><span id="local-6989586621679157163"><span class="annot"><span class="annottext">Handle
+</span><a href="#local-6989586621679157163"><span class="hs-identifier hs-var">handle</span></a></span></span><span> </span><span id="local-6989586621679157164"><span class="annot"><span class="annottext">Logger -&gt; m r
+</span><a href="#local-6989586621679157164"><span class="hs-identifier hs-var">act</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">((forall a. m a -&gt; IO a) -&gt; IO r) -&gt; m r
+forall b. ((forall a. m a -&gt; IO a) -&gt; IO b) -&gt; m b
+forall (m :: * -&gt; *) b.
+MonadUnliftIO m =&gt;
+((forall a. m a -&gt; IO a) -&gt; IO b) -&gt; m b
+</span><span class="hs-identifier hs-var">withRunInIO</span></span><span> </span><span class="annot"><span class="annottext">(((forall a. m a -&gt; IO a) -&gt; IO r) -&gt; m r)
+-&gt; ((forall a. m a -&gt; IO a) -&gt; IO r) -&gt; m r
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679157165"><span class="annot"><span class="annottext">forall a. m a -&gt; IO a
+</span><a href="#local-6989586621679157165"><span class="hs-identifier hs-var">unlift</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-16"></span><span>    </span><span id="local-6989586621679157166"><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679157166"><span class="hs-identifier hs-var">logger</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span>
+</span><span id="line-17"></span><span>        </span><span class="annot"><span class="annottext">Text -&gt; ([LogMessage] -&gt; IO ()) -&gt; IO () -&gt; IO Logger
+</span><span class="hs-identifier hs-var">mkBulkLogger</span></span><span>
+</span><span id="line-18"></span><span>            </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;file-bulk&quot;</span></span><span>
+</span><span id="line-19"></span><span>            </span><span class="hs-special">(</span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679157167"><span class="annot"><span class="annottext">[LogMessage]
+</span><a href="#local-6989586621679157167"><span class="hs-identifier hs-var">msgs</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-20"></span><span>                </span><span class="annot"><span class="annottext">(LogMessage -&gt; IO ()) -&gt; [LogMessage] -&gt; IO ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Handle -&gt; Text -&gt; IO ()
+</span><span class="hs-identifier hs-var">T.hPutStrLn</span></span><span> </span><span class="annot"><span class="annottext">Handle
+</span><a href="#local-6989586621679157163"><span class="hs-identifier hs-var">handle</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; IO ()) -&gt; (LogMessage -&gt; Text) -&gt; LogMessage -&gt; IO ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Maybe UTCTime -&gt; LogMessage -&gt; Text
+</span><span class="hs-identifier hs-var">showLogMessage</span></span><span> </span><span class="annot"><span class="annottext">Maybe UTCTime
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[LogMessage]
+</span><a href="#local-6989586621679157167"><span class="hs-identifier hs-var">msgs</span></a></span><span>
+</span><span id="line-21"></span><span>                </span><span class="annot"><span class="annottext">Handle -&gt; IO ()
+</span><span class="hs-identifier hs-var">T.hFlush</span></span><span> </span><span class="annot"><span class="annottext">Handle
+</span><a href="#local-6989586621679157163"><span class="hs-identifier hs-var">handle</span></a></span><span>
+</span><span id="line-22"></span><span>            </span><span class="hs-special">)</span><span>
+</span><span id="line-23"></span><span>            </span><span class="hs-special">(</span><span class="annot"><span class="annottext">() -&gt; IO ()
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-24"></span><span>    </span><span class="annot"><span class="annottext">Logger -&gt; (Logger -&gt; IO r) -&gt; IO r
+forall r. Logger -&gt; (Logger -&gt; IO r) -&gt; IO r
+</span><span class="hs-identifier hs-var">withLogger</span></span><span> </span><span class="annot"><span class="annottext">Logger
+</span><a href="#local-6989586621679157166"><span class="hs-identifier hs-var">logger</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">m r -&gt; IO r
+forall a. m a -&gt; IO a
+</span><a href="#local-6989586621679157165"><span class="hs-identifier hs-var">unlift</span></a></span><span> </span><span class="annot"><span class="annottext">(m r -&gt; IO r) -&gt; (Logger -&gt; m r) -&gt; Logger -&gt; IO r
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Logger -&gt; m r
+</span><a href="#local-6989586621679157164"><span class="hs-identifier hs-var">act</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-25"></span></pre></body></html>

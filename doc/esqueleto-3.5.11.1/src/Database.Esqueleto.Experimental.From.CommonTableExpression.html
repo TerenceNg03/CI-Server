@@ -1,0 +1,390 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE FlexibleInstances #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE TypeFamilies #-}</span><span>
+</span><span id="line-4"></span><span>
+</span><span id="line-5"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Database.Esqueleto.Experimental.From.CommonTableExpression</span><span>
+</span><span id="line-6"></span><span>    </span><span class="hs-keyword">where</span><span>
+</span><span id="line-7"></span><span>
+</span><span id="line-8"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Trans.Writer</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">W</span></span><span>
+</span><span id="line-9"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy.Builder</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">TLB</span></span><span>
+</span><span id="line-10"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.From.html"><span class="hs-identifier">Database.Esqueleto.Experimental.From</span></a></span><span>
+</span><span id="line-11"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.From.SqlSetOperation.html"><span class="hs-identifier">Database.Esqueleto.Experimental.From.SqlSetOperation</span></a></span><span>
+</span><span id="line-12"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.ToAlias.html"><span class="hs-identifier">Database.Esqueleto.Experimental.ToAlias</span></a></span><span>
+</span><span id="line-13"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.ToAliasReference.html"><span class="hs-identifier">Database.Esqueleto.Experimental.ToAliasReference</span></a></span><span>
+</span><span id="line-14"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html"><span class="hs-identifier">Database.Esqueleto.Internal.Internal</span></a></span><span> </span><span class="hs-keyword">hiding</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#From"><span class="hs-identifier">From</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#from"><span class="hs-identifier">from</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#on"><span class="hs-identifier">on</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-15"></span><span>
+</span><span id="line-16"></span><span class="hs-comment">-- | @WITH@ clause used to introduce a [Common Table Expression (CTE)](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL#Common_table_expression).</span><span>
+</span><span id="line-17"></span><span class="hs-comment">-- CTEs are supported in most modern SQL engines and can be useful</span><span>
+</span><span id="line-18"></span><span class="hs-comment">-- in performance tuning. In Esqueleto, CTEs should be used as a</span><span>
+</span><span id="line-19"></span><span class="hs-comment">-- subquery memoization tactic. When writing plain SQL, CTEs</span><span>
+</span><span id="line-20"></span><span class="hs-comment">-- are sometimes used to organize the SQL code, in Esqueleto, this</span><span>
+</span><span id="line-21"></span><span class="hs-comment">-- is better achieved through function that return 'SqlQuery' values.</span><span>
+</span><span id="line-22"></span><span class="hs-comment">--</span><span>
+</span><span id="line-23"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-24"></span><span class="hs-comment">-- select $ do</span><span>
+</span><span id="line-25"></span><span class="hs-comment">-- cte &lt;- with subQuery</span><span>
+</span><span id="line-26"></span><span class="hs-comment">-- cteResult &lt;- from cte</span><span>
+</span><span id="line-27"></span><span class="hs-comment">-- where_ $ cteResult ...</span><span>
+</span><span id="line-28"></span><span class="hs-comment">-- pure cteResult</span><span>
+</span><span id="line-29"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-30"></span><span class="hs-comment">--</span><span>
+</span><span id="line-31"></span><span class="hs-comment">-- __WARNING__: In some SQL engines using a CTE can diminish performance.</span><span>
+</span><span id="line-32"></span><span class="hs-comment">-- In these engines the CTE is treated as an optimization fence. You should</span><span>
+</span><span id="line-33"></span><span class="hs-comment">-- always verify that using a CTE will in fact improve your performance</span><span>
+</span><span id="line-34"></span><span class="hs-comment">-- over a regular subquery.</span><span>
+</span><span id="line-35"></span><span class="hs-comment">--</span><span>
+</span><span id="line-36"></span><span class="hs-comment">-- Notably, in PostgreSQL prior to version 12, CTEs are always fully</span><span>
+</span><span id="line-37"></span><span class="hs-comment">-- calculated, which can potentially significantly pessimize queries. As of</span><span>
+</span><span id="line-38"></span><span class="hs-comment">-- PostgreSQL 12, non-recursive and side-effect-free queries may be inlined and</span><span>
+</span><span id="line-39"></span><span class="hs-comment">-- optimized accordingly if not declared @MATERIALIZED@ to get the previous</span><span>
+</span><span id="line-40"></span><span class="hs-comment">-- behaviour. See [the PostgreSQL CTE documentation](https://www.postgresql.org/docs/current/queries-with.html#id-1.5.6.12.7),</span><span>
+</span><span id="line-41"></span><span class="hs-comment">-- section Materialization, for more information.</span><span>
+</span><span id="line-42"></span><span class="hs-comment">--</span><span>
+</span><span id="line-43"></span><span class="hs-comment">-- /Since: 3.4.0.0/</span><span>
+</span><span id="line-44"></span><span id="local-6989586621679307561"><span id="local-6989586621679307564"><span class="annot"><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#with"><span class="hs-identifier hs-type">with</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.ToAlias.html#ToAlias"><span class="hs-identifier hs-type">ToAlias</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307561"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-45"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.ToAliasReference.html#ToAliasReference"><span class="hs-identifier hs-type">ToAliasReference</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307561"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-46"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlSelect"><span class="hs-identifier hs-type">SqlSelect</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307561"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307564"><span class="hs-identifier hs-type">r</span></a></span><span>
+</span><span id="line-47"></span><span>        </span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlQuery"><span class="hs-identifier hs-type">SqlQuery</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307561"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlQuery"><span class="hs-identifier hs-type">SqlQuery</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Experimental.From.html#From"><span class="hs-identifier hs-type">From</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307561"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-48"></span><span id="with"><span class="annot"><span class="annottext">with :: forall a r.
+(ToAlias a, ToAliasReference a, SqlSelect a r) =&gt;
+SqlQuery a -&gt; SqlQuery (From a)
+</span><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#with"><span class="hs-identifier hs-var hs-var">with</span></a></span></span><span> </span><span id="local-6989586621679307670"><span class="annot"><span class="annottext">SqlQuery a
+</span><a href="#local-6989586621679307670"><span class="hs-identifier hs-var">query</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-49"></span><span>    </span><span class="hs-special">(</span><span id="local-6989586621679307671"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307671"><span class="hs-identifier hs-var">ret</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679307672"><span class="annot"><span class="annottext">SideData
+</span><a href="#local-6989586621679307672"><span class="hs-identifier hs-var">sideData</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">WriterT SideData (State IdentState) (a, SideData)
+-&gt; SqlQuery (a, SideData)
+forall a. WriterT SideData (State IdentState) a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Internal.Internal.html#Q"><span class="hs-identifier hs-var">Q</span></a></span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) (a, SideData)
+ -&gt; SqlQuery (a, SideData))
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+-&gt; SqlQuery (a, SideData)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">(SideData -&gt; SideData)
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+forall (m :: * -&gt; *) w a.
+Monad m =&gt;
+(w -&gt; w) -&gt; WriterT w m a -&gt; WriterT w m a
+</span><span class="hs-identifier hs-var">W.censor</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span class="annot"><span class="annottext">SideData
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">SideData
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) (a, SideData)
+ -&gt; WriterT SideData (State IdentState) (a, SideData))
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">WriterT SideData (State IdentState) a
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+forall (m :: * -&gt; *) w a.
+Monad m =&gt;
+WriterT w m a -&gt; WriterT w m (a, w)
+</span><span class="hs-identifier hs-var">W.listen</span></span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) a
+ -&gt; WriterT SideData (State IdentState) (a, SideData))
+-&gt; WriterT SideData (State IdentState) a
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">SqlQuery a -&gt; WriterT SideData (State IdentState) a
+forall a. SqlQuery a -&gt; WriterT SideData (State IdentState) a
+</span><a href="Database.Esqueleto.Internal.Internal.html#unQ"><span class="hs-identifier hs-var">unQ</span></a></span><span> </span><span class="annot"><span class="annottext">SqlQuery a
+</span><a href="#local-6989586621679307670"><span class="hs-identifier hs-var">query</span></a></span><span>
+</span><span id="line-50"></span><span>    </span><span id="local-6989586621679307677"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307677"><span class="hs-identifier hs-var">aliasedValue</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">a -&gt; SqlQuery a
+forall a. ToAlias a =&gt; a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Experimental.ToAlias.html#toAlias"><span class="hs-identifier hs-var">toAlias</span></a></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307671"><span class="hs-identifier hs-var">ret</span></a></span><span>
+</span><span id="line-51"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679307679"><span class="annot"><span class="annottext">aliasedQuery :: SqlQuery a
+</span><a href="#local-6989586621679307679"><span class="hs-identifier hs-var hs-var">aliasedQuery</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">WriterT SideData (State IdentState) a -&gt; SqlQuery a
+forall a. WriterT SideData (State IdentState) a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Internal.Internal.html#Q"><span class="hs-identifier hs-var">Q</span></a></span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) a -&gt; SqlQuery a)
+-&gt; WriterT SideData (State IdentState) a -&gt; SqlQuery a
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">State IdentState (a, SideData)
+-&gt; WriterT SideData (State IdentState) a
+forall w (m :: * -&gt; *) a. m (a, w) -&gt; WriterT w m a
+</span><span class="hs-identifier hs-var">W.WriterT</span></span><span> </span><span class="annot"><span class="annottext">(State IdentState (a, SideData)
+ -&gt; WriterT SideData (State IdentState) a)
+-&gt; State IdentState (a, SideData)
+-&gt; WriterT SideData (State IdentState) a
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">(a, SideData) -&gt; State IdentState (a, SideData)
+forall a. a -&gt; StateT IdentState Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307677"><span class="hs-identifier hs-var">aliasedValue</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">SideData
+</span><a href="#local-6989586621679307672"><span class="hs-identifier hs-var">sideData</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-52"></span><span>    </span><span id="local-6989586621679307681"><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679307681"><span class="hs-identifier hs-var">ident</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">DBName -&gt; SqlQuery Ident
+</span><a href="Database.Esqueleto.Internal.Internal.html#newIdentFor"><span class="hs-identifier hs-var">newIdentFor</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Text -&gt; DBName
+</span><a href="Database.Esqueleto.Internal.Internal.html#DBName"><span class="hs-identifier hs-var">DBName</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;cte&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-53"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679307684"><span class="annot"><span class="annottext">clause :: CommonTableExpressionClause
+</span><a href="#local-6989586621679307684"><span class="hs-identifier hs-var hs-var">clause</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">CommonTableExpressionKind
+-&gt; Ident
+-&gt; (IdentInfo -&gt; (Builder, [PersistValue]))
+-&gt; CommonTableExpressionClause
+</span><a href="Database.Esqueleto.Internal.Internal.html#CommonTableExpressionClause"><span class="hs-identifier hs-var">CommonTableExpressionClause</span></a></span><span> </span><span class="annot"><span class="annottext">CommonTableExpressionKind
+</span><a href="Database.Esqueleto.Internal.Internal.html#NormalCommonTableExpression"><span class="hs-identifier hs-var">NormalCommonTableExpression</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679307681"><span class="hs-identifier hs-var">ident</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679307687"><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307687"><span class="hs-identifier hs-var">info</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Mode -&gt; IdentInfo -&gt; SqlQuery a -&gt; (Builder, [PersistValue])
+forall a r backend.
+(SqlSelect a r, BackendCompatible SqlBackend backend) =&gt;
+Mode
+-&gt; (backend, IdentState) -&gt; SqlQuery a -&gt; (Builder, [PersistValue])
+</span><a href="Database.Esqueleto.Internal.Internal.html#toRawSql"><span class="hs-identifier hs-var">toRawSql</span></a></span><span> </span><span class="annot"><span class="annottext">Mode
+</span><a href="Database.Esqueleto.Internal.Internal.html#SELECT"><span class="hs-identifier hs-var">SELECT</span></a></span><span> </span><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307687"><span class="hs-identifier hs-var">info</span></a></span><span> </span><span class="annot"><span class="annottext">SqlQuery a
+</span><a href="#local-6989586621679307679"><span class="hs-identifier hs-var">aliasedQuery</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-54"></span><span>    </span><span class="annot"><span class="annottext">WriterT SideData (State IdentState) () -&gt; SqlQuery ()
+forall a. WriterT SideData (State IdentState) a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Internal.Internal.html#Q"><span class="hs-identifier hs-var">Q</span></a></span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) () -&gt; SqlQuery ())
+-&gt; WriterT SideData (State IdentState) () -&gt; SqlQuery ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">SideData -&gt; WriterT SideData (State IdentState) ()
+forall (m :: * -&gt; *) w. Monad m =&gt; w -&gt; WriterT w m ()
+</span><span class="hs-identifier hs-var">W.tell</span></span><span> </span><span class="annot"><span class="annottext">SideData
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">{</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#sdCteClause"><span class="hs-identifier hs-var">sdCteClause</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="#local-6989586621679307684"><span class="hs-identifier hs-type">clause</span></a></span><span class="hs-special">]</span><span class="hs-special">}</span><span>
+</span><span id="line-55"></span><span>    </span><span id="local-6989586621679307692"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307692"><span class="hs-identifier hs-var">ref</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Ident -&gt; a -&gt; SqlQuery a
+forall a. ToAliasReference a =&gt; Ident -&gt; a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Experimental.ToAliasReference.html#toAliasReference"><span class="hs-identifier hs-var">toAliasReference</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679307681"><span class="hs-identifier hs-var">ident</span></a></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307677"><span class="hs-identifier hs-var">aliasedValue</span></a></span><span>
+</span><span id="line-56"></span><span>    </span><span class="annot"><span class="annottext">From a -&gt; SqlQuery (From a)
+forall a. a -&gt; SqlQuery a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">(From a -&gt; SqlQuery (From a)) -&gt; From a -&gt; SqlQuery (From a)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">SqlQuery (a, RawFn) -&gt; From a
+forall a. SqlQuery (a, RawFn) -&gt; From a
+</span><a href="Database.Esqueleto.Experimental.From.html#From"><span class="hs-identifier hs-var">From</span></a></span><span> </span><span class="annot"><span class="annottext">(SqlQuery (a, RawFn) -&gt; From a) -&gt; SqlQuery (a, RawFn) -&gt; From a
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">(a, RawFn) -&gt; SqlQuery (a, RawFn)
+forall a. a -&gt; SqlQuery a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307692"><span class="hs-identifier hs-var">ref</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span class="annot"><span class="annottext">NeedParens
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679307695"><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307695"><span class="hs-identifier hs-var">info</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">IdentInfo -&gt; Ident -&gt; Builder
+</span><a href="Database.Esqueleto.Internal.Internal.html#useIdent"><span class="hs-identifier hs-var">useIdent</span></a></span><span> </span><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307695"><span class="hs-identifier hs-var">info</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679307681"><span class="hs-identifier hs-var">ident</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[PersistValue]
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">)</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-57"></span><span>
+</span><span id="line-58"></span><span class="hs-comment">-- | @WITH@ @RECURSIVE@ allows one to make a recursive subquery, which can</span><span>
+</span><span id="line-59"></span><span class="hs-comment">-- reference itself. Like @WITH@, this is supported in most modern SQL engines.</span><span>
+</span><span id="line-60"></span><span class="hs-comment">-- Useful for hierarchical, self-referential data, like a tree of data.</span><span>
+</span><span id="line-61"></span><span class="hs-comment">--</span><span>
+</span><span id="line-62"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-63"></span><span class="hs-comment">-- select $ do</span><span>
+</span><span id="line-64"></span><span class="hs-comment">-- cte &lt;- withRecursive</span><span>
+</span><span id="line-65"></span><span class="hs-comment">--          (do</span><span>
+</span><span id="line-66"></span><span class="hs-comment">--              person &lt;- from $ table \@Person</span><span>
+</span><span id="line-67"></span><span class="hs-comment">--              where_ $ person ^. PersonId ==. val personId</span><span>
+</span><span id="line-68"></span><span class="hs-comment">--              pure person</span><span>
+</span><span id="line-69"></span><span class="hs-comment">--          )</span><span>
+</span><span id="line-70"></span><span class="hs-comment">--          unionAll_</span><span>
+</span><span id="line-71"></span><span class="hs-comment">--          (\\self -&gt; do</span><span>
+</span><span id="line-72"></span><span class="hs-comment">--              (p :&amp; f :&amp; p2 :&amp; pSelf) &lt;- from self</span><span>
+</span><span id="line-73"></span><span class="hs-comment">--                       \`innerJoin\` $ table \@Follow</span><span>
+</span><span id="line-74"></span><span class="hs-comment">--                       \`on\` (\\(p :&amp; f) -&gt;</span><span>
+</span><span id="line-75"></span><span class="hs-comment">--                               p ^. PersonId ==. f ^. FollowFollower)</span><span>
+</span><span id="line-76"></span><span class="hs-comment">--                       \`innerJoin\` $ table \@Person</span><span>
+</span><span id="line-77"></span><span class="hs-comment">--                       \`on\` (\\(p :&amp; f :&amp; p2) -&gt;</span><span>
+</span><span id="line-78"></span><span class="hs-comment">--                               f ^. FollowFollowed ==. p2 ^. PersonId)</span><span>
+</span><span id="line-79"></span><span class="hs-comment">--                       \`leftJoin\` self</span><span>
+</span><span id="line-80"></span><span class="hs-comment">--                       \`on\` (\\(_ :&amp; _ :&amp; p2 :&amp; pSelf) -&gt;</span><span>
+</span><span id="line-81"></span><span class="hs-comment">--                               just (p2 ^. PersonId) ==. pSelf ?. PersonId)</span><span>
+</span><span id="line-82"></span><span class="hs-comment">--              where_ $ isNothing (pSelf ?. PersonId)</span><span>
+</span><span id="line-83"></span><span class="hs-comment">--              groupBy (p2 ^. PersonId)</span><span>
+</span><span id="line-84"></span><span class="hs-comment">--              pure p2</span><span>
+</span><span id="line-85"></span><span class="hs-comment">--          )</span><span>
+</span><span id="line-86"></span><span class="hs-comment">-- from cte</span><span>
+</span><span id="line-87"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-88"></span><span class="hs-comment">--</span><span>
+</span><span id="line-89"></span><span class="hs-comment">-- /Since: 3.4.0.0/</span><span>
+</span><span id="line-90"></span><span id="local-6989586621679307619"><span id="local-6989586621679307620"><span class="annot"><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#withRecursive"><span class="hs-identifier hs-type">withRecursive</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.ToAlias.html#ToAlias"><span class="hs-identifier hs-type">ToAlias</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307619"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-91"></span><span>                 </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.ToAliasReference.html#ToAliasReference"><span class="hs-identifier hs-type">ToAliasReference</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307619"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-92"></span><span>                 </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlSelect"><span class="hs-identifier hs-type">SqlSelect</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307619"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307620"><span class="hs-identifier hs-type">r</span></a></span><span>
+</span><span id="line-93"></span><span>                 </span><span class="hs-special">)</span><span>
+</span><span id="line-94"></span><span>              </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlQuery"><span class="hs-identifier hs-type">SqlQuery</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307619"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-95"></span><span>              </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#UnionKind"><span class="hs-identifier hs-type">UnionKind</span></a></span><span>
+</span><span id="line-96"></span><span>              </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Experimental.From.html#From"><span class="hs-identifier hs-type">From</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307619"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlQuery"><span class="hs-identifier hs-type">SqlQuery</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307619"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-97"></span><span>              </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#SqlQuery"><span class="hs-identifier hs-type">SqlQuery</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.Esqueleto.Experimental.From.html#From"><span class="hs-identifier hs-type">From</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679307619"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-98"></span><span id="withRecursive"><span class="annot"><span class="annottext">withRecursive :: forall a r.
+(ToAlias a, ToAliasReference a, SqlSelect a r) =&gt;
+SqlQuery a
+-&gt; UnionKind -&gt; (From a -&gt; SqlQuery a) -&gt; SqlQuery (From a)
+</span><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#withRecursive"><span class="hs-identifier hs-var hs-var">withRecursive</span></a></span></span><span> </span><span id="local-6989586621679307737"><span class="annot"><span class="annottext">SqlQuery a
+</span><a href="#local-6989586621679307737"><span class="hs-identifier hs-var">baseCase</span></a></span></span><span> </span><span id="local-6989586621679307738"><span class="annot"><span class="annottext">UnionKind
+</span><a href="#local-6989586621679307738"><span class="hs-identifier hs-var">unionKind</span></a></span></span><span> </span><span id="local-6989586621679307739"><span class="annot"><span class="annottext">From a -&gt; SqlQuery a
+</span><a href="#local-6989586621679307739"><span class="hs-identifier hs-var">recursiveCase</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-99"></span><span>    </span><span class="hs-special">(</span><span id="local-6989586621679307740"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307740"><span class="hs-identifier hs-var">ret</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679307741"><span class="annot"><span class="annottext">SideData
+</span><a href="#local-6989586621679307741"><span class="hs-identifier hs-var">sideData</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">WriterT SideData (State IdentState) (a, SideData)
+-&gt; SqlQuery (a, SideData)
+forall a. WriterT SideData (State IdentState) a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Internal.Internal.html#Q"><span class="hs-identifier hs-var">Q</span></a></span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) (a, SideData)
+ -&gt; SqlQuery (a, SideData))
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+-&gt; SqlQuery (a, SideData)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">(SideData -&gt; SideData)
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+forall (m :: * -&gt; *) w a.
+Monad m =&gt;
+(w -&gt; w) -&gt; WriterT w m a -&gt; WriterT w m a
+</span><span class="hs-identifier hs-var">W.censor</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span class="annot"><span class="annottext">SideData
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">SideData
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) (a, SideData)
+ -&gt; WriterT SideData (State IdentState) (a, SideData))
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">WriterT SideData (State IdentState) a
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+forall (m :: * -&gt; *) w a.
+Monad m =&gt;
+WriterT w m a -&gt; WriterT w m (a, w)
+</span><span class="hs-identifier hs-var">W.listen</span></span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) a
+ -&gt; WriterT SideData (State IdentState) (a, SideData))
+-&gt; WriterT SideData (State IdentState) a
+-&gt; WriterT SideData (State IdentState) (a, SideData)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">SqlQuery a -&gt; WriterT SideData (State IdentState) a
+forall a. SqlQuery a -&gt; WriterT SideData (State IdentState) a
+</span><a href="Database.Esqueleto.Internal.Internal.html#unQ"><span class="hs-identifier hs-var">unQ</span></a></span><span> </span><span class="annot"><span class="annottext">SqlQuery a
+</span><a href="#local-6989586621679307737"><span class="hs-identifier hs-var">baseCase</span></a></span><span>
+</span><span id="line-100"></span><span>    </span><span id="local-6989586621679307742"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307742"><span class="hs-identifier hs-var">aliasedValue</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">a -&gt; SqlQuery a
+forall a. ToAlias a =&gt; a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Experimental.ToAlias.html#toAlias"><span class="hs-identifier hs-var">toAlias</span></a></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307740"><span class="hs-identifier hs-var">ret</span></a></span><span>
+</span><span id="line-101"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679307743"><span class="annot"><span class="annottext">aliasedQuery :: SqlQuery a
+</span><a href="#local-6989586621679307743"><span class="hs-identifier hs-var hs-var">aliasedQuery</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">WriterT SideData (State IdentState) a -&gt; SqlQuery a
+forall a. WriterT SideData (State IdentState) a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Internal.Internal.html#Q"><span class="hs-identifier hs-var">Q</span></a></span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) a -&gt; SqlQuery a)
+-&gt; WriterT SideData (State IdentState) a -&gt; SqlQuery a
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">State IdentState (a, SideData)
+-&gt; WriterT SideData (State IdentState) a
+forall w (m :: * -&gt; *) a. m (a, w) -&gt; WriterT w m a
+</span><span class="hs-identifier hs-var">W.WriterT</span></span><span> </span><span class="annot"><span class="annottext">(State IdentState (a, SideData)
+ -&gt; WriterT SideData (State IdentState) a)
+-&gt; State IdentState (a, SideData)
+-&gt; WriterT SideData (State IdentState) a
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">(a, SideData) -&gt; State IdentState (a, SideData)
+forall a. a -&gt; StateT IdentState Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307742"><span class="hs-identifier hs-var">aliasedValue</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">SideData
+</span><a href="#local-6989586621679307741"><span class="hs-identifier hs-var">sideData</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-102"></span><span>    </span><span id="local-6989586621679307744"><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679307744"><span class="hs-identifier hs-var">ident</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">DBName -&gt; SqlQuery Ident
+</span><a href="Database.Esqueleto.Internal.Internal.html#newIdentFor"><span class="hs-identifier hs-var">newIdentFor</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Text -&gt; DBName
+</span><a href="Database.Esqueleto.Internal.Internal.html#DBName"><span class="hs-identifier hs-var">DBName</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;cte&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-103"></span><span>    </span><span id="local-6989586621679307745"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307745"><span class="hs-identifier hs-var">ref</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Ident -&gt; a -&gt; SqlQuery a
+forall a. ToAliasReference a =&gt; Ident -&gt; a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Experimental.ToAliasReference.html#toAliasReference"><span class="hs-identifier hs-var">toAliasReference</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679307744"><span class="hs-identifier hs-var">ident</span></a></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307742"><span class="hs-identifier hs-var">aliasedValue</span></a></span><span>
+</span><span id="line-104"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679307746"><span class="annot"><span class="annottext">refFrom :: From a
+</span><a href="#local-6989586621679307746"><span class="hs-identifier hs-var hs-var">refFrom</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">SqlQuery (a, RawFn) -&gt; From a
+forall a. SqlQuery (a, RawFn) -&gt; From a
+</span><a href="Database.Esqueleto.Experimental.From.html#From"><span class="hs-identifier hs-var">From</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(a, RawFn) -&gt; SqlQuery (a, RawFn)
+forall a. a -&gt; SqlQuery a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679307745"><span class="hs-identifier hs-var">ref</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span class="annot"><span class="annottext">NeedParens
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679307747"><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307747"><span class="hs-identifier hs-var">info</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">IdentInfo -&gt; Ident -&gt; Builder
+</span><a href="Database.Esqueleto.Internal.Internal.html#useIdent"><span class="hs-identifier hs-var">useIdent</span></a></span><span> </span><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307747"><span class="hs-identifier hs-var">info</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679307744"><span class="hs-identifier hs-var">ident</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[PersistValue]
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">)</span><span class="hs-special">)</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-105"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679307748"><span class="annot"><span class="annottext">recursiveQuery :: SqlQuery a
+</span><a href="#local-6989586621679307748"><span class="hs-identifier hs-var hs-var">recursiveQuery</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">From a -&gt; SqlQuery a
+</span><a href="#local-6989586621679307739"><span class="hs-identifier hs-var">recursiveCase</span></a></span><span> </span><span class="annot"><span class="annottext">From a
+</span><a href="#local-6989586621679307746"><span class="hs-identifier hs-var">refFrom</span></a></span><span>
+</span><span id="line-106"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679307749"><span class="annot"><span class="annottext">clause :: CommonTableExpressionClause
+</span><a href="#local-6989586621679307749"><span class="hs-identifier hs-var hs-var">clause</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">CommonTableExpressionKind
+-&gt; Ident
+-&gt; (IdentInfo -&gt; (Builder, [PersistValue]))
+-&gt; CommonTableExpressionClause
+</span><a href="Database.Esqueleto.Internal.Internal.html#CommonTableExpressionClause"><span class="hs-identifier hs-var">CommonTableExpressionClause</span></a></span><span> </span><span class="annot"><span class="annottext">CommonTableExpressionKind
+</span><a href="Database.Esqueleto.Internal.Internal.html#RecursiveCommonTableExpression"><span class="hs-identifier hs-var">RecursiveCommonTableExpression</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679307744"><span class="hs-identifier hs-var">ident</span></a></span><span>
+</span><span id="line-107"></span><span>                 </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679307751"><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307751"><span class="hs-identifier hs-var">info</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Mode -&gt; IdentInfo -&gt; SqlQuery a -&gt; (Builder, [PersistValue])
+forall a r backend.
+(SqlSelect a r, BackendCompatible SqlBackend backend) =&gt;
+Mode
+-&gt; (backend, IdentState) -&gt; SqlQuery a -&gt; (Builder, [PersistValue])
+</span><a href="Database.Esqueleto.Internal.Internal.html#toRawSql"><span class="hs-identifier hs-var">toRawSql</span></a></span><span> </span><span class="annot"><span class="annottext">Mode
+</span><a href="Database.Esqueleto.Internal.Internal.html#SELECT"><span class="hs-identifier hs-var">SELECT</span></a></span><span> </span><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307751"><span class="hs-identifier hs-var">info</span></a></span><span> </span><span class="annot"><span class="annottext">SqlQuery a
+</span><a href="#local-6989586621679307743"><span class="hs-identifier hs-var">aliasedQuery</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-108"></span><span>                        </span><span class="annot"><span class="annottext">(Builder, [PersistValue])
+-&gt; (Builder, [PersistValue]) -&gt; (Builder, [PersistValue])
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;\n&quot;</span></span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Builder -&gt; Builder
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">UnionKind -&gt; Builder
+</span><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#unUnionKind"><span class="hs-identifier hs-var">unUnionKind</span></a></span><span> </span><span class="annot"><span class="annottext">UnionKind
+</span><a href="#local-6989586621679307738"><span class="hs-identifier hs-var">unionKind</span></a></span><span class="hs-special">)</span><span>  </span><span class="annot"><span class="annottext">Builder -&gt; Builder -&gt; Builder
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;\n&quot;</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[PersistValue]
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">)</span><span>
+</span><span id="line-109"></span><span>                        </span><span class="annot"><span class="annottext">(Builder, [PersistValue])
+-&gt; (Builder, [PersistValue]) -&gt; (Builder, [PersistValue])
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Mode -&gt; IdentInfo -&gt; SqlQuery a -&gt; (Builder, [PersistValue])
+forall a r backend.
+(SqlSelect a r, BackendCompatible SqlBackend backend) =&gt;
+Mode
+-&gt; (backend, IdentState) -&gt; SqlQuery a -&gt; (Builder, [PersistValue])
+</span><a href="Database.Esqueleto.Internal.Internal.html#toRawSql"><span class="hs-identifier hs-var">toRawSql</span></a></span><span> </span><span class="annot"><span class="annottext">Mode
+</span><a href="Database.Esqueleto.Internal.Internal.html#SELECT"><span class="hs-identifier hs-var">SELECT</span></a></span><span> </span><span class="annot"><span class="annottext">IdentInfo
+</span><a href="#local-6989586621679307751"><span class="hs-identifier hs-var">info</span></a></span><span> </span><span class="annot"><span class="annottext">SqlQuery a
+</span><a href="#local-6989586621679307748"><span class="hs-identifier hs-var">recursiveQuery</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-110"></span><span>                 </span><span class="hs-special">)</span><span>
+</span><span id="line-111"></span><span>    </span><span class="annot"><span class="annottext">WriterT SideData (State IdentState) () -&gt; SqlQuery ()
+forall a. WriterT SideData (State IdentState) a -&gt; SqlQuery a
+</span><a href="Database.Esqueleto.Internal.Internal.html#Q"><span class="hs-identifier hs-var">Q</span></a></span><span> </span><span class="annot"><span class="annottext">(WriterT SideData (State IdentState) () -&gt; SqlQuery ())
+-&gt; WriterT SideData (State IdentState) () -&gt; SqlQuery ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">SideData -&gt; WriterT SideData (State IdentState) ()
+forall (m :: * -&gt; *) w. Monad m =&gt; w -&gt; WriterT w m ()
+</span><span class="hs-identifier hs-var">W.tell</span></span><span> </span><span class="annot"><span class="annottext">SideData
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">{</span><span class="annot"><a href="Database.Esqueleto.Internal.Internal.html#sdCteClause"><span class="hs-identifier hs-var">sdCteClause</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="#local-6989586621679307749"><span class="hs-identifier hs-type">clause</span></a></span><span class="hs-special">]</span><span class="hs-special">}</span><span>
+</span><span id="line-112"></span><span>    </span><span class="annot"><span class="annottext">From a -&gt; SqlQuery (From a)
+forall a. a -&gt; SqlQuery a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">From a
+</span><a href="#local-6989586621679307746"><span class="hs-identifier hs-var">refFrom</span></a></span><span>
+</span><span id="line-113"></span><span>
+</span><span id="line-114"></span><span class="hs-keyword">newtype</span><span> </span><span id="UnionKind"><span class="annot"><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#UnionKind"><span class="hs-identifier hs-var">UnionKind</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="UnionKind"><span class="annot"><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#UnionKind"><span class="hs-identifier hs-var">UnionKind</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unUnionKind"><span class="annot"><span class="annottext">UnionKind -&gt; Builder
+</span><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#unUnionKind"><span class="hs-identifier hs-var hs-var">unUnionKind</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">TLB.Builder</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-115"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.From.SqlSetOperation.html#Union_"><span class="hs-identifier hs-type">Union_</span></a></span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#UnionKind"><span class="hs-identifier hs-type">UnionKind</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-116"></span><span>    </span><span id="local-6989586621679307758"><span class="annot"><span class="annottext">union_ :: UnionKind
+</span><a href="#local-6989586621679307758"><span class="hs-identifier hs-var hs-var hs-var hs-var">union_</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; UnionKind
+</span><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#UnionKind"><span class="hs-identifier hs-var">UnionKind</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;UNION&quot;</span></span><span>
+</span><span id="line-117"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.From.SqlSetOperation.html#UnionAll_"><span class="hs-identifier hs-type">UnionAll_</span></a></span><span> </span><span class="annot"><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#UnionKind"><span class="hs-identifier hs-type">UnionKind</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-118"></span><span>    </span><span id="local-6989586621679307764"><span class="annot"><span class="annottext">unionAll_ :: UnionKind
+</span><a href="#local-6989586621679307764"><span class="hs-identifier hs-var hs-var hs-var hs-var">unionAll_</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; UnionKind
+</span><a href="Database.Esqueleto.Experimental.From.CommonTableExpression.html#UnionKind"><span class="hs-identifier hs-var">UnionKind</span></a></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;UNION ALL&quot;</span></span><span>
+</span><span id="line-119"></span></pre></body></html>

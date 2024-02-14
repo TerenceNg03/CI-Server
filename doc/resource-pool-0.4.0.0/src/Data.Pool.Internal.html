@@ -1,0 +1,1003 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-comment">-- | Internal implementation details for &quot;Data.Pool&quot;.</span><span>
+</span><span id="line-2"></span><span class="hs-comment">--</span><span>
+</span><span id="line-3"></span><span class="hs-comment">-- This module is intended for internal use only, and may change without warning</span><span>
+</span><span id="line-4"></span><span class="hs-comment">-- in subsequent releases.</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# OPTIONS_HADDOCK not-home #-}</span><span>
+</span><span id="line-6"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Data.Pool.Internal</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-7"></span><span>
+</span><span id="line-8"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Concurrent</span></span><span>
+</span><span id="line-9"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Exception</span></span><span>
+</span><span id="line-10"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad</span></span><span>
+</span><span id="line-11"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Hashable</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">hash</span></span><span class="hs-special">)</span><span>
+</span><span id="line-12"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.IORef</span></span><span>
+</span><span id="line-13"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Primitive.SmallArray</span></span><span>
+</span><span id="line-14"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">GHC.Clock</span></span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.List</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">L</span></span><span>
+</span><span id="line-16"></span><span>
+</span><span id="line-17"></span><span class="annot"><span class="hs-comment">-- | Striped resource pool based on &quot;Control.Concurrent.QSem&quot;.</span></span><span>
+</span><span id="line-18"></span><span class="hs-keyword">data</span><span> </span><span id="Pool"><span class="annot"><a href="Data.Pool.Internal.html#Pool"><span class="hs-identifier hs-var">Pool</span></a></span></span><span> </span><span id="local-6989586621679060768"><span class="annot"><a href="#local-6989586621679060768"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Pool"><span class="annot"><a href="Data.Pool.Internal.html#Pool"><span class="hs-identifier hs-var">Pool</span></a></span></span><span>
+</span><span id="line-19"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="poolConfig"><span class="annot"><span class="annottext">forall a. Pool a -&gt; PoolConfig a
+</span><a href="Data.Pool.Internal.html#poolConfig"><span class="hs-identifier hs-var hs-var">poolConfig</span></a></span></span><span>   </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#PoolConfig"><span class="hs-identifier hs-type">PoolConfig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060768"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-20"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="localPools"><span class="annot"><span class="annottext">forall a. Pool a -&gt; SmallArray (LocalPool a)
+</span><a href="Data.Pool.Internal.html#localPools"><span class="hs-identifier hs-var hs-var">localPools</span></a></span></span><span>   </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">SmallArray</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#LocalPool"><span class="hs-identifier hs-type">LocalPool</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060768"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-21"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="reaperRef"><span class="annot"><span class="annottext">forall a. Pool a -&gt; IORef ()
+</span><a href="Data.Pool.Internal.html#reaperRef"><span class="hs-identifier hs-var hs-var">reaperRef</span></a></span></span><span>    </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">IORef</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-22"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-23"></span><span>
+</span><span id="line-24"></span><span class="annot"><span class="hs-comment">-- | A single, local pool.</span></span><span>
+</span><span id="line-25"></span><span class="hs-keyword">data</span><span> </span><span id="LocalPool"><span class="annot"><a href="Data.Pool.Internal.html#LocalPool"><span class="hs-identifier hs-var">LocalPool</span></a></span></span><span> </span><span id="local-6989586621679060777"><span class="annot"><a href="#local-6989586621679060777"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="LocalPool"><span class="annot"><a href="Data.Pool.Internal.html#LocalPool"><span class="hs-identifier hs-var">LocalPool</span></a></span></span><span>
+</span><span id="line-26"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="stripeId"><span class="annot"><span class="annottext">forall a. LocalPool a -&gt; Int
+</span><a href="Data.Pool.Internal.html#stripeId"><span class="hs-identifier hs-var hs-var">stripeId</span></a></span></span><span>   </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-27"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="stripeVar"><span class="annot"><span class="annottext">forall a. LocalPool a -&gt; MVar (Stripe a)
+</span><a href="Data.Pool.Internal.html#stripeVar"><span class="hs-identifier hs-var hs-var">stripeVar</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-type">Stripe</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060777"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-28"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="cleanerRef"><span class="annot"><span class="annottext">forall a. LocalPool a -&gt; IORef ()
+</span><a href="Data.Pool.Internal.html#cleanerRef"><span class="hs-identifier hs-var hs-var">cleanerRef</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">IORef</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-29"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-30"></span><span>
+</span><span id="line-31"></span><span class="hs-comment">-- | Stripe of a resource pool. If @available@ is 0, the list of threads waiting</span><span>
+</span><span id="line-32"></span><span class="hs-comment">-- for a resource (each with an associated 'MVar') is @queue ++ reverse queueR@.</span><span>
+</span><span id="line-33"></span><span class="hs-keyword">data</span><span> </span><span id="Stripe"><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-var">Stripe</span></a></span></span><span> </span><span id="local-6989586621679060783"><span class="annot"><a href="#local-6989586621679060783"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Stripe"><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-var">Stripe</span></a></span></span><span>
+</span><span id="line-34"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="available"><span class="annot"><span class="annottext">forall a. Stripe a -&gt; Int
+</span><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var hs-var">available</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-35"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="cache"><span class="annot"><span class="annottext">forall a. Stripe a -&gt; [Entry a]
+</span><a href="Data.Pool.Internal.html#cache"><span class="hs-identifier hs-var hs-var">cache</span></a></span></span><span>     </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">[</span><span class="annot"><a href="Data.Pool.Internal.html#Entry"><span class="hs-identifier hs-type">Entry</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060783"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-36"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="queue"><span class="annot"><span class="annottext">forall a. Stripe a -&gt; Queue a
+</span><a href="Data.Pool.Internal.html#queue"><span class="hs-identifier hs-var hs-var">queue</span></a></span></span><span>     </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-type">Queue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060783"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-37"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="queueR"><span class="annot"><span class="annottext">forall a. Stripe a -&gt; Queue a
+</span><a href="Data.Pool.Internal.html#queueR"><span class="hs-identifier hs-var hs-var">queueR</span></a></span></span><span>    </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-type">Queue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060783"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-38"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-39"></span><span>
+</span><span id="line-40"></span><span class="annot"><span class="hs-comment">-- | An existing resource currently sitting in a pool.</span></span><span>
+</span><span id="line-41"></span><span class="hs-keyword">data</span><span> </span><span id="Entry"><span class="annot"><a href="Data.Pool.Internal.html#Entry"><span class="hs-identifier hs-var">Entry</span></a></span></span><span> </span><span id="local-6989586621679060790"><span class="annot"><a href="#local-6989586621679060790"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Entry"><span class="annot"><a href="Data.Pool.Internal.html#Entry"><span class="hs-identifier hs-var">Entry</span></a></span></span><span>
+</span><span id="line-42"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="entry"><span class="annot"><span class="annottext">forall a. Entry a -&gt; a
+</span><a href="Data.Pool.Internal.html#entry"><span class="hs-identifier hs-var hs-var">entry</span></a></span></span><span>    </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="#local-6989586621679060790"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-43"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="lastUsed"><span class="annot"><span class="annottext">forall a. Entry a -&gt; Double
+</span><a href="Data.Pool.Internal.html#lastUsed"><span class="hs-identifier hs-var hs-var">lastUsed</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Double</span></span><span>
+</span><span id="line-44"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-45"></span><span>
+</span><span id="line-46"></span><span class="hs-comment">-- | A queue of MVarS corresponding to threads waiting for resources.</span><span>
+</span><span id="line-47"></span><span class="hs-comment">--</span><span>
+</span><span id="line-48"></span><span class="hs-comment">-- Basically a monomorphic list to save two pointer indirections.</span><span>
+</span><span id="line-49"></span><span class="hs-keyword">data</span><span> </span><span id="Queue"><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-var">Queue</span></a></span></span><span> </span><span id="local-6989586621679060831"><span class="annot"><a href="#local-6989586621679060831"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Queue"><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-var">Queue</span></a></span></span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679060831"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-type">Queue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060831"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">|</span><span> </span><span id="Empty"><span class="annot"><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span></span><span>
+</span><span id="line-50"></span><span>
+</span><span id="line-51"></span><span class="annot"><span class="hs-comment">-- | Configuration of a 'Pool'.</span></span><span>
+</span><span id="line-52"></span><span class="hs-keyword">data</span><span> </span><span id="PoolConfig"><span class="annot"><a href="Data.Pool.Internal.html#PoolConfig"><span class="hs-identifier hs-var">PoolConfig</span></a></span></span><span> </span><span id="local-6989586621679060793"><span class="annot"><a href="#local-6989586621679060793"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="PoolConfig"><span class="annot"><a href="Data.Pool.Internal.html#PoolConfig"><span class="hs-identifier hs-var">PoolConfig</span></a></span></span><span>
+</span><span id="line-53"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="createResource"><span class="annot"><span class="annottext">forall a. PoolConfig a -&gt; IO a
+</span><a href="Data.Pool.Internal.html#createResource"><span class="hs-identifier hs-var hs-var">createResource</span></a></span></span><span>   </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="#local-6989586621679060793"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-54"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="freeResource"><span class="annot"><span class="annottext">forall a. PoolConfig a -&gt; a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#freeResource"><span class="hs-identifier hs-var hs-var">freeResource</span></a></span></span><span>     </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679060793"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-55"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="poolCacheTTL"><span class="annot"><span class="annottext">forall a. PoolConfig a -&gt; Double
+</span><a href="Data.Pool.Internal.html#poolCacheTTL"><span class="hs-identifier hs-var hs-var">poolCacheTTL</span></a></span></span><span>     </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Double</span></span><span>
+</span><span id="line-56"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="poolMaxResources"><span class="annot"><span class="annottext">forall a. PoolConfig a -&gt; Int
+</span><a href="Data.Pool.Internal.html#poolMaxResources"><span class="hs-identifier hs-var hs-var">poolMaxResources</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-57"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="poolNumStripes"><span class="annot"><span class="annottext">forall a. PoolConfig a -&gt; Maybe Int
+</span><a href="Data.Pool.Internal.html#poolNumStripes"><span class="hs-identifier hs-var hs-var">poolNumStripes</span></a></span></span><span>   </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span class="hs-special">)</span><span>
+</span><span id="line-58"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-59"></span><span>
+</span><span id="line-60"></span><span class="hs-comment">-- | Create a 'PoolConfig' with optional parameters having default values.</span><span>
+</span><span id="line-61"></span><span class="hs-comment">--</span><span>
+</span><span id="line-62"></span><span class="hs-comment">-- For setting optional parameters have a look at:</span><span>
+</span><span id="line-63"></span><span class="hs-comment">--</span><span>
+</span><span id="line-64"></span><span class="hs-comment">-- - 'setNumStripes'</span><span>
+</span><span id="line-65"></span><span class="hs-comment">--</span><span>
+</span><span id="line-66"></span><span class="hs-comment">-- @since 0.4.0.0</span><span>
+</span><span id="line-67"></span><span id="local-6989586621679060799"><span class="annot"><a href="Data.Pool.Internal.html#defaultPoolConfig"><span class="hs-identifier hs-type">defaultPoolConfig</span></a></span><span>
+</span><span id="line-68"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="#local-6989586621679060799"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-69"></span><span>  </span><span class="annot"><span class="hs-comment">-- ^ The action that creates a new resource.</span></span><span>
+</span><span id="line-70"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679060799"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-71"></span><span>  </span><span class="annot"><span class="hs-comment">-- ^ The action that destroys an existing resource.</span></span><span>
+</span><span id="line-72"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Double</span></span><span>
+</span><span id="line-73"></span><span>  </span><span class="hs-comment">-- ^ The amount of seconds for which an unused resource is kept around. The</span><span>
+</span><span id="line-74"></span><span>  </span><span class="hs-comment">-- smallest acceptable value is @0.5@.</span><span>
+</span><span id="line-75"></span><span>  </span><span class="hs-comment">--</span><span>
+</span><span id="line-76"></span><span>  </span><span class="hs-comment">-- /Note:/ the elapsed time before destroying a resource may be a little</span><span>
+</span><span id="line-77"></span><span>  </span><span class="hs-comment">-- longer than requested, as the collector thread wakes at 1-second intervals.</span><span>
+</span><span id="line-78"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-79"></span><span>  </span><span class="hs-comment">-- ^ The maximum number of resources to keep open __across all stripes__. The</span><span>
+</span><span id="line-80"></span><span>  </span><span class="hs-comment">-- smallest acceptable value is @1@.</span><span>
+</span><span id="line-81"></span><span>  </span><span class="hs-comment">--</span><span>
+</span><span id="line-82"></span><span>  </span><span class="hs-comment">-- /Note:/ for each stripe the number of resources is divided by the number of</span><span>
+</span><span id="line-83"></span><span>  </span><span class="hs-comment">-- stripes and rounded up, hence the pool might end up creating up to @N - 1@</span><span>
+</span><span id="line-84"></span><span>  </span><span class="hs-comment">-- resources more in total than specified, where @N@ is the number of stripes.</span><span>
+</span><span id="line-85"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#PoolConfig"><span class="hs-identifier hs-type">PoolConfig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060799"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-86"></span><span id="defaultPoolConfig"><span class="annot"><span class="annottext">defaultPoolConfig :: forall a. IO a -&gt; (a -&gt; IO ()) -&gt; Double -&gt; Int -&gt; PoolConfig a
+</span><a href="Data.Pool.Internal.html#defaultPoolConfig"><span class="hs-identifier hs-var hs-var">defaultPoolConfig</span></a></span></span><span> </span><span id="local-6989586621679060936"><span class="annot"><span class="annottext">IO a
+</span><a href="#local-6989586621679060936"><span class="hs-identifier hs-var">create</span></a></span></span><span> </span><span id="local-6989586621679060937"><span class="annot"><span class="annottext">a -&gt; IO ()
+</span><a href="#local-6989586621679060937"><span class="hs-identifier hs-var">free</span></a></span></span><span> </span><span id="local-6989586621679060938"><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679060938"><span class="hs-identifier hs-var">cacheTTL</span></a></span></span><span> </span><span id="local-6989586621679060939"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679060939"><span class="hs-identifier hs-var">maxResources</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#PoolConfig"><span class="hs-identifier hs-type">PoolConfig</span></a></span><span>
+</span><span id="line-87"></span><span>  </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">createResource :: IO a
+</span><a href="Data.Pool.Internal.html#createResource"><span class="hs-identifier hs-var">createResource</span></a></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO a
+</span><a href="#local-6989586621679060936"><span class="hs-identifier hs-var">create</span></a></span><span>
+</span><span id="line-88"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">freeResource :: a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#freeResource"><span class="hs-identifier hs-var">freeResource</span></a></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; IO ()
+</span><a href="#local-6989586621679060937"><span class="hs-identifier hs-var">free</span></a></span><span>
+</span><span id="line-89"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">poolCacheTTL :: Double
+</span><a href="Data.Pool.Internal.html#poolCacheTTL"><span class="hs-identifier hs-var">poolCacheTTL</span></a></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679060938"><span class="hs-identifier hs-var">cacheTTL</span></a></span><span>
+</span><span id="line-90"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">poolMaxResources :: Int
+</span><a href="Data.Pool.Internal.html#poolMaxResources"><span class="hs-identifier hs-var">poolMaxResources</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679060939"><span class="hs-identifier hs-var">maxResources</span></a></span><span>
+</span><span id="line-91"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">poolNumStripes :: Maybe Int
+</span><a href="Data.Pool.Internal.html#poolNumStripes"><span class="hs-identifier hs-var">poolNumStripes</span></a></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Maybe Int
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span>
+</span><span id="line-92"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-93"></span><span>
+</span><span id="line-94"></span><span class="hs-comment">-- | Set the number of stripes in the pool.</span><span>
+</span><span id="line-95"></span><span class="hs-comment">--</span><span>
+</span><span id="line-96"></span><span class="hs-comment">-- If set to 'Nothing' (the default value), the pool will create the amount of</span><span>
+</span><span id="line-97"></span><span class="hs-comment">-- stripes equal to the number of capabilities. This ensures that threads never</span><span>
+</span><span id="line-98"></span><span class="hs-comment">-- compete over access to the same stripe and results in a very good performance</span><span>
+</span><span id="line-99"></span><span class="hs-comment">-- in a multi-threaded environment.</span><span>
+</span><span id="line-100"></span><span class="hs-comment">--</span><span>
+</span><span id="line-101"></span><span class="hs-comment">-- @since 0.4.0.0</span><span>
+</span><span id="line-102"></span><span id="local-6989586621679060802"><span class="annot"><a href="Data.Pool.Internal.html#setNumStripes"><span class="hs-identifier hs-type">setNumStripes</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#PoolConfig"><span class="hs-identifier hs-type">PoolConfig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060802"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#PoolConfig"><span class="hs-identifier hs-type">PoolConfig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060802"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-103"></span><span id="setNumStripes"><span class="annot"><span class="annottext">setNumStripes :: forall a. Maybe Int -&gt; PoolConfig a -&gt; PoolConfig a
+</span><a href="Data.Pool.Internal.html#setNumStripes"><span class="hs-identifier hs-var hs-var">setNumStripes</span></a></span></span><span> </span><span id="local-6989586621679060940"><span class="annot"><span class="annottext">Maybe Int
+</span><a href="#local-6989586621679060940"><span class="hs-identifier hs-var">numStripes</span></a></span></span><span> </span><span id="local-6989586621679060941"><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679060941"><span class="hs-identifier hs-var">pc</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679060941"><span class="hs-identifier hs-var">pc</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#poolNumStripes"><span class="hs-identifier hs-var">poolNumStripes</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679060940"><span class="hs-identifier hs-type">numStripes</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-104"></span><span>
+</span><span id="line-105"></span><span class="hs-comment">-- | Create a new striped resource pool.</span><span>
+</span><span id="line-106"></span><span class="hs-comment">--</span><span>
+</span><span id="line-107"></span><span class="hs-comment">-- /Note:/ although the runtime system will destroy all idle resources when the</span><span>
+</span><span id="line-108"></span><span class="hs-comment">-- pool is garbage collected, it's recommended to manually call</span><span>
+</span><span id="line-109"></span><span class="hs-comment">-- 'destroyAllResources' when you're done with the pool so that the resources</span><span>
+</span><span id="line-110"></span><span class="hs-comment">-- are freed up as soon as possible.</span><span>
+</span><span id="line-111"></span><span id="local-6989586621679060804"><span class="annot"><a href="Data.Pool.Internal.html#newPool"><span class="hs-identifier hs-type">newPool</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#PoolConfig"><span class="hs-identifier hs-type">PoolConfig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060804"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Pool"><span class="hs-identifier hs-type">Pool</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060804"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-112"></span><span id="newPool"><span class="annot"><span class="annottext">newPool :: forall a. PoolConfig a -&gt; IO (Pool a)
+</span><a href="Data.Pool.Internal.html#newPool"><span class="hs-identifier hs-var hs-var">newPool</span></a></span></span><span> </span><span id="local-6989586621679061001"><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-113"></span><span>  </span><span class="annot"><span class="annottext">Bool -&gt; IO () -&gt; IO ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">PoolConfig a -&gt; Double
+forall a. PoolConfig a -&gt; Double
+</span><a href="Data.Pool.Internal.html#poolCacheTTL"><span class="hs-identifier hs-var">poolCacheTTL</span></a></span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span> </span><span class="annot"><span class="annottext">Double -&gt; Double -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span> </span><span class="annot"><span class="annottext">Double
+</span><span class="hs-number">0.5</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-114"></span><span>    </span><span class="annot"><span class="annottext">[Char] -&gt; IO ()
+forall a. HasCallStack =&gt; [Char] -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;poolCacheTTL must be at least 0.5&quot;</span></span><span>
+</span><span id="line-115"></span><span>  </span><span class="annot"><span class="annottext">Bool -&gt; IO () -&gt; IO ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">PoolConfig a -&gt; Int
+forall a. PoolConfig a -&gt; Int
+</span><a href="Data.Pool.Internal.html#poolMaxResources"><span class="hs-identifier hs-var">poolMaxResources</span></a></span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-116"></span><span>    </span><span class="annot"><span class="annottext">[Char] -&gt; IO ()
+forall a. HasCallStack =&gt; [Char] -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;poolMaxResources must be at least 1&quot;</span></span><span>
+</span><span id="line-117"></span><span>  </span><span id="local-6989586621679061005"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061005"><span class="hs-identifier hs-var">numStripes</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO Int -&gt; (Int -&gt; IO Int) -&gt; Maybe Int -&gt; IO Int
+forall b a. b -&gt; (a -&gt; b) -&gt; Maybe a -&gt; b
+</span><span class="hs-identifier hs-var">maybe</span></span><span> </span><span class="annot"><span class="annottext">IO Int
+</span><span class="hs-identifier hs-var">getNumCapabilities</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; IO Int
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">PoolConfig a -&gt; Maybe Int
+forall a. PoolConfig a -&gt; Maybe Int
+</span><a href="Data.Pool.Internal.html#poolNumStripes"><span class="hs-identifier hs-var">poolNumStripes</span></a></span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-118"></span><span>  </span><span class="annot"><span class="annottext">Bool -&gt; IO () -&gt; IO ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061005"><span class="hs-identifier hs-var">numStripes</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-119"></span><span>    </span><span class="annot"><span class="annottext">[Char] -&gt; IO ()
+forall a. HasCallStack =&gt; [Char] -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;numStripes must be at least 1&quot;</span></span><span>
+</span><span id="line-120"></span><span>  </span><span class="annot"><span class="annottext">Bool -&gt; IO () -&gt; IO ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">PoolConfig a -&gt; Int
+forall a. PoolConfig a -&gt; Int
+</span><a href="Data.Pool.Internal.html#poolMaxResources"><span class="hs-identifier hs-var">poolMaxResources</span></a></span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061005"><span class="hs-identifier hs-var">numStripes</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-121"></span><span>    </span><span class="annot"><span class="annottext">[Char] -&gt; IO ()
+forall a. HasCallStack =&gt; [Char] -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;poolMaxResources must not be smaller than numStripes&quot;</span></span><span>
+</span><span id="line-122"></span><span>  </span><span id="local-6989586621679061008"><span class="annot"><span class="annottext">SmallArray (LocalPool a)
+</span><a href="#local-6989586621679061008"><span class="hs-identifier hs-var">pools</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">([LocalPool a] -&gt; SmallArray (LocalPool a))
+-&gt; IO [LocalPool a] -&gt; IO (SmallArray (LocalPool a))
+forall a b. (a -&gt; b) -&gt; IO a -&gt; IO b
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int -&gt; [LocalPool a] -&gt; SmallArray (LocalPool a)
+forall a. Int -&gt; [a] -&gt; SmallArray a
+</span><span class="hs-identifier hs-var">smallArrayFromListN</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061005"><span class="hs-identifier hs-var">numStripes</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(IO [LocalPool a] -&gt; IO (SmallArray (LocalPool a)))
+-&gt; ((Int -&gt; IO (LocalPool a)) -&gt; IO [LocalPool a])
+-&gt; (Int -&gt; IO (LocalPool a))
+-&gt; IO (SmallArray (LocalPool a))
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Int] -&gt; (Int -&gt; IO (LocalPool a)) -&gt; IO [LocalPool a]
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Traversable t, Monad m) =&gt;
+t a -&gt; (a -&gt; m b) -&gt; m (t b)
+</span><span class="hs-identifier hs-var">forM</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-glyph">..</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061005"><span class="hs-identifier hs-var">numStripes</span></a></span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">((Int -&gt; IO (LocalPool a)) -&gt; IO (SmallArray (LocalPool a)))
+-&gt; (Int -&gt; IO (LocalPool a)) -&gt; IO (SmallArray (LocalPool a))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679061012"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061012"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-123"></span><span>    </span><span id="local-6989586621679061013"><span class="annot"><span class="annottext">IORef ()
+</span><a href="#local-6989586621679061013"><span class="hs-identifier hs-var">ref</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">() -&gt; IO (IORef ())
+forall a. a -&gt; IO (IORef a)
+</span><span class="hs-identifier hs-var">newIORef</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-124"></span><span>    </span><span id="local-6989586621679061015"><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061015"><span class="hs-identifier hs-var">stripe</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Stripe a -&gt; IO (MVar (Stripe a))
+forall a. a -&gt; IO (MVar a)
+</span><span class="hs-identifier hs-var">newMVar</span></span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-type">Stripe</span></a></span><span>
+</span><span id="line-125"></span><span>      </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">available :: Int
+</span><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var">available</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">PoolConfig a -&gt; Int
+forall a. PoolConfig a -&gt; Int
+</span><a href="Data.Pool.Internal.html#poolMaxResources"><span class="hs-identifier hs-var">poolMaxResources</span></a></span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+</span><a href="#local-6989586621679061017"><span class="hs-operator hs-var">`quotCeil`</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061005"><span class="hs-identifier hs-var">numStripes</span></a></span><span>
+</span><span id="line-126"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">cache :: [Entry a]
+</span><a href="Data.Pool.Internal.html#cache"><span class="hs-identifier hs-var">cache</span></a></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-127"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">queue :: Queue a
+</span><a href="Data.Pool.Internal.html#queue"><span class="hs-identifier hs-var">queue</span></a></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Queue a
+forall a. Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span>
+</span><span id="line-128"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">queueR :: Queue a
+</span><a href="Data.Pool.Internal.html#queueR"><span class="hs-identifier hs-var">queueR</span></a></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Queue a
+forall a. Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span>
+</span><span id="line-129"></span><span>      </span><span class="hs-special">}</span><span>
+</span><span id="line-130"></span><span>    </span><span class="hs-comment">-- When the local pool goes out of scope, free its resources.</span><span>
+</span><span id="line-131"></span><span>    </span><span class="annot"><span class="annottext">IO (Weak (IORef ())) -&gt; IO ()
+forall (f :: * -&gt; *) a. Functor f =&gt; f a -&gt; f ()
+</span><span class="hs-identifier hs-var">void</span></span><span> </span><span class="annot"><span class="annottext">(IO (Weak (IORef ())) -&gt; IO ())
+-&gt; (IO () -&gt; IO (Weak (IORef ()))) -&gt; IO () -&gt; IO ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">IORef () -&gt; IO () -&gt; IO (Weak (IORef ()))
+forall a. IORef a -&gt; IO () -&gt; IO (Weak (IORef a))
+</span><span class="hs-identifier hs-var">mkWeakIORef</span></span><span> </span><span class="annot"><span class="annottext">IORef ()
+</span><a href="#local-6989586621679061013"><span class="hs-identifier hs-var">ref</span></a></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">(Entry a -&gt; Bool) -&gt; (a -&gt; IO ()) -&gt; MVar (Stripe a) -&gt; IO ()
+forall a.
+(Entry a -&gt; Bool) -&gt; (a -&gt; IO ()) -&gt; MVar (Stripe a) -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#cleanStripe"><span class="hs-identifier hs-var">cleanStripe</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; Entry a -&gt; Bool
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">PoolConfig a -&gt; a -&gt; IO ()
+forall a. PoolConfig a -&gt; a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#freeResource"><span class="hs-identifier hs-var">freeResource</span></a></span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061015"><span class="hs-identifier hs-var">stripe</span></a></span><span>
+</span><span id="line-132"></span><span>    </span><span class="annot"><span class="annottext">LocalPool a -&gt; IO (LocalPool a)
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#LocalPool"><span class="hs-identifier hs-type">LocalPool</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">stripeId :: Int
+</span><a href="Data.Pool.Internal.html#stripeId"><span class="hs-identifier hs-var">stripeId</span></a></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061012"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-133"></span><span>                   </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">stripeVar :: MVar (Stripe a)
+</span><a href="Data.Pool.Internal.html#stripeVar"><span class="hs-identifier hs-var">stripeVar</span></a></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061015"><span class="hs-identifier hs-var">stripe</span></a></span><span>
+</span><span id="line-134"></span><span>                   </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">cleanerRef :: IORef ()
+</span><a href="Data.Pool.Internal.html#cleanerRef"><span class="hs-identifier hs-var">cleanerRef</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IORef ()
+</span><a href="#local-6989586621679061013"><span class="hs-identifier hs-var">ref</span></a></span><span>
+</span><span id="line-135"></span><span>                   </span><span class="hs-special">}</span><span>
+</span><span id="line-136"></span><span>  </span><span class="annot"><span class="annottext">IO (Pool a) -&gt; IO (Pool a)
+forall a. IO a -&gt; IO a
+</span><span class="hs-identifier hs-var">mask_</span></span><span> </span><span class="annot"><span class="annottext">(IO (Pool a) -&gt; IO (Pool a)) -&gt; IO (Pool a) -&gt; IO (Pool a)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-137"></span><span>    </span><span id="local-6989586621679061023"><span class="annot"><span class="annottext">IORef ()
+</span><a href="#local-6989586621679061023"><span class="hs-identifier hs-var">ref</span></a></span></span><span>        </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">() -&gt; IO (IORef ())
+forall a. a -&gt; IO (IORef a)
+</span><span class="hs-identifier hs-var">newIORef</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-138"></span><span>    </span><span id="local-6989586621679061024"><span class="annot"><span class="annottext">ThreadId
+</span><a href="#local-6989586621679061024"><span class="hs-identifier hs-var">collectorA</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">((forall a. IO a -&gt; IO a) -&gt; IO ()) -&gt; IO ThreadId
+</span><span class="hs-identifier hs-var">forkIOWithUnmask</span></span><span> </span><span class="annot"><span class="annottext">(((forall a. IO a -&gt; IO a) -&gt; IO ()) -&gt; IO ThreadId)
+-&gt; ((forall a. IO a -&gt; IO a) -&gt; IO ()) -&gt; IO ThreadId
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679061026"><span class="annot"><span class="annottext">forall a. IO a -&gt; IO a
+</span><a href="#local-6989586621679061026"><span class="hs-identifier hs-var">unmask</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">IO () -&gt; IO ()
+forall a. IO a -&gt; IO a
+</span><a href="#local-6989586621679061026"><span class="hs-identifier hs-var">unmask</span></a></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">SmallArray (LocalPool a) -&gt; IO ()
+forall {t :: * -&gt; *} {b}. Foldable t =&gt; t (LocalPool a) -&gt; IO b
+</span><a href="#local-6989586621679061027"><span class="hs-identifier hs-var">collector</span></a></span><span> </span><span class="annot"><span class="annottext">SmallArray (LocalPool a)
+</span><a href="#local-6989586621679061008"><span class="hs-identifier hs-var">pools</span></a></span><span>
+</span><span id="line-139"></span><span>    </span><span class="annot"><span class="annottext">IO (Weak (IORef ())) -&gt; IO ()
+forall (f :: * -&gt; *) a. Functor f =&gt; f a -&gt; f ()
+</span><span class="hs-identifier hs-var">void</span></span><span> </span><span class="annot"><span class="annottext">(IO (Weak (IORef ())) -&gt; IO ())
+-&gt; (IO () -&gt; IO (Weak (IORef ()))) -&gt; IO () -&gt; IO ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">IORef () -&gt; IO () -&gt; IO (Weak (IORef ()))
+forall a. IORef a -&gt; IO () -&gt; IO (Weak (IORef a))
+</span><span class="hs-identifier hs-var">mkWeakIORef</span></span><span> </span><span class="annot"><span class="annottext">IORef ()
+</span><a href="#local-6989586621679061023"><span class="hs-identifier hs-var">ref</span></a></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-140"></span><span>      </span><span class="hs-comment">-- When the pool goes out of scope, stop the collector. Resources existing</span><span>
+</span><span id="line-141"></span><span>      </span><span class="hs-comment">-- in stripes will be taken care by their cleaners.</span><span>
+</span><span id="line-142"></span><span>      </span><span class="annot"><span class="annottext">ThreadId -&gt; IO ()
+</span><span class="hs-identifier hs-var">killThread</span></span><span> </span><span class="annot"><span class="annottext">ThreadId
+</span><a href="#local-6989586621679061024"><span class="hs-identifier hs-var">collectorA</span></a></span><span>
+</span><span id="line-143"></span><span>    </span><span class="annot"><span class="annottext">Pool a -&gt; IO (Pool a)
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#Pool"><span class="hs-identifier hs-type">Pool</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">poolConfig :: PoolConfig a
+</span><a href="Data.Pool.Internal.html#poolConfig"><span class="hs-identifier hs-var">poolConfig</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span>
+</span><span id="line-144"></span><span>              </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">localPools :: SmallArray (LocalPool a)
+</span><a href="Data.Pool.Internal.html#localPools"><span class="hs-identifier hs-var">localPools</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">SmallArray (LocalPool a)
+</span><a href="#local-6989586621679061008"><span class="hs-identifier hs-var">pools</span></a></span><span>
+</span><span id="line-145"></span><span>              </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">reaperRef :: IORef ()
+</span><a href="Data.Pool.Internal.html#reaperRef"><span class="hs-identifier hs-var">reaperRef</span></a></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IORef ()
+</span><a href="#local-6989586621679061023"><span class="hs-identifier hs-var">ref</span></a></span><span>
+</span><span id="line-146"></span><span>              </span><span class="hs-special">}</span><span>
+</span><span id="line-147"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-148"></span><span>    </span><span class="annot"><a href="#local-6989586621679061017"><span class="hs-identifier hs-type">quotCeil</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-149"></span><span>    </span><span id="local-6989586621679061017"><span class="annot"><span class="annottext">quotCeil :: Int -&gt; Int -&gt; Int
+</span><a href="#local-6989586621679061017"><span class="hs-identifier hs-var hs-var">quotCeil</span></a></span></span><span> </span><span id="local-6989586621679061029"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061029"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span id="local-6989586621679061030"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061030"><span class="hs-identifier hs-var">y</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-150"></span><span>      </span><span class="hs-comment">-- Basically ceiling (x / y) without going through Double.</span><span>
+</span><span id="line-151"></span><span>      </span><span class="hs-keyword">let</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679061033"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061033"><span class="hs-identifier hs-var">z</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679061034"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061034"><span class="hs-identifier hs-var">r</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061029"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; (Int, Int)
+forall a. Integral a =&gt; a -&gt; a -&gt; (a, a)
+</span><span class="hs-operator hs-var">`quotRem`</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061030"><span class="hs-identifier hs-var">y</span></a></span><span> </span><span class="hs-keyword">in</span><span> </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061034"><span class="hs-identifier hs-var">r</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span> </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061033"><span class="hs-identifier hs-var">z</span></a></span><span> </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061033"><span class="hs-identifier hs-var">z</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span>
+</span><span id="line-152"></span><span>
+</span><span id="line-153"></span><span>    </span><span class="hs-comment">-- Collect stale resources from the pool once per second.</span><span>
+</span><span id="line-154"></span><span>    </span><span id="local-6989586621679061027"><span class="annot"><span class="annottext">collector :: t (LocalPool a) -&gt; IO b
+</span><a href="#local-6989586621679061027"><span class="hs-identifier hs-var hs-var">collector</span></a></span></span><span> </span><span id="local-6989586621679061043"><span class="annot"><span class="annottext">t (LocalPool a)
+</span><a href="#local-6989586621679061043"><span class="hs-identifier hs-var">pools</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO () -&gt; IO b
+forall (f :: * -&gt; *) a b. Applicative f =&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">forever</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO b) -&gt; IO () -&gt; IO b
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-155"></span><span>      </span><span class="annot"><span class="annottext">Int -&gt; IO ()
+</span><span class="hs-identifier hs-var">threadDelay</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1000000</span></span><span>
+</span><span id="line-156"></span><span>      </span><span id="local-6989586621679061046"><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679061046"><span class="hs-identifier hs-var">now</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO Double
+</span><span class="hs-identifier hs-var">getMonotonicTime</span></span><span>
+</span><span id="line-157"></span><span>      </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679061051"><span class="annot"><span class="annottext">isStale :: Entry a -&gt; Bool
+</span><a href="#local-6989586621679061051"><span class="hs-identifier hs-var hs-var">isStale</span></a></span></span><span> </span><span id="local-6989586621679061052"><span class="annot"><span class="annottext">Entry a
+</span><a href="#local-6989586621679061052"><span class="hs-identifier hs-var">e</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679061046"><span class="hs-identifier hs-var">now</span></a></span><span> </span><span class="annot"><span class="annottext">Double -&gt; Double -&gt; Double
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-glyph hs-var">-</span></span><span> </span><span class="annot"><span class="annottext">Entry a -&gt; Double
+forall a. Entry a -&gt; Double
+</span><a href="Data.Pool.Internal.html#lastUsed"><span class="hs-identifier hs-var">lastUsed</span></a></span><span> </span><span class="annot"><span class="annottext">Entry a
+</span><a href="#local-6989586621679061052"><span class="hs-identifier hs-var">e</span></a></span><span> </span><span class="annot"><span class="annottext">Double -&gt; Double -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&gt;</span></span><span> </span><span class="annot"><span class="annottext">PoolConfig a -&gt; Double
+forall a. PoolConfig a -&gt; Double
+</span><a href="Data.Pool.Internal.html#poolCacheTTL"><span class="hs-identifier hs-var">poolCacheTTL</span></a></span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span>
+</span><span id="line-158"></span><span>      </span><span class="annot"><span class="annottext">(LocalPool a -&gt; IO ()) -&gt; t (LocalPool a) -&gt; IO ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(Entry a -&gt; Bool) -&gt; (a -&gt; IO ()) -&gt; MVar (Stripe a) -&gt; IO ()
+forall a.
+(Entry a -&gt; Bool) -&gt; (a -&gt; IO ()) -&gt; MVar (Stripe a) -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#cleanStripe"><span class="hs-identifier hs-var">cleanStripe</span></a></span><span> </span><span class="annot"><span class="annottext">Entry a -&gt; Bool
+forall {a}. Entry a -&gt; Bool
+</span><a href="#local-6989586621679061051"><span class="hs-identifier hs-var">isStale</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">PoolConfig a -&gt; a -&gt; IO ()
+forall a. PoolConfig a -&gt; a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#freeResource"><span class="hs-identifier hs-var">freeResource</span></a></span><span> </span><span class="annot"><span class="annottext">PoolConfig a
+</span><a href="#local-6989586621679061001"><span class="hs-identifier hs-var">pc</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(MVar (Stripe a) -&gt; IO ())
+-&gt; (LocalPool a -&gt; MVar (Stripe a)) -&gt; LocalPool a -&gt; IO ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">LocalPool a -&gt; MVar (Stripe a)
+forall a. LocalPool a -&gt; MVar (Stripe a)
+</span><a href="Data.Pool.Internal.html#stripeVar"><span class="hs-identifier hs-var">stripeVar</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">t (LocalPool a)
+</span><a href="#local-6989586621679061043"><span class="hs-identifier hs-var">pools</span></a></span><span>
+</span><span id="line-159"></span><span>
+</span><span id="line-160"></span><span class="hs-comment">-- | Destroy a resource.</span><span>
+</span><span id="line-161"></span><span class="hs-comment">--</span><span>
+</span><span id="line-162"></span><span class="hs-comment">-- Note that this will ignore any exceptions in the destroy function.</span><span>
+</span><span id="line-163"></span><span id="local-6989586621679060854"><span class="annot"><a href="Data.Pool.Internal.html#destroyResource"><span class="hs-identifier hs-type">destroyResource</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#Pool"><span class="hs-identifier hs-type">Pool</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060854"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#LocalPool"><span class="hs-identifier hs-type">LocalPool</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060854"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679060854"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-164"></span><span id="destroyResource"><span class="annot"><span class="annottext">destroyResource :: forall a. Pool a -&gt; LocalPool a -&gt; a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#destroyResource"><span class="hs-identifier hs-var hs-var">destroyResource</span></a></span></span><span> </span><span id="local-6989586621679061062"><span class="annot"><span class="annottext">Pool a
+</span><a href="#local-6989586621679061062"><span class="hs-identifier hs-var">pool</span></a></span></span><span> </span><span id="local-6989586621679061063"><span class="annot"><span class="annottext">LocalPool a
+</span><a href="#local-6989586621679061063"><span class="hs-identifier hs-var">lp</span></a></span></span><span> </span><span id="local-6989586621679061064"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679061064"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-165"></span><span>  </span><span class="annot"><span class="annottext">IO () -&gt; IO ()
+forall a. IO a -&gt; IO a
+</span><span class="hs-identifier hs-var">uninterruptibleMask_</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span> </span><span class="hs-comment">-- Note [signal uninterruptible]</span><span>
+</span><span id="line-166"></span><span>    </span><span id="local-6989586621679061066"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061066"><span class="hs-identifier hs-var">stripe</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; IO (Stripe a)
+forall a. MVar a -&gt; IO a
+</span><span class="hs-identifier hs-var">takeMVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">LocalPool a -&gt; MVar (Stripe a)
+forall a. LocalPool a -&gt; MVar (Stripe a)
+</span><a href="Data.Pool.Internal.html#stripeVar"><span class="hs-identifier hs-var">stripeVar</span></a></span><span> </span><span class="annot"><span class="annottext">LocalPool a
+</span><a href="#local-6989586621679061063"><span class="hs-identifier hs-var">lp</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-167"></span><span>    </span><span id="local-6989586621679061068"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061068"><span class="hs-identifier hs-var">newStripe</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Stripe a -&gt; Maybe a -&gt; IO (Stripe a)
+forall a. Stripe a -&gt; Maybe a -&gt; IO (Stripe a)
+</span><a href="Data.Pool.Internal.html#signal"><span class="hs-identifier hs-var">signal</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061066"><span class="hs-identifier hs-var">stripe</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe a
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span>
+</span><span id="line-168"></span><span>    </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; Stripe a -&gt; IO ()
+forall a. MVar a -&gt; a -&gt; IO ()
+</span><span class="hs-identifier hs-var">putMVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">LocalPool a -&gt; MVar (Stripe a)
+forall a. LocalPool a -&gt; MVar (Stripe a)
+</span><a href="Data.Pool.Internal.html#stripeVar"><span class="hs-identifier hs-var">stripeVar</span></a></span><span> </span><span class="annot"><span class="annottext">LocalPool a
+</span><a href="#local-6989586621679061063"><span class="hs-identifier hs-var">lp</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061068"><span class="hs-identifier hs-var">newStripe</span></a></span><span>
+</span><span id="line-169"></span><span>    </span><span class="annot"><span class="annottext">IO (Either SomeException ()) -&gt; IO ()
+forall (f :: * -&gt; *) a. Functor f =&gt; f a -&gt; f ()
+</span><span class="hs-identifier hs-var">void</span></span><span> </span><span class="annot"><span class="annottext">(IO (Either SomeException ()) -&gt; IO ())
+-&gt; (IO () -&gt; IO (Either SomeException ())) -&gt; IO () -&gt; IO ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">forall e a. Exception e =&gt; IO a -&gt; IO (Either e a)
+</span><span class="hs-identifier hs-var">try</span></span><span> </span><span class="hs-glyph">@</span><span class="annot"><span class="hs-identifier hs-type">SomeException</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">PoolConfig a -&gt; a -&gt; IO ()
+forall a. PoolConfig a -&gt; a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#freeResource"><span class="hs-identifier hs-var">freeResource</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Pool a -&gt; PoolConfig a
+forall a. Pool a -&gt; PoolConfig a
+</span><a href="Data.Pool.Internal.html#poolConfig"><span class="hs-identifier hs-var">poolConfig</span></a></span><span> </span><span class="annot"><span class="annottext">Pool a
+</span><a href="#local-6989586621679061062"><span class="hs-identifier hs-var">pool</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679061064"><span class="hs-identifier hs-var">a</span></a></span><span>
+</span><span id="line-170"></span><span>
+</span><span id="line-171"></span><span class="annot"><span class="hs-comment">-- | Return a resource to the given 'LocalPool'.</span></span><span>
+</span><span id="line-172"></span><span id="local-6989586621679060863"><span class="annot"><a href="Data.Pool.Internal.html#putResource"><span class="hs-identifier hs-type">putResource</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#LocalPool"><span class="hs-identifier hs-type">LocalPool</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060863"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679060863"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-173"></span><span id="putResource"><span class="annot"><span class="annottext">putResource :: forall a. LocalPool a -&gt; a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#putResource"><span class="hs-identifier hs-var hs-var">putResource</span></a></span></span><span> </span><span id="local-6989586621679061075"><span class="annot"><span class="annottext">LocalPool a
+</span><a href="#local-6989586621679061075"><span class="hs-identifier hs-var">lp</span></a></span></span><span> </span><span id="local-6989586621679061076"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679061076"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-174"></span><span>  </span><span class="annot"><span class="annottext">IO () -&gt; IO ()
+forall a. IO a -&gt; IO a
+</span><span class="hs-identifier hs-var">uninterruptibleMask_</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span> </span><span class="hs-comment">-- Note [signal uninterruptible]</span><span>
+</span><span id="line-175"></span><span>    </span><span id="local-6989586621679061077"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061077"><span class="hs-identifier hs-var">stripe</span></a></span></span><span>    </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; IO (Stripe a)
+forall a. MVar a -&gt; IO a
+</span><span class="hs-identifier hs-var">takeMVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">LocalPool a -&gt; MVar (Stripe a)
+forall a. LocalPool a -&gt; MVar (Stripe a)
+</span><a href="Data.Pool.Internal.html#stripeVar"><span class="hs-identifier hs-var">stripeVar</span></a></span><span> </span><span class="annot"><span class="annottext">LocalPool a
+</span><a href="#local-6989586621679061075"><span class="hs-identifier hs-var">lp</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-176"></span><span>    </span><span id="local-6989586621679061078"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061078"><span class="hs-identifier hs-var">newStripe</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Stripe a -&gt; Maybe a -&gt; IO (Stripe a)
+forall a. Stripe a -&gt; Maybe a -&gt; IO (Stripe a)
+</span><a href="Data.Pool.Internal.html#signal"><span class="hs-identifier hs-var">signal</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061077"><span class="hs-identifier hs-var">stripe</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a -&gt; Maybe a
+forall a. a -&gt; Maybe a
+</span><span class="hs-identifier hs-var">Just</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679061076"><span class="hs-identifier hs-var">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-177"></span><span>    </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; Stripe a -&gt; IO ()
+forall a. MVar a -&gt; a -&gt; IO ()
+</span><span class="hs-identifier hs-var">putMVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">LocalPool a -&gt; MVar (Stripe a)
+forall a. LocalPool a -&gt; MVar (Stripe a)
+</span><a href="Data.Pool.Internal.html#stripeVar"><span class="hs-identifier hs-var">stripeVar</span></a></span><span> </span><span class="annot"><span class="annottext">LocalPool a
+</span><a href="#local-6989586621679061075"><span class="hs-identifier hs-var">lp</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061078"><span class="hs-identifier hs-var">newStripe</span></a></span><span>
+</span><span id="line-178"></span><span>
+</span><span id="line-179"></span><span class="hs-comment">-- | Destroy all resources in all stripes in the pool.</span><span>
+</span><span id="line-180"></span><span class="hs-comment">--</span><span>
+</span><span id="line-181"></span><span class="hs-comment">-- Note that this will ignore any exceptions in the destroy function.</span><span>
+</span><span id="line-182"></span><span class="hs-comment">--</span><span>
+</span><span id="line-183"></span><span class="hs-comment">-- This function is useful when you detect that all resources in the pool are</span><span>
+</span><span id="line-184"></span><span class="hs-comment">-- broken. For example after a database has been restarted all connections</span><span>
+</span><span id="line-185"></span><span class="hs-comment">-- opened before the restart will be broken. In that case it's better to close</span><span>
+</span><span id="line-186"></span><span class="hs-comment">-- those connections so that 'takeResource' won't take a broken connection from</span><span>
+</span><span id="line-187"></span><span class="hs-comment">-- the pool but will open a new connection instead.</span><span>
+</span><span id="line-188"></span><span class="hs-comment">--</span><span>
+</span><span id="line-189"></span><span class="hs-comment">-- Another use-case for this function is that when you know you are done with</span><span>
+</span><span id="line-190"></span><span class="hs-comment">-- the pool you can destroy all idle resources immediately instead of waiting on</span><span>
+</span><span id="line-191"></span><span class="hs-comment">-- the garbage collector to destroy them, thus freeing up those resources</span><span>
+</span><span id="line-192"></span><span class="hs-comment">-- sooner.</span><span>
+</span><span id="line-193"></span><span id="local-6989586621679060865"><span class="annot"><a href="Data.Pool.Internal.html#destroyAllResources"><span class="hs-identifier hs-type">destroyAllResources</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#Pool"><span class="hs-identifier hs-type">Pool</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060865"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-194"></span><span id="destroyAllResources"><span class="annot"><span class="annottext">destroyAllResources :: forall a. Pool a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#destroyAllResources"><span class="hs-identifier hs-var hs-var">destroyAllResources</span></a></span></span><span> </span><span id="local-6989586621679061081"><span class="annot"><span class="annottext">Pool a
+</span><a href="#local-6989586621679061081"><span class="hs-identifier hs-var">pool</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">SmallArray (LocalPool a) -&gt; (LocalPool a -&gt; IO ()) -&gt; IO ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+t a -&gt; (a -&gt; m b) -&gt; m ()
+</span><span class="hs-identifier hs-var">forM_</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Pool a -&gt; SmallArray (LocalPool a)
+forall a. Pool a -&gt; SmallArray (LocalPool a)
+</span><a href="Data.Pool.Internal.html#localPools"><span class="hs-identifier hs-var">localPools</span></a></span><span> </span><span class="annot"><span class="annottext">Pool a
+</span><a href="#local-6989586621679061081"><span class="hs-identifier hs-var">pool</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">((LocalPool a -&gt; IO ()) -&gt; IO ())
+-&gt; (LocalPool a -&gt; IO ()) -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679061083"><span class="annot"><span class="annottext">LocalPool a
+</span><a href="#local-6989586621679061083"><span class="hs-identifier hs-var">lp</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-195"></span><span>  </span><span class="annot"><span class="annottext">(Entry a -&gt; Bool) -&gt; (a -&gt; IO ()) -&gt; MVar (Stripe a) -&gt; IO ()
+forall a.
+(Entry a -&gt; Bool) -&gt; (a -&gt; IO ()) -&gt; MVar (Stripe a) -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#cleanStripe"><span class="hs-identifier hs-var">cleanStripe</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; Entry a -&gt; Bool
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">PoolConfig a -&gt; a -&gt; IO ()
+forall a. PoolConfig a -&gt; a -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#freeResource"><span class="hs-identifier hs-var">freeResource</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Pool a -&gt; PoolConfig a
+forall a. Pool a -&gt; PoolConfig a
+</span><a href="Data.Pool.Internal.html#poolConfig"><span class="hs-identifier hs-var">poolConfig</span></a></span><span> </span><span class="annot"><span class="annottext">Pool a
+</span><a href="#local-6989586621679061081"><span class="hs-identifier hs-var">pool</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">LocalPool a -&gt; MVar (Stripe a)
+forall a. LocalPool a -&gt; MVar (Stripe a)
+</span><a href="Data.Pool.Internal.html#stripeVar"><span class="hs-identifier hs-var">stripeVar</span></a></span><span> </span><span class="annot"><span class="annottext">LocalPool a
+</span><a href="#local-6989586621679061083"><span class="hs-identifier hs-var">lp</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-196"></span><span>
+</span><span id="line-197"></span><span class="hs-comment">----------------------------------------</span><span>
+</span><span id="line-198"></span><span class="hs-comment">-- Helpers</span><span>
+</span><span id="line-199"></span><span>
+</span><span id="line-200"></span><span class="annot"><span class="hs-comment">-- | Get a local pool.</span></span><span>
+</span><span id="line-201"></span><span id="local-6989586621679060871"><span class="annot"><a href="Data.Pool.Internal.html#getLocalPool"><span class="hs-identifier hs-type">getLocalPool</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">SmallArray</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#LocalPool"><span class="hs-identifier hs-type">LocalPool</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060871"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#LocalPool"><span class="hs-identifier hs-type">LocalPool</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060871"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-202"></span><span id="getLocalPool"><span class="annot"><span class="annottext">getLocalPool :: forall a. SmallArray (LocalPool a) -&gt; IO (LocalPool a)
+</span><a href="Data.Pool.Internal.html#getLocalPool"><span class="hs-identifier hs-var hs-var">getLocalPool</span></a></span></span><span> </span><span id="local-6989586621679061102"><span class="annot"><span class="annottext">SmallArray (LocalPool a)
+</span><a href="#local-6989586621679061102"><span class="hs-identifier hs-var">pools</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-203"></span><span>  </span><span id="local-6989586621679061103"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061103"><span class="hs-identifier hs-var">sid</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061104"><span class="hs-identifier hs-var">stripes</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span>
+</span><span id="line-204"></span><span>    </span><span class="hs-comment">-- If there is just one stripe, there is no choice.</span><span>
+</span><span id="line-205"></span><span>    </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Int -&gt; IO Int
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-206"></span><span>    </span><span class="hs-keyword">else</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-207"></span><span>      </span><span id="local-6989586621679061105"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061105"><span class="hs-identifier hs-var">capabilities</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO Int
+</span><span class="hs-identifier hs-var">getNumCapabilities</span></span><span>
+</span><span id="line-208"></span><span>      </span><span class="hs-comment">-- If the number of stripes is smaller than the number of capabilities and</span><span>
+</span><span id="line-209"></span><span>      </span><span class="hs-comment">-- doesn't divide it, selecting a stripe by a capability the current</span><span>
+</span><span id="line-210"></span><span>      </span><span class="hs-comment">-- thread runs on wouldn't give equal load distribution across all stripes</span><span>
+</span><span id="line-211"></span><span>      </span><span class="hs-comment">-- (e.g. if there are 2 stripes and 3 capabilities, stripe 0 would be used</span><span>
+</span><span id="line-212"></span><span>      </span><span class="hs-comment">-- by capability 0 and 2, while stripe 1 would only be used by capability</span><span>
+</span><span id="line-213"></span><span>      </span><span class="hs-comment">-- 1, a 100% load difference). In such case we select based on the id of a</span><span>
+</span><span id="line-214"></span><span>      </span><span class="hs-comment">-- thread.</span><span>
+</span><span id="line-215"></span><span>      </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061104"><span class="hs-identifier hs-var">stripes</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061105"><span class="hs-identifier hs-var">capabilities</span></a></span><span> </span><span class="annot"><span class="annottext">Bool -&gt; Bool -&gt; Bool
+</span><span class="hs-operator hs-var">&amp;&amp;</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061105"><span class="hs-identifier hs-var">capabilities</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Integral a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">`rem`</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061104"><span class="hs-identifier hs-var">stripes</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">/=</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-216"></span><span>        </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">ThreadId -&gt; Int
+forall a. Hashable a =&gt; a -&gt; Int
+</span><span class="hs-identifier hs-var">hash</span></span><span> </span><span class="annot"><span class="annottext">(ThreadId -&gt; Int) -&gt; IO ThreadId -&gt; IO Int
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">IO ThreadId
+</span><span class="hs-identifier hs-var">myThreadId</span></span><span>
+</span><span id="line-217"></span><span>        </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">((Int, Bool) -&gt; Int) -&gt; IO (Int, Bool) -&gt; IO Int
+forall a b. (a -&gt; b) -&gt; IO a -&gt; IO b
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="annot"><span class="annottext">(Int, Bool) -&gt; Int
+forall a b. (a, b) -&gt; a
+</span><span class="hs-identifier hs-var">fst</span></span><span> </span><span class="annot"><span class="annottext">(IO (Int, Bool) -&gt; IO Int)
+-&gt; (ThreadId -&gt; IO (Int, Bool)) -&gt; ThreadId -&gt; IO Int
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ThreadId -&gt; IO (Int, Bool)
+</span><span class="hs-identifier hs-var">threadCapability</span></span><span> </span><span class="annot"><span class="annottext">(ThreadId -&gt; IO Int) -&gt; IO ThreadId -&gt; IO Int
+forall (m :: * -&gt; *) a b. Monad m =&gt; (a -&gt; m b) -&gt; m a -&gt; m b
+</span><span class="hs-operator hs-var">=&lt;&lt;</span></span><span> </span><span class="annot"><span class="annottext">IO ThreadId
+</span><span class="hs-identifier hs-var">myThreadId</span></span><span>
+</span><span id="line-218"></span><span>  </span><span class="annot"><span class="annottext">LocalPool a -&gt; IO (LocalPool a)
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">(LocalPool a -&gt; IO (LocalPool a))
+-&gt; LocalPool a -&gt; IO (LocalPool a)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">SmallArray (LocalPool a)
+</span><a href="#local-6989586621679061102"><span class="hs-identifier hs-var">pools</span></a></span><span> </span><span class="annot"><span class="annottext">SmallArray (LocalPool a) -&gt; Int -&gt; LocalPool a
+forall a. SmallArray a -&gt; Int -&gt; a
+</span><span class="hs-operator hs-var">`indexSmallArray`</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061103"><span class="hs-identifier hs-var">sid</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Integral a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">`rem`</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679061104"><span class="hs-identifier hs-var">stripes</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-219"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-220"></span><span>    </span><span id="local-6989586621679061104"><span class="annot"><span class="annottext">stripes :: Int
+</span><a href="#local-6989586621679061104"><span class="hs-identifier hs-var hs-var">stripes</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">SmallArray (LocalPool a) -&gt; Int
+forall a. SmallArray a -&gt; Int
+</span><span class="hs-identifier hs-var">sizeofSmallArray</span></span><span> </span><span class="annot"><span class="annottext">SmallArray (LocalPool a)
+</span><a href="#local-6989586621679061102"><span class="hs-identifier hs-var">pools</span></a></span><span>
+</span><span id="line-221"></span><span>
+</span><span id="line-222"></span><span class="annot"><span class="hs-comment">-- | Wait for the resource to be put into a given 'MVar'.</span></span><span>
+</span><span id="line-223"></span><span id="local-6989586621679060885"><span class="annot"><a href="Data.Pool.Internal.html#waitForResource"><span class="hs-identifier hs-type">waitForResource</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-type">Stripe</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060885"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679060885"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679060885"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-224"></span><span id="waitForResource"><span class="annot"><span class="annottext">waitForResource :: forall a. MVar (Stripe a) -&gt; MVar (Maybe a) -&gt; IO (Maybe a)
+</span><a href="Data.Pool.Internal.html#waitForResource"><span class="hs-identifier hs-var hs-var">waitForResource</span></a></span></span><span> </span><span id="local-6989586621679061117"><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061117"><span class="hs-identifier hs-var">mstripe</span></a></span></span><span> </span><span id="local-6989586621679061118"><span class="annot"><span class="annottext">MVar (Maybe a)
+</span><a href="#local-6989586621679061118"><span class="hs-identifier hs-var">q</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">MVar (Maybe a) -&gt; IO (Maybe a)
+forall a. MVar a -&gt; IO a
+</span><span class="hs-identifier hs-var">takeMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Maybe a)
+</span><a href="#local-6989586621679061118"><span class="hs-identifier hs-var">q</span></a></span><span> </span><span class="annot"><span class="annottext">IO (Maybe a) -&gt; IO () -&gt; IO (Maybe a)
+forall a b. IO a -&gt; IO b -&gt; IO a
+</span><span class="hs-operator hs-var">`onException`</span></span><span> </span><span class="annot"><span class="annottext">IO ()
+</span><a href="#local-6989586621679061120"><span class="hs-identifier hs-var">cleanup</span></a></span><span>
+</span><span id="line-225"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-226"></span><span>    </span><span id="local-6989586621679061120"><span class="annot"><span class="annottext">cleanup :: IO ()
+</span><a href="#local-6989586621679061120"><span class="hs-identifier hs-var hs-var">cleanup</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO () -&gt; IO ()
+forall a. IO a -&gt; IO a
+</span><span class="hs-identifier hs-var">uninterruptibleMask_</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span> </span><span class="hs-comment">-- Note [signal uninterruptible]</span><span>
+</span><span id="line-227"></span><span>      </span><span id="local-6989586621679061128"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061128"><span class="hs-identifier hs-var">stripe</span></a></span></span><span>    </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; IO (Stripe a)
+forall a. MVar a -&gt; IO a
+</span><span class="hs-identifier hs-var">takeMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061117"><span class="hs-identifier hs-var">mstripe</span></a></span><span>
+</span><span id="line-228"></span><span>      </span><span id="local-6989586621679061129"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061129"><span class="hs-identifier hs-var">newStripe</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">MVar (Maybe a) -&gt; IO (Maybe (Maybe a))
+forall a. MVar a -&gt; IO (Maybe a)
+</span><span class="hs-identifier hs-var">tryTakeMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Maybe a)
+</span><a href="#local-6989586621679061118"><span class="hs-identifier hs-var">q</span></a></span><span> </span><span class="annot"><span class="annottext">IO (Maybe (Maybe a))
+-&gt; (Maybe (Maybe a) -&gt; IO (Stripe a)) -&gt; IO (Stripe a)
+forall a b. IO a -&gt; (a -&gt; IO b) -&gt; IO b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-229"></span><span>        </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span id="local-6989586621679061131"><span class="annot"><span class="annottext">Maybe a
+</span><a href="#local-6989586621679061131"><span class="hs-identifier hs-var">ma</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-230"></span><span>          </span><span class="hs-comment">-- Between entering the exception handler and taking ownership of</span><span>
+</span><span id="line-231"></span><span>          </span><span class="hs-comment">-- the stripe we got the resource we wanted. We don't need it</span><span>
+</span><span id="line-232"></span><span>          </span><span class="hs-comment">-- anymore though, so pass it to someone else.</span><span>
+</span><span id="line-233"></span><span>          </span><span class="annot"><span class="annottext">Stripe a -&gt; Maybe a -&gt; IO (Stripe a)
+forall a. Stripe a -&gt; Maybe a -&gt; IO (Stripe a)
+</span><a href="Data.Pool.Internal.html#signal"><span class="hs-identifier hs-var">signal</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061128"><span class="hs-identifier hs-var">stripe</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe a
+</span><a href="#local-6989586621679061131"><span class="hs-identifier hs-var">ma</span></a></span><span>
+</span><span id="line-234"></span><span>        </span><span class="annot"><span class="annottext">Maybe (Maybe a)
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-235"></span><span>          </span><span class="hs-comment">-- If we're still waiting, fill up the MVar with an undefined value</span><span>
+</span><span id="line-236"></span><span>          </span><span class="hs-comment">-- so that 'signal' can discard our MVar from the queue.</span><span>
+</span><span id="line-237"></span><span>          </span><span class="annot"><span class="annottext">MVar (Maybe a) -&gt; Maybe a -&gt; IO ()
+forall a. MVar a -&gt; a -&gt; IO ()
+</span><span class="hs-identifier hs-var">putMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Maybe a)
+</span><a href="#local-6989586621679061118"><span class="hs-identifier hs-var">q</span></a></span><span> </span><span class="annot"><span class="annottext">(Maybe a -&gt; IO ()) -&gt; Maybe a -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Maybe a
+forall a. HasCallStack =&gt; [Char] -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;unreachable&quot;</span></span><span>
+</span><span id="line-238"></span><span>          </span><span class="annot"><span class="annottext">Stripe a -&gt; IO (Stripe a)
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061128"><span class="hs-identifier hs-var">stripe</span></a></span><span>
+</span><span id="line-239"></span><span>      </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; Stripe a -&gt; IO ()
+forall a. MVar a -&gt; a -&gt; IO ()
+</span><span class="hs-identifier hs-var">putMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061117"><span class="hs-identifier hs-var">mstripe</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061129"><span class="hs-identifier hs-var">newStripe</span></a></span><span>
+</span><span id="line-240"></span><span>
+</span><span id="line-241"></span><span class="hs-comment">-- | If an exception is received while a resource is being created, restore the</span><span>
+</span><span id="line-242"></span><span class="hs-comment">-- original size of the stripe.</span><span>
+</span><span id="line-243"></span><span id="local-6989586621679060893"><span class="annot"><a href="Data.Pool.Internal.html#restoreSize"><span class="hs-identifier hs-type">restoreSize</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-type">Stripe</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060893"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-244"></span><span id="restoreSize"><span class="annot"><span class="annottext">restoreSize :: forall a. MVar (Stripe a) -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#restoreSize"><span class="hs-identifier hs-var hs-var">restoreSize</span></a></span></span><span> </span><span id="local-6989586621679061136"><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061136"><span class="hs-identifier hs-var">mstripe</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO () -&gt; IO ()
+forall a. IO a -&gt; IO a
+</span><span class="hs-identifier hs-var">uninterruptibleMask_</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ()) -&gt; IO () -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-245"></span><span>  </span><span class="hs-comment">-- 'uninterruptibleMask_' is used since 'takeMVar' might block.</span><span>
+</span><span id="line-246"></span><span>  </span><span id="local-6989586621679061137"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061137"><span class="hs-identifier hs-var">stripe</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; IO (Stripe a)
+forall a. MVar a -&gt; IO a
+</span><span class="hs-identifier hs-var">takeMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061136"><span class="hs-identifier hs-var">mstripe</span></a></span><span>
+</span><span id="line-247"></span><span>  </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; Stripe a -&gt; IO ()
+forall a. MVar a -&gt; a -&gt; IO ()
+</span><span class="hs-identifier hs-var">putMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061136"><span class="hs-identifier hs-var">mstripe</span></a></span><span> </span><span class="annot"><span class="annottext">(Stripe a -&gt; IO ()) -&gt; Stripe a -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$!</span></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061137"><span class="hs-identifier hs-var">stripe</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var">available</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var">available</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679061137"><span class="hs-identifier hs-type">stripe</span></a></span><span> </span><span class="annot"><span class="hs-operator hs-type">+</span></span><span> </span><span class="annot"><span class="hs-number">1</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-248"></span><span>
+</span><span id="line-249"></span><span class="annot"><span class="hs-comment">-- | Free resource entries in the stripes that fulfil a given condition.</span></span><span>
+</span><span id="line-250"></span><span id="local-6989586621679060836"><span class="annot"><a href="Data.Pool.Internal.html#cleanStripe"><span class="hs-identifier hs-type">cleanStripe</span></a></span><span>
+</span><span id="line-251"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Entry"><span class="hs-identifier hs-type">Entry</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060836"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span class="hs-special">)</span><span>
+</span><span id="line-252"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679060836"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-253"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-type">Stripe</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060836"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-254"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-255"></span><span id="cleanStripe"><span class="annot"><span class="annottext">cleanStripe :: forall a.
+(Entry a -&gt; Bool) -&gt; (a -&gt; IO ()) -&gt; MVar (Stripe a) -&gt; IO ()
+</span><a href="Data.Pool.Internal.html#cleanStripe"><span class="hs-identifier hs-var hs-var">cleanStripe</span></a></span></span><span> </span><span id="local-6989586621679061145"><span class="annot"><span class="annottext">Entry a -&gt; Bool
+</span><a href="#local-6989586621679061145"><span class="hs-identifier hs-var">isStale</span></a></span></span><span> </span><span id="local-6989586621679061146"><span class="annot"><span class="annottext">a -&gt; IO ()
+</span><a href="#local-6989586621679061146"><span class="hs-identifier hs-var">free</span></a></span></span><span> </span><span id="local-6989586621679061147"><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061147"><span class="hs-identifier hs-var">mstripe</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">((forall a. IO a -&gt; IO a) -&gt; IO ()) -&gt; IO ()
+forall b. ((forall a. IO a -&gt; IO a) -&gt; IO b) -&gt; IO b
+</span><span class="hs-identifier hs-var">mask</span></span><span> </span><span class="annot"><span class="annottext">(((forall a. IO a -&gt; IO a) -&gt; IO ()) -&gt; IO ())
+-&gt; ((forall a. IO a -&gt; IO a) -&gt; IO ()) -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679061149"><span class="annot"><span class="annottext">forall a. IO a -&gt; IO a
+</span><a href="#local-6989586621679061149"><span class="hs-identifier hs-var">unmask</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-256"></span><span>  </span><span class="hs-comment">-- Asynchronous exceptions need to be masked here to prevent leaking of</span><span>
+</span><span id="line-257"></span><span>  </span><span class="hs-comment">-- 'stale' resources before they're freed.</span><span>
+</span><span id="line-258"></span><span>  </span><span id="local-6989586621679061150"><span class="annot"><span class="annottext">[a]
+</span><a href="#local-6989586621679061150"><span class="hs-identifier hs-var">stale</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a) -&gt; (Stripe a -&gt; IO (Stripe a, [a])) -&gt; IO [a]
+forall a b. MVar a -&gt; (a -&gt; IO (a, b)) -&gt; IO b
+</span><span class="hs-identifier hs-var">modifyMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Stripe a)
+</span><a href="#local-6989586621679061147"><span class="hs-identifier hs-var">mstripe</span></a></span><span> </span><span class="annot"><span class="annottext">((Stripe a -&gt; IO (Stripe a, [a])) -&gt; IO [a])
+-&gt; (Stripe a -&gt; IO (Stripe a, [a])) -&gt; IO [a]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679061152"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061152"><span class="hs-identifier hs-var">stripe</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">IO (Stripe a, [a]) -&gt; IO (Stripe a, [a])
+forall a. IO a -&gt; IO a
+</span><a href="#local-6989586621679061149"><span class="hs-identifier hs-var">unmask</span></a></span><span> </span><span class="annot"><span class="annottext">(IO (Stripe a, [a]) -&gt; IO (Stripe a, [a]))
+-&gt; IO (Stripe a, [a]) -&gt; IO (Stripe a, [a])
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-259"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679061153"><span class="annot"><span class="annottext">[Entry a]
+</span><a href="#local-6989586621679061153"><span class="hs-identifier hs-var">stale</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679061154"><span class="annot"><span class="annottext">[Entry a]
+</span><a href="#local-6989586621679061154"><span class="hs-identifier hs-var">fresh</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Entry a -&gt; Bool) -&gt; [Entry a] -&gt; ([Entry a], [Entry a])
+forall a. (a -&gt; Bool) -&gt; [a] -&gt; ([a], [a])
+</span><span class="hs-identifier hs-var">L.partition</span></span><span> </span><span class="annot"><span class="annottext">Entry a -&gt; Bool
+</span><a href="#local-6989586621679061145"><span class="hs-identifier hs-var">isStale</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Stripe a -&gt; [Entry a]
+forall a. Stripe a -&gt; [Entry a]
+</span><a href="Data.Pool.Internal.html#cache"><span class="hs-identifier hs-var">cache</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061152"><span class="hs-identifier hs-var">stripe</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-260"></span><span>        </span><span class="hs-comment">-- There's no need to update 'available' here because it only tracks</span><span>
+</span><span id="line-261"></span><span>        </span><span class="hs-comment">-- the number of resources taken from the pool.</span><span>
+</span><span id="line-262"></span><span>        </span><span id="local-6989586621679061156"><span class="annot"><span class="annottext">newStripe :: Stripe a
+</span><a href="#local-6989586621679061156"><span class="hs-identifier hs-var hs-var">newStripe</span></a></span></span><span>      </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061152"><span class="hs-identifier hs-var">stripe</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#cache"><span class="hs-identifier hs-var">cache</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679061154"><span class="hs-identifier hs-type">fresh</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-263"></span><span>    </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061156"><span class="hs-identifier hs-var">newStripe</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a -&gt; IO (Stripe a, [a]) -&gt; IO (Stripe a, [a])
+forall a b. a -&gt; b -&gt; b
+</span><span class="hs-operator hs-var">`seq`</span></span><span> </span><span class="annot"><span class="annottext">(Stripe a, [a]) -&gt; IO (Stripe a, [a])
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061156"><span class="hs-identifier hs-var">newStripe</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">(Entry a -&gt; a) -&gt; [Entry a] -&gt; [a]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">Entry a -&gt; a
+forall a. Entry a -&gt; a
+</span><a href="Data.Pool.Internal.html#entry"><span class="hs-identifier hs-var">entry</span></a></span><span> </span><span class="annot"><span class="annottext">[Entry a]
+</span><a href="#local-6989586621679061153"><span class="hs-identifier hs-var">stale</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-264"></span><span>  </span><span class="hs-comment">-- We need to ignore exceptions in the 'free' function, otherwise if an</span><span>
+</span><span id="line-265"></span><span>  </span><span class="hs-comment">-- exception is thrown half-way, we leak the rest of the resources. Also,</span><span>
+</span><span id="line-266"></span><span>  </span><span class="hs-comment">-- asynchronous exceptions need to be hard masked here since freeing a</span><span>
+</span><span id="line-267"></span><span>  </span><span class="hs-comment">-- resource might in theory block.</span><span>
+</span><span id="line-268"></span><span>  </span><span class="annot"><span class="annottext">IO () -&gt; IO ()
+forall a. IO a -&gt; IO a
+</span><span class="hs-identifier hs-var">uninterruptibleMask_</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO ())
+-&gt; ((a -&gt; IO (Either SomeException ())) -&gt; IO ())
+-&gt; (a -&gt; IO (Either SomeException ()))
+-&gt; IO ()
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[a] -&gt; (a -&gt; IO (Either SomeException ())) -&gt; IO ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+t a -&gt; (a -&gt; m b) -&gt; m ()
+</span><span class="hs-identifier hs-var">forM_</span></span><span> </span><span class="annot"><span class="annottext">[a]
+</span><a href="#local-6989586621679061150"><span class="hs-identifier hs-var">stale</span></a></span><span> </span><span class="annot"><span class="annottext">((a -&gt; IO (Either SomeException ())) -&gt; IO ())
+-&gt; (a -&gt; IO (Either SomeException ())) -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">forall e a. Exception e =&gt; IO a -&gt; IO (Either e a)
+</span><span class="hs-identifier hs-var">try</span></span><span> </span><span class="hs-glyph">@</span><span class="annot"><span class="hs-identifier hs-type">SomeException</span></span><span> </span><span class="annot"><span class="annottext">(IO () -&gt; IO (Either SomeException ()))
+-&gt; (a -&gt; IO ()) -&gt; a -&gt; IO (Either SomeException ())
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; IO ()
+</span><a href="#local-6989586621679061146"><span class="hs-identifier hs-var">free</span></a></span><span>
+</span><span id="line-269"></span><span>
+</span><span id="line-270"></span><span class="hs-comment">-- Note [signal uninterruptible]</span><span>
+</span><span id="line-271"></span><span class="hs-comment">--</span><span>
+</span><span id="line-272"></span><span class="hs-comment">--   If we have</span><span>
+</span><span id="line-273"></span><span class="hs-comment">--</span><span>
+</span><span id="line-274"></span><span class="hs-comment">--      bracket takeResource putResource (...)</span><span>
+</span><span id="line-275"></span><span class="hs-comment">--</span><span>
+</span><span id="line-276"></span><span class="hs-comment">--   and an exception arrives at the putResource, then we must not lose the</span><span>
+</span><span id="line-277"></span><span class="hs-comment">--   resource. The putResource is masked by bracket, but taking the MVar might</span><span>
+</span><span id="line-278"></span><span class="hs-comment">--   block, and so it would be interruptible. Hence we need an uninterruptible</span><span>
+</span><span id="line-279"></span><span class="hs-comment">--   variant of mask here.</span><span>
+</span><span id="line-280"></span><span id="local-6989586621679060859"><span class="annot"><a href="Data.Pool.Internal.html#signal"><span class="hs-identifier hs-type">signal</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-type">Stripe</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060859"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679060859"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-type">Stripe</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060859"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-281"></span><span id="signal"><span class="annot"><span class="annottext">signal :: forall a. Stripe a -&gt; Maybe a -&gt; IO (Stripe a)
+</span><a href="Data.Pool.Internal.html#signal"><span class="hs-identifier hs-var hs-var">signal</span></a></span></span><span> </span><span id="local-6989586621679061166"><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061166"><span class="hs-identifier hs-var">stripe</span></a></span></span><span> </span><span id="local-6989586621679061167"><span class="annot"><span class="annottext">Maybe a
+</span><a href="#local-6989586621679061167"><span class="hs-identifier hs-var">ma</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Stripe a -&gt; Int
+forall a. Stripe a -&gt; Int
+</span><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var">available</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061166"><span class="hs-identifier hs-var">stripe</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-282"></span><span>  </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Queue a -&gt; Queue a -&gt; IO (Stripe a)
+</span><a href="#local-6989586621679061168"><span class="hs-identifier hs-var">loop</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Stripe a -&gt; Queue a
+forall a. Stripe a -&gt; Queue a
+</span><a href="Data.Pool.Internal.html#queue"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061166"><span class="hs-identifier hs-var">stripe</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Stripe a -&gt; Queue a
+forall a. Stripe a -&gt; Queue a
+</span><a href="Data.Pool.Internal.html#queueR"><span class="hs-identifier hs-var">queueR</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061166"><span class="hs-identifier hs-var">stripe</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-283"></span><span>  </span><span class="hs-keyword">else</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-284"></span><span>    </span><span id="local-6989586621679061169"><span class="annot"><span class="annottext">[Entry a]
+</span><a href="#local-6989586621679061169"><span class="hs-identifier hs-var">newCache</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Maybe a
+</span><a href="#local-6989586621679061167"><span class="hs-identifier hs-var">ma</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-285"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span id="local-6989586621679061170"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679061170"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-286"></span><span>        </span><span id="local-6989586621679061171"><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679061171"><span class="hs-identifier hs-var">now</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO Double
+</span><span class="hs-identifier hs-var">getMonotonicTime</span></span><span>
+</span><span id="line-287"></span><span>        </span><span class="annot"><span class="annottext">[Entry a] -&gt; IO [Entry a]
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">([Entry a] -&gt; IO [Entry a]) -&gt; [Entry a] -&gt; IO [Entry a]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; Double -&gt; Entry a
+forall a. a -&gt; Double -&gt; Entry a
+</span><a href="Data.Pool.Internal.html#Entry"><span class="hs-identifier hs-var">Entry</span></a></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679061170"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679061171"><span class="hs-identifier hs-var">now</span></a></span><span> </span><span class="annot"><span class="annottext">Entry a -&gt; [Entry a] -&gt; [Entry a]
+forall a. a -&gt; [a] -&gt; [a]
+</span><span class="hs-glyph hs-var">:</span></span><span> </span><span class="annot"><span class="annottext">Stripe a -&gt; [Entry a]
+forall a. Stripe a -&gt; [Entry a]
+</span><a href="Data.Pool.Internal.html#cache"><span class="hs-identifier hs-var">cache</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061166"><span class="hs-identifier hs-var">stripe</span></a></span><span>
+</span><span id="line-288"></span><span>      </span><span class="annot"><span class="annottext">Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Entry a] -&gt; IO [Entry a]
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">([Entry a] -&gt; IO [Entry a]) -&gt; [Entry a] -&gt; IO [Entry a]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Stripe a -&gt; [Entry a]
+forall a. Stripe a -&gt; [Entry a]
+</span><a href="Data.Pool.Internal.html#cache"><span class="hs-identifier hs-var">cache</span></a></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061166"><span class="hs-identifier hs-var">stripe</span></a></span><span>
+</span><span id="line-289"></span><span>    </span><span class="annot"><span class="annottext">Stripe a -&gt; IO (Stripe a)
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">(Stripe a -&gt; IO (Stripe a)) -&gt; Stripe a -&gt; IO (Stripe a)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$!</span></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061166"><span class="hs-identifier hs-var">stripe</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var">available</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var">available</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679061166"><span class="hs-identifier hs-type">stripe</span></a></span><span> </span><span class="annot"><span class="hs-operator hs-type">+</span></span><span> </span><span class="annot"><span class="hs-number">1</span></span><span>
+</span><span id="line-290"></span><span>                   </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#cache"><span class="hs-identifier hs-var">cache</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679061169"><span class="hs-identifier hs-type">newCache</span></a></span><span>
+</span><span id="line-291"></span><span>                   </span><span class="hs-special">}</span><span>
+</span><span id="line-292"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-293"></span><span>    </span><span id="local-6989586621679061168"><span class="annot"><span class="annottext">loop :: Queue a -&gt; Queue a -&gt; IO (Stripe a)
+</span><a href="#local-6989586621679061168"><span class="hs-identifier hs-var hs-var">loop</span></a></span></span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-294"></span><span>      </span><span id="local-6989586621679061179"><span class="annot"><span class="annottext">[Entry a]
+</span><a href="#local-6989586621679061179"><span class="hs-identifier hs-var">newCache</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Maybe a
+</span><a href="#local-6989586621679061167"><span class="hs-identifier hs-var">ma</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-295"></span><span>        </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span id="local-6989586621679061180"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679061180"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-296"></span><span>          </span><span id="local-6989586621679061181"><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679061181"><span class="hs-identifier hs-var">now</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO Double
+</span><span class="hs-identifier hs-var">getMonotonicTime</span></span><span>
+</span><span id="line-297"></span><span>          </span><span class="annot"><span class="annottext">[Entry a] -&gt; IO [Entry a]
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">a -&gt; Double -&gt; Entry a
+forall a. a -&gt; Double -&gt; Entry a
+</span><a href="Data.Pool.Internal.html#Entry"><span class="hs-identifier hs-var">Entry</span></a></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679061180"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679061181"><span class="hs-identifier hs-var">now</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-298"></span><span>        </span><span class="annot"><span class="annottext">Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Entry a] -&gt; IO [Entry a]
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-299"></span><span>      </span><span class="annot"><span class="annottext">Stripe a -&gt; IO (Stripe a)
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">(Stripe a -&gt; IO (Stripe a)) -&gt; Stripe a -&gt; IO (Stripe a)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$!</span></span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#Stripe"><span class="hs-identifier hs-type">Stripe</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">available :: Int
+</span><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var">available</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span>
+</span><span id="line-300"></span><span>                     </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">cache :: [Entry a]
+</span><a href="Data.Pool.Internal.html#cache"><span class="hs-identifier hs-var">cache</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[Entry a]
+</span><a href="#local-6989586621679061179"><span class="hs-identifier hs-var">newCache</span></a></span><span>
+</span><span id="line-301"></span><span>                     </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">queue :: Queue a
+</span><a href="Data.Pool.Internal.html#queue"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Queue a
+forall a. Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span>
+</span><span id="line-302"></span><span>                     </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">queueR :: Queue a
+</span><a href="Data.Pool.Internal.html#queueR"><span class="hs-identifier hs-var">queueR</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Queue a
+forall a. Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span>
+</span><span id="line-303"></span><span>                     </span><span class="hs-special">}</span><span>
+</span><span id="line-304"></span><span>    </span><span class="annot"><a href="#local-6989586621679061168"><span class="hs-identifier hs-var">loop</span></a></span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span>        </span><span id="local-6989586621679061182"><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061182"><span class="hs-identifier hs-var">qR</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Queue a -&gt; Queue a -&gt; IO (Stripe a)
+</span><a href="#local-6989586621679061168"><span class="hs-identifier hs-var">loop</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Queue a -&gt; Queue a
+forall a. Queue a -&gt; Queue a
+</span><a href="Data.Pool.Internal.html#reverseQueue"><span class="hs-identifier hs-var">reverseQueue</span></a></span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061182"><span class="hs-identifier hs-var">qR</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Queue a
+forall a. Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span>
+</span><span id="line-305"></span><span>    </span><span class="annot"><a href="#local-6989586621679061168"><span class="hs-identifier hs-var">loop</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-type">Queue</span></a></span><span> </span><span id="local-6989586621679061184"><span class="annot"><span class="annottext">MVar (Maybe a)
+</span><a href="#local-6989586621679061184"><span class="hs-identifier hs-var">q</span></a></span></span><span> </span><span id="local-6989586621679061185"><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061185"><span class="hs-identifier hs-var">qs</span></a></span></span><span class="hs-special">)</span><span> </span><span id="local-6989586621679061186"><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061186"><span class="hs-identifier hs-var">qR</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">MVar (Maybe a) -&gt; Maybe a -&gt; IO Bool
+forall a. MVar a -&gt; a -&gt; IO Bool
+</span><span class="hs-identifier hs-var">tryPutMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar (Maybe a)
+</span><a href="#local-6989586621679061184"><span class="hs-identifier hs-var">q</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe a
+</span><a href="#local-6989586621679061167"><span class="hs-identifier hs-var">ma</span></a></span><span> </span><span class="annot"><span class="annottext">IO Bool -&gt; (Bool -&gt; IO (Stripe a)) -&gt; IO (Stripe a)
+forall a b. IO a -&gt; (a -&gt; IO b) -&gt; IO b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-306"></span><span>      </span><span class="hs-comment">-- This fails when 'waitForResource' went into the exception handler and</span><span>
+</span><span id="line-307"></span><span>      </span><span class="hs-comment">-- filled the MVar (with an undefined value) itself. In such case we</span><span>
+</span><span id="line-308"></span><span>      </span><span class="hs-comment">-- simply ignore it.</span><span>
+</span><span id="line-309"></span><span>      </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Queue a -&gt; Queue a -&gt; IO (Stripe a)
+</span><a href="#local-6989586621679061168"><span class="hs-identifier hs-var">loop</span></a></span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061185"><span class="hs-identifier hs-var">qs</span></a></span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061186"><span class="hs-identifier hs-var">qR</span></a></span><span>
+</span><span id="line-310"></span><span>      </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Stripe a -&gt; IO (Stripe a)
+forall a. a -&gt; IO a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">(Stripe a -&gt; IO (Stripe a)) -&gt; Stripe a -&gt; IO (Stripe a)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$!</span></span><span> </span><span class="annot"><span class="annottext">Stripe a
+</span><a href="#local-6989586621679061166"><span class="hs-identifier hs-var">stripe</span></a></span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#available"><span class="hs-identifier hs-var">available</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-number">0</span></span><span>
+</span><span id="line-311"></span><span>                              </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#queue"><span class="hs-identifier hs-var">queue</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679061185"><span class="hs-identifier hs-type">qs</span></a></span><span>
+</span><span id="line-312"></span><span>                              </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#queueR"><span class="hs-identifier hs-var">queueR</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679061186"><span class="hs-identifier hs-type">qR</span></a></span><span>
+</span><span id="line-313"></span><span>                              </span><span class="hs-special">}</span><span>
+</span><span id="line-314"></span><span>
+</span><span id="line-315"></span><span id="local-6989586621679060905"><span class="annot"><a href="Data.Pool.Internal.html#reverseQueue"><span class="hs-identifier hs-type">reverseQueue</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-type">Queue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060905"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-type">Queue</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679060905"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-316"></span><span id="reverseQueue"><span class="annot"><span class="annottext">reverseQueue :: forall a. Queue a -&gt; Queue a
+</span><a href="Data.Pool.Internal.html#reverseQueue"><span class="hs-identifier hs-var hs-var">reverseQueue</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Queue a -&gt; Queue a -&gt; Queue a
+forall {a}. Queue a -&gt; Queue a -&gt; Queue a
+</span><a href="#local-6989586621679061188"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="annot"><span class="annottext">Queue a
+forall a. Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span>
+</span><span id="line-317"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-318"></span><span>    </span><span id="local-6989586621679061188"><span class="annot"><span class="annottext">go :: Queue a -&gt; Queue a -&gt; Queue a
+</span><a href="#local-6989586621679061188"><span class="hs-identifier hs-var hs-var">go</span></a></span></span><span> </span><span id="local-6989586621679061189"><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061189"><span class="hs-identifier hs-var">acc</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-319"></span><span>      </span><span class="annot"><span class="annottext">Queue a
+</span><a href="Data.Pool.Internal.html#Empty"><span class="hs-identifier hs-var">Empty</span></a></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061189"><span class="hs-identifier hs-var">acc</span></a></span><span>
+</span><span id="line-320"></span><span>      </span><span class="annot"><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-type">Queue</span></a></span><span> </span><span id="local-6989586621679061190"><span class="annot"><span class="annottext">MVar (Maybe a)
+</span><a href="#local-6989586621679061190"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span id="local-6989586621679061191"><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061191"><span class="hs-identifier hs-var">xs</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Queue a -&gt; Queue a -&gt; Queue a
+</span><a href="#local-6989586621679061188"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">MVar (Maybe a) -&gt; Queue a -&gt; Queue a
+forall a. MVar (Maybe a) -&gt; Queue a -&gt; Queue a
+</span><a href="Data.Pool.Internal.html#Queue"><span class="hs-identifier hs-var">Queue</span></a></span><span> </span><span class="annot"><span class="annottext">MVar (Maybe a)
+</span><a href="#local-6989586621679061190"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061189"><span class="hs-identifier hs-var">acc</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Queue a
+</span><a href="#local-6989586621679061191"><span class="hs-identifier hs-var">xs</span></a></span><span>
+</span><span id="line-321"></span></pre></body></html>

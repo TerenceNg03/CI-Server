@@ -1,0 +1,177 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE DataKinds #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE DeriveAnyClass #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE DeriveGeneric #-}</span><span>
+</span><span id="line-4"></span><span class="hs-pragma">{-# LANGUAGE DerivingStrategies #-}</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances #-}</span><span>
+</span><span id="line-6"></span><span class="hs-pragma">{-# LANGUAGE GADTs #-}</span><span>
+</span><span id="line-7"></span><span class="hs-pragma">{-# LANGUAGE GeneralizedNewtypeDeriving #-}</span><span>
+</span><span id="line-8"></span><span class="hs-pragma">{-# LANGUAGE MultiParamTypeClasses #-}</span><span>
+</span><span id="line-9"></span><span class="hs-pragma">{-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-10"></span><span class="hs-pragma">{-# LANGUAGE QuasiQuotes #-}</span><span>
+</span><span id="line-11"></span><span class="hs-pragma">{-# LANGUAGE RecordWildCards #-}</span><span>
+</span><span id="line-12"></span><span class="hs-pragma">{-# LANGUAGE StandaloneDeriving #-}</span><span>
+</span><span id="line-13"></span><span class="hs-pragma">{-# LANGUAGE TemplateHaskell #-}</span><span>
+</span><span id="line-14"></span><span class="hs-pragma">{-# LANGUAGE TypeApplications #-}</span><span>
+</span><span id="line-15"></span><span class="hs-pragma">{-# LANGUAGE TypeFamilies #-}</span><span>
+</span><span id="line-16"></span><span class="hs-pragma">{-# LANGUAGE TypeOperators #-}</span><span>
+</span><span id="line-17"></span><span class="hs-pragma">{-# LANGUAGE UndecidableInstances #-}</span><span>
+</span><span id="line-18"></span><span>
+</span><span id="line-19"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Database</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Database.html#migrateAll"><span class="hs-identifier">migrateAll</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.html#insertBuild"><span class="hs-identifier">insertBuild</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.html#getBuildByUUID"><span class="hs-identifier">getBuildByUUID</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.html#getBuilds"><span class="hs-identifier">getBuilds</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Database.html#Build"><span class="hs-identifier">Build</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-20"></span><span>
+</span><span id="line-21"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">void</span></span><span class="hs-special">)</span><span>
+</span><span id="line-22"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.IO.Class</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadIO</span></span><span class="hs-special">)</span><span>
+</span><span id="line-23"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">ToJSON</span></span><span class="hs-special">)</span><span>
+</span><span id="line-24"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Maybe</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">listToMaybe</span></span><span class="hs-special">)</span><span>
+</span><span id="line-25"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-26"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Database.Esqueleto.Experimental</span></span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-27"></span><span>    </span><span class="annot"><span class="hs-identifier">Entity</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-28"></span><span>    </span><span class="annot"><span class="hs-identifier">Value</span></span><span class="hs-special">,</span><span>
+</span><span id="line-29"></span><span>    </span><span class="annot"><span class="hs-identifier">from</span></span><span class="hs-special">,</span><span>
+</span><span id="line-30"></span><span>    </span><span class="annot"><span class="hs-identifier">insert</span></span><span class="hs-special">,</span><span>
+</span><span id="line-31"></span><span>    </span><span class="annot"><span class="hs-identifier">select</span></span><span class="hs-special">,</span><span>
+</span><span id="line-32"></span><span>    </span><span class="annot"><span class="hs-identifier">table</span></span><span class="hs-special">,</span><span>
+</span><span id="line-33"></span><span>    </span><span class="annot"><span class="hs-identifier">val</span></span><span class="hs-special">,</span><span>
+</span><span id="line-34"></span><span>    </span><span class="annot"><span class="hs-identifier">where_</span></span><span class="hs-special">,</span><span>
+</span><span id="line-35"></span><span>    </span><span class="annot"><span class="hs-operator">(==.)</span></span><span class="hs-special">,</span><span>
+</span><span id="line-36"></span><span>    </span><span class="annot"><span class="hs-operator">(^.)</span></span><span class="hs-special">,</span><span>
+</span><span id="line-37"></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-38"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Database.Persist.Sqlite</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">SqlPersistT</span></span><span class="hs-special">)</span><span>
+</span><span id="line-39"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Database.Persist.TH</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">mkMigrate</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">mkPersist</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">persistLowerCase</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">share</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">sqlSettings</span></span><span class="hs-special">)</span><span>
+</span><span id="line-40"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">GHC.Generics</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Generic</span></span><span class="hs-special">)</span><span>
+</span><span id="line-41"></span><span>
+</span><span id="line-42"></span><span class="annot"><span class="hs-comment">-- | Defines the schema for 'Build' entity with a unique identifier and build details.</span></span><span>
+</span><span id="line-43"></span><span id="Build"><span id="Key"><span id="EntityField"><span id="Unique"><span id="local-6989586621679156268"><span id="migrateAll"><span id="local-6989586621679156373"><span id="local-6989586621679156379"><span id="local-6989586621679156383"><span id="local-6989586621679156386"><span id="local-6989586621679156390"><span id="local-6989586621679156393"><span id="local-6989586621679156403"><span id="local-6989586621679156406"><span id="local-6989586621679156411"><span id="local-6989586621679156418"><span id="local-6989586621679156423"><span id="local-6989586621679156427"><span id="local-6989586621679156431"><span id="local-6989586621679156435"><span id="local-6989586621679156439"><span id="local-6989586621679156443"><span id="local-6989586621679156447"><span id="local-6989586621679156452"><span id="local-6989586621679156456"><span id="local-6989586621679156461"><span id="local-6989586621679156465"><span id="local-6989586621679156469"><span id="local-6989586621679156473"><span id="local-6989586621679156477"><span id="local-6989586621679156482"><span id="local-6989586621679156486"><span id="local-6989586621679156490"><span id="local-6989586621679156495"><span id="local-6989586621679156502"><span id="local-6989586621679156507"><span id="local-6989586621679156512"><span id="local-6989586621679156516"><span id="local-6989586621679156520"><span id="local-6989586621679156524"><span id="local-6989586621679156529"><span id="local-6989586621679156533"><span id="local-6989586621679156541"><span id="local-6989586621679156545"><span id="local-6989586621679156548"><span id="local-6989586621679156550"><span id="local-6989586621679156552"><span id="local-6989586621679156560"><span id="local-6989586621679156563"><span id="local-6989586621679156566"><span id="local-6989586621679156586"><span id="local-6989586621679156589"><span id="local-6989586621679156599"><span id="local-6989586621679156602"><span id="local-6989586621679156611"><span id="local-6989586621679156613"><span id="local-6989586621679156620"><span id="local-6989586621679156636"><span id="local-6989586621679156654"><span id="local-6989586621679156656"><span id="local-6989586621679156658"><span id="local-6989586621679156661"><span id="local-6989586621679156664"><span id="local-6989586621679156666"><span id="local-6989586621679156669"><span id="local-6989586621679156672"><span id="local-6989586621679156675"><span id="local-6989586621679156678"><span id="local-6989586621679156681"><span id="local-6989586621679156686"><span id="local-6989586621679156693"><span id="local-6989586621679156701"><span id="local-6989586621679156703"><span id="local-6989586621679156706"><span id="PersistEntityBackend"><span id="BuildId"><span id="Build"><span id="buildUuid"><span id="buildCommit"><span id="buildStatus"><span id="buildDate"><span id="buildLog"><span id="BuildPrimaryKey"><span id="BuildKey"><span id="unBuildKey"><span id="BuildId"><span id="BuildUuid"><span id="BuildCommit"><span id="BuildStatus"><span id="BuildDate"><span id="BuildLog"><span id="entityDefListFormigrateAll"><span class="hs-identifier">share</span><span>
+</span><span id="line-44"></span><span>    </span><span class="hs-special">[</span><span class="hs-identifier">mkPersist</span><span> </span><span class="hs-identifier">sqlSettings</span><span class="hs-special">,</span><span> </span><span class="hs-identifier">mkMigrate</span><span> </span><span class="hs-string">&quot;migrateAll&quot;</span><span class="hs-special">]</span><span>
+</span><span id="line-45"></span><span>    </span><span class="">[persistLowerCase|
+  Build sql=builds
+    uuid Text sqltype=UUID 
+    commit Text
+    status Text
+    date Text
+    log Text
+    Primary uuid
+    deriving Show Generic ToJSON
+|]</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-55"></span><span>
+</span><span id="line-56"></span><span class="annot"><span class="hs-comment">-- | Get all builds from the database</span></span><span>
+</span><span id="line-57"></span><span id="local-6989586621679156299"><span class="annot"><a href="Database.html#getBuilds"><span class="hs-identifier hs-type">getBuilds</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679156299"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">SqlPersistT</span></span><span> </span><span class="annot"><a href="#local-6989586621679156299"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Value</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">]</span></span><span>
+</span><span id="line-58"></span><span id="getBuilds"><span class="annot"><span class="annottext">getBuilds :: forall (m :: * -&gt; *). MonadIO m =&gt; SqlPersistT m [Value Text]
+</span><a href="Database.html#getBuilds"><span class="hs-identifier hs-var hs-var">getBuilds</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">SqlQuery (SqlExpr (Value Text))
+-&gt; ReaderT SqlBackend m [Value Text]
+forall a r (m :: * -&gt; *) backend.
+(SqlSelect a r, MonadIO m, SqlBackendCanRead backend) =&gt;
+SqlQuery a -&gt; ReaderT backend m [r]
+</span><span class="hs-identifier hs-var">select</span></span><span> </span><span class="annot"><span class="annottext">(SqlQuery (SqlExpr (Value Text))
+ -&gt; ReaderT SqlBackend m [Value Text])
+-&gt; SqlQuery (SqlExpr (Value Text))
+-&gt; ReaderT SqlBackend m [Value Text]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-59"></span><span>    </span><span id="local-6989586621679157078"><span class="annot"><span class="annottext">SqlExpr (Entity Build)
+</span><a href="#local-6989586621679157078"><span class="hs-identifier hs-var">b</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">From (SqlExpr (Entity Build)) -&gt; SqlQuery (SqlExpr (Entity Build))
+forall a a'. ToFrom a a' =&gt; a -&gt; SqlQuery a'
+</span><span class="hs-identifier hs-var">from</span></span><span> </span><span class="annot"><span class="annottext">(From (SqlExpr (Entity Build))
+ -&gt; SqlQuery (SqlExpr (Entity Build)))
+-&gt; From (SqlExpr (Entity Build))
+-&gt; SqlQuery (SqlExpr (Entity Build))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">forall ent. PersistEntity ent =&gt; From (SqlExpr (Entity ent))
+</span><span class="hs-identifier hs-var">table</span></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="Database.html#Build"><span class="hs-identifier hs-type">Build</span></a></span><span>
+</span><span id="line-60"></span><span>    </span><span class="annot"><span class="annottext">SqlExpr (Value Text) -&gt; SqlQuery (SqlExpr (Value Text))
+forall a. a -&gt; SqlQuery a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">SqlExpr (Entity Build)
+</span><a href="#local-6989586621679157078"><span class="hs-identifier hs-var">b</span></a></span><span> </span><span class="annot"><span class="annottext">SqlExpr (Entity Build)
+-&gt; EntityField Build Text -&gt; SqlExpr (Value Text)
+forall typ val.
+(PersistEntity val, PersistField typ) =&gt;
+SqlExpr (Entity val) -&gt; EntityField val typ -&gt; SqlExpr (Value typ)
+</span><span class="hs-operator hs-var">^.</span></span><span> </span><span class="annot"><span class="annottext">EntityField Build Text
+forall typ. (typ ~ Text) =&gt; EntityField Build typ
+</span><a href="Database.html#BuildUuid"><span class="hs-identifier hs-var">BuildUuid</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-61"></span><span>
+</span><span id="line-62"></span><span class="annot"><span class="hs-comment">-- | Get a build from the database by its unique commit hash</span></span><span>
+</span><span id="line-63"></span><span id="local-6989586621679156329"><span class="annot"><a href="Database.html#getBuildByUUID"><span class="hs-identifier hs-type">getBuildByUUID</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679156329"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">SqlPersistT</span></span><span> </span><span class="annot"><a href="#local-6989586621679156329"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Entity</span></span><span> </span><span class="annot"><a href="Database.html#Build"><span class="hs-identifier hs-type">Build</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span></span><span>
+</span><span id="line-64"></span><span id="getBuildByUUID"><span class="annot"><span class="annottext">getBuildByUUID :: forall (m :: * -&gt; *).
+MonadIO m =&gt;
+Text -&gt; SqlPersistT m (Maybe (Entity Build))
+</span><a href="Database.html#getBuildByUUID"><span class="hs-identifier hs-var hs-var">getBuildByUUID</span></a></span></span><span> </span><span id="local-6989586621679157105"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679157105"><span class="hs-identifier hs-var">uuid</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">([Entity Build] -&gt; Maybe (Entity Build))
+-&gt; ReaderT SqlBackend m [Entity Build]
+-&gt; ReaderT SqlBackend m (Maybe (Entity Build))
+forall a b.
+(a -&gt; b) -&gt; ReaderT SqlBackend m a -&gt; ReaderT SqlBackend m b
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="annot"><span class="annottext">[Entity Build] -&gt; Maybe (Entity Build)
+forall a. [a] -&gt; Maybe a
+</span><span class="hs-identifier hs-var">listToMaybe</span></span><span> </span><span class="annot"><span class="annottext">(ReaderT SqlBackend m [Entity Build]
+ -&gt; ReaderT SqlBackend m (Maybe (Entity Build)))
+-&gt; ReaderT SqlBackend m [Entity Build]
+-&gt; ReaderT SqlBackend m (Maybe (Entity Build))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">SqlQuery (SqlExpr (Entity Build))
+-&gt; ReaderT SqlBackend m [Entity Build]
+forall a r (m :: * -&gt; *) backend.
+(SqlSelect a r, MonadIO m, SqlBackendCanRead backend) =&gt;
+SqlQuery a -&gt; ReaderT backend m [r]
+</span><span class="hs-identifier hs-var">select</span></span><span> </span><span class="annot"><span class="annottext">(SqlQuery (SqlExpr (Entity Build))
+ -&gt; ReaderT SqlBackend m [Entity Build])
+-&gt; SqlQuery (SqlExpr (Entity Build))
+-&gt; ReaderT SqlBackend m [Entity Build]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-65"></span><span>    </span><span id="local-6989586621679157106"><span class="annot"><span class="annottext">SqlExpr (Entity Build)
+</span><a href="#local-6989586621679157106"><span class="hs-identifier hs-var">builds</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">From (SqlExpr (Entity Build)) -&gt; SqlQuery (SqlExpr (Entity Build))
+forall a a'. ToFrom a a' =&gt; a -&gt; SqlQuery a'
+</span><span class="hs-identifier hs-var">from</span></span><span> </span><span class="annot"><span class="annottext">(From (SqlExpr (Entity Build))
+ -&gt; SqlQuery (SqlExpr (Entity Build)))
+-&gt; From (SqlExpr (Entity Build))
+-&gt; SqlQuery (SqlExpr (Entity Build))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">forall ent. PersistEntity ent =&gt; From (SqlExpr (Entity ent))
+</span><span class="hs-identifier hs-var">table</span></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="Database.html#Build"><span class="hs-identifier hs-type">Build</span></a></span><span>
+</span><span id="line-66"></span><span>    </span><span class="annot"><span class="annottext">SqlExpr (Value Bool) -&gt; SqlQuery ()
+</span><span class="hs-identifier hs-var">where_</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">SqlExpr (Entity Build)
+</span><a href="#local-6989586621679157106"><span class="hs-identifier hs-var">builds</span></a></span><span> </span><span class="annot"><span class="annottext">SqlExpr (Entity Build)
+-&gt; EntityField Build Text -&gt; SqlExpr (Value Text)
+forall typ val.
+(PersistEntity val, PersistField typ) =&gt;
+SqlExpr (Entity val) -&gt; EntityField val typ -&gt; SqlExpr (Value typ)
+</span><span class="hs-operator hs-var">^.</span></span><span> </span><span class="annot"><span class="annottext">EntityField Build Text
+forall typ. (typ ~ Text) =&gt; EntityField Build typ
+</span><a href="Database.html#BuildUuid"><span class="hs-identifier hs-var">BuildUuid</span></a></span><span> </span><span class="annot"><span class="annottext">SqlExpr (Value Text)
+-&gt; SqlExpr (Value Text) -&gt; SqlExpr (Value Bool)
+forall typ.
+PersistField typ =&gt;
+SqlExpr (Value typ) -&gt; SqlExpr (Value typ) -&gt; SqlExpr (Value Bool)
+</span><span class="hs-operator hs-var">==.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; SqlExpr (Value Text)
+forall typ. PersistField typ =&gt; typ -&gt; SqlExpr (Value typ)
+</span><span class="hs-identifier hs-var">val</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679157105"><span class="hs-identifier hs-var">uuid</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-67"></span><span>    </span><span class="annot"><span class="annottext">SqlExpr (Entity Build) -&gt; SqlQuery (SqlExpr (Entity Build))
+forall a. a -&gt; SqlQuery a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">SqlExpr (Entity Build)
+</span><a href="#local-6989586621679157106"><span class="hs-identifier hs-var">builds</span></a></span><span>
+</span><span id="line-68"></span><span>
+</span><span id="line-69"></span><span class="annot"><span class="hs-comment">-- | Insert a build into the database</span></span><span>
+</span><span id="line-70"></span><span id="local-6989586621679156342"><span class="annot"><a href="Database.html#insertBuild"><span class="hs-identifier hs-type">insertBuild</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679156342"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Database.html#Build"><span class="hs-identifier hs-type">Build</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">SqlPersistT</span></span><span> </span><span class="annot"><a href="#local-6989586621679156342"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-71"></span><span id="insertBuild"><span class="annot"><span class="annottext">insertBuild :: forall (m :: * -&gt; *). MonadIO m =&gt; Build -&gt; SqlPersistT m ()
+</span><a href="Database.html#insertBuild"><span class="hs-identifier hs-var hs-var">insertBuild</span></a></span></span><span> </span><span id="local-6989586621679157119"><span class="annot"><span class="annottext">Build
+</span><a href="#local-6989586621679157119"><span class="hs-identifier hs-var">build</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ReaderT SqlBackend m (Key Build) -&gt; ReaderT SqlBackend m ()
+forall (f :: * -&gt; *) a. Functor f =&gt; f a -&gt; f ()
+</span><span class="hs-identifier hs-var">void</span></span><span> </span><span class="annot"><span class="annottext">(ReaderT SqlBackend m (Key Build) -&gt; ReaderT SqlBackend m ())
+-&gt; ReaderT SqlBackend m (Key Build) -&gt; ReaderT SqlBackend m ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Build -&gt; ReaderT SqlBackend m (Key Build)
+forall backend record (m :: * -&gt; *).
+(PersistStoreWrite backend, MonadIO m,
+ PersistRecordBackend record backend, SafeToInsert record) =&gt;
+record -&gt; ReaderT backend m (Key record)
+forall record (m :: * -&gt; *).
+(MonadIO m, PersistRecordBackend record SqlBackend,
+ SafeToInsert record) =&gt;
+record -&gt; ReaderT SqlBackend m (Key record)
+</span><span class="hs-identifier hs-var">insert</span></span><span> </span><span class="annot"><span class="annottext">Build
+</span><a href="#local-6989586621679157119"><span class="hs-identifier hs-var">build</span></a></span><span>
+</span><span id="line-72"></span></pre></body></html>

@@ -1,0 +1,1098 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-comment">{- Acknowledgements
+~~~~~~~~~~~~~~~~~~~
+
+This module has been largely copied off
+    &lt;https://hackage.haskell.org/package/formatting/docs/Formatting-Time.html&gt;
+Written by Chris Done
+    &lt;https://github.com/chrisdone&gt;
+-}</span><span>
+</span><span id="line-9"></span><span>
+</span><span id="line-10"></span><span class="hs-pragma">{-# LANGUAGE CPP                 #-}</span><span>
+</span><span id="line-11"></span><span class="hs-pragma">{-# LANGUAGE ExplicitForAll      #-}</span><span>
+</span><span id="line-12"></span><span class="hs-pragma">{-# LANGUAGE OverloadedStrings   #-}</span><span>
+</span><span id="line-13"></span><span class="hs-pragma">{-# LANGUAGE ScopedTypeVariables #-}</span><span>
+</span><span id="line-14"></span><span>
+</span><span id="line-15"></span><span>
+</span><span id="line-16"></span><span class="annot"><span class="hs-comment">{- | Formatters for various time types. This module copies the structure of
+@&lt;https://hackage.haskell.org/package/formatting/docs/Formatting-Time.html Formatting.Time&gt;@
+from the @&lt;https://hackage.haskell.org/package/formatting formatting&gt;@ package.
+
+Most of the time you'll want to use one of these formatters (all of the
+examples below use @&quot;2018-02-14 16:20:45.5 CST&quot;@):
+
+* 'dateTimeF' &#8211; full date and time:
+
+    &gt;&gt;&gt; dateTimeF t
+    &quot;Wed Feb 14 16:20:45 CST 2018&quot;
+
+* 'hmF' &#8211; hours and minutes:
+
+    &gt;&gt;&gt; hmF t
+    &quot;16:20&quot;
+
+* 'hmsF' &#8211; hours, minutes and seconds:
+
+    &gt;&gt;&gt; hmsF t
+    &quot;16:20:45&quot;
+
+* 'dateDashF' &#8211; date in ISO 8601 format:
+
+    &gt;&gt;&gt; dateDashF t
+    &quot;2018-02-14&quot;
+
+* 'diffF' &#8211; either a time period or a point in time, in a convenient for
+  humans format:
+
+    &gt;&gt;&gt; diffF False 130    -- time period (130 seconds)
+    &quot;2 minutes&quot;
+    &gt;&gt;&gt; diffF True 130     -- point in time (130 seconds in the future)
+    &quot;in 2 minutes&quot;
+
+Note that two formatters from @Formatting.Time@ are called differently here:
+
+@
+pico     -&gt; 'picosecondF'
+decimals -&gt; 'subsecondF'
+@
+
+-}</span></span><span>
+</span><span id="line-59"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Fmt.Time</span><span>
+</span><span id="line-60"></span><span class="hs-special">(</span><span>
+</span><span id="line-61"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Custom</span></span><span>
+</span><span id="line-62"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#timeF"><span class="hs-identifier">timeF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-63"></span><span>
+</span><span id="line-64"></span><span>  </span><span class="annot"><span class="hs-comment">-- * For 'TimeZone' (and 'ZonedTime' and 'UTCTime')</span></span><span>
+</span><span id="line-65"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#tzF"><span class="hs-identifier">tzF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-66"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#tzNameF"><span class="hs-identifier">tzNameF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-67"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dateTimeF"><span class="hs-identifier">dateTimeF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-68"></span><span>
+</span><span id="line-69"></span><span>  </span><span class="annot"><span class="hs-comment">-- * For 'TimeOfDay' (and 'LocalTime' and 'ZonedTime' and 'UTCTime')</span></span><span>
+</span><span id="line-70"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hmF"><span class="hs-identifier">hmF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-71"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hmsF"><span class="hs-identifier">hmsF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-72"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hmsLF"><span class="hs-identifier">hmsLF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-73"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hmsPLF"><span class="hs-identifier">hmsPLF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-74"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayHalfF"><span class="hs-identifier">dayHalfF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-75"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayHalfUF"><span class="hs-identifier">dayHalfUF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-76"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hour24F"><span class="hs-identifier">hour24F</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-77"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hour12F"><span class="hs-identifier">hour12F</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-78"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hour24SF"><span class="hs-identifier">hour24SF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-79"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hour12SF"><span class="hs-identifier">hour12SF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-80"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#minuteF"><span class="hs-identifier">minuteF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-81"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#secondF"><span class="hs-identifier">secondF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-82"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#picosecondF"><span class="hs-identifier">picosecondF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-83"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#subsecondF"><span class="hs-identifier">subsecondF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-84"></span><span>
+</span><span id="line-85"></span><span>  </span><span class="annot"><span class="hs-comment">-- * For 'UTCTime' and 'ZonedTime'</span></span><span>
+</span><span id="line-86"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#epochF"><span class="hs-identifier">epochF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-87"></span><span>
+</span><span id="line-88"></span><span>  </span><span class="annot"><span class="hs-comment">-- * For 'Day' (and 'LocalTime' and 'ZonedTime' and 'UTCTime')</span></span><span>
+</span><span id="line-89"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dateSlashF"><span class="hs-identifier">dateSlashF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-90"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dateDashF"><span class="hs-identifier">dateDashF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-91"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dateSlashLF"><span class="hs-identifier">dateSlashLF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-92"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#yearF"><span class="hs-identifier">yearF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-93"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#yyF"><span class="hs-identifier">yyF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-94"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#centuryF"><span class="hs-identifier">centuryF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-95"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#monthNameF"><span class="hs-identifier">monthNameF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-96"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#monthNameShortF"><span class="hs-identifier">monthNameShortF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-97"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#monthF"><span class="hs-identifier">monthF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-98"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayOfMonthF"><span class="hs-identifier">dayOfMonthF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-99"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayOfMonthOrdF"><span class="hs-identifier">dayOfMonthOrdF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-100"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayOfMonthSF"><span class="hs-identifier">dayOfMonthSF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-101"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayF"><span class="hs-identifier">dayF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-102"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#weekYearF"><span class="hs-identifier">weekYearF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-103"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#weekYYF"><span class="hs-identifier">weekYYF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-104"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#weekCenturyF"><span class="hs-identifier">weekCenturyF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-105"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#weekF"><span class="hs-identifier">weekF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-106"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayOfWeekF"><span class="hs-identifier">dayOfWeekF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-107"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayNameShortF"><span class="hs-identifier">dayNameShortF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-108"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayNameF"><span class="hs-identifier">dayNameF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-109"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#weekFromZeroF"><span class="hs-identifier">weekFromZeroF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-110"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#dayOfWeekFromZeroF"><span class="hs-identifier">dayOfWeekFromZeroF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-111"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#weekOfYearMonF"><span class="hs-identifier">weekOfYearMonF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-112"></span><span>
+</span><span id="line-113"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Time spans, diffs, 'NominalDiffTime', 'DiffTime', etc.</span></span><span>
+</span><span id="line-114"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#diffF"><span class="hs-identifier">diffF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-115"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#yearsF"><span class="hs-identifier">yearsF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-116"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#daysF"><span class="hs-identifier">daysF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-117"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#hoursF"><span class="hs-identifier">hoursF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-118"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#minutesF"><span class="hs-identifier">minutesF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-119"></span><span>  </span><span class="annot"><a href="Fmt.Time.html#secondsF"><span class="hs-identifier">secondsF</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-120"></span><span class="hs-special">)</span><span>
+</span><span id="line-121"></span><span class="hs-keyword">where</span><span>
+</span><span id="line-122"></span><span>
+</span><span id="line-123"></span><span>
+</span><span id="line-124"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.List</span></span><span>               </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">find</span></span><span class="hs-special">)</span><span class="hs-cpp">
+
+#if !MIN_VERSION_base(4,9,0)
+</span><span class="hs-keyword">import</span><span>           </span><span class="hs-identifier">Data.Monoid</span><span>             </span><span class="hs-special">(</span><span class="hs-special">(</span><span class="hs-operator">&lt;&gt;</span><span class="hs-special">)</span><span class="hs-special">)</span><span class="hs-cpp">
+#endif
+</span><span>
+</span><span id="line-130"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span>               </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-131"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span>               </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-132"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Formatting.Buildable</span></span><span>    </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">build</span></span><span class="hs-special">)</span><span>
+</span><span id="line-133"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy.Builder</span></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Builder</span></span><span class="hs-special">)</span><span>
+</span><span id="line-134"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Time</span></span><span class="hs-cpp">
+
+#if !MIN_VERSION_time(1,5,0)
+</span><span class="hs-keyword">import</span><span>           </span><span class="hs-identifier">Data.Time.Locale.Compat</span><span class="hs-cpp">
+#endif
+</span><span>
+</span><span id="line-140"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Fmt.Internal.Numeric.html"><span class="hs-identifier">Fmt.Internal.Numeric</span></a></span><span>    </span><span class="hs-special">(</span><span class="annot"><a href="Fmt.Internal.Numeric.html#fixedF"><span class="hs-identifier">fixedF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Fmt.Internal.Numeric.html#ordinalF"><span class="hs-identifier">ordinalF</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-141"></span><span>
+</span><span id="line-142"></span><span class="hs-comment">-- $setup</span><span>
+</span><span id="line-143"></span><span class="hs-comment">-- &gt;&gt;&gt; let t = read &quot;2018-02-14 16:20:45.5 CST&quot; :: ZonedTime</span><span>
+</span><span id="line-144"></span><span>
+</span><span id="line-145"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-146"></span><span class="hs-comment">-- Custom</span><span>
+</span><span id="line-147"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-148"></span><span>
+</span><span id="line-149"></span><span class="hs-comment">-- | Format time with an arbitrary formatting string. Other formatters in</span><span>
+</span><span id="line-150"></span><span class="hs-comment">-- this module are implemented using 'timeF'.</span><span>
+</span><span id="line-151"></span><span id="local-6989586621679067500"><span class="annot"><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-type">timeF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067500"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067500"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-152"></span><span id="timeF"><span class="annot"><span class="annottext">timeF :: forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var hs-var">timeF</span></a></span></span><span> </span><span id="local-6989586621679067652"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679067652"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+forall p. Buildable p =&gt; p -&gt; Builder
+</span><span class="hs-identifier hs-var">build</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Builder) -&gt; (a -&gt; Text) -&gt; a -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="annot"><span class="annottext">(String -&gt; Text) -&gt; (a -&gt; String) -&gt; a -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">TimeLocale -&gt; String -&gt; a -&gt; String
+forall t. FormatTime t =&gt; TimeLocale -&gt; String -&gt; t -&gt; String
+</span><span class="hs-identifier hs-var">formatTime</span></span><span> </span><span class="annot"><span class="annottext">TimeLocale
+</span><span class="hs-identifier hs-var">defaultTimeLocale</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Text -&gt; String
+</span><span class="hs-identifier hs-var">T.unpack</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679067652"><span class="hs-identifier hs-var">f</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-153"></span><span>
+</span><span id="line-154"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-155"></span><span class="hs-comment">-- For 'TimeZone' (and 'ZonedTime' and 'UTCTime')</span><span>
+</span><span id="line-156"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-157"></span><span>
+</span><span id="line-158"></span><span class="hs-comment">-- | Timezone offset on the format @-HHMM@.</span><span>
+</span><span id="line-159"></span><span class="hs-comment">--</span><span>
+</span><span id="line-160"></span><span class="hs-comment">-- &gt;&gt;&gt; t</span><span>
+</span><span id="line-161"></span><span class="hs-comment">-- 2018-02-14 16:20:45.5 CST</span><span>
+</span><span id="line-162"></span><span class="hs-comment">-- &gt;&gt;&gt; tzF t</span><span>
+</span><span id="line-163"></span><span class="hs-comment">-- &quot;-0600&quot;</span><span>
+</span><span id="line-164"></span><span id="local-6989586621679067512"><span class="annot"><a href="Fmt.Time.html#tzF"><span class="hs-identifier hs-type">tzF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067512"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067512"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-165"></span><span id="tzF"><span class="annot"><span class="annottext">tzF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#tzF"><span class="hs-identifier hs-var hs-var">tzF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%z&quot;</span></span><span>
+</span><span id="line-166"></span><span>
+</span><span id="line-167"></span><span class="hs-comment">-- | Timezone name.</span><span>
+</span><span id="line-168"></span><span class="hs-comment">--</span><span>
+</span><span id="line-169"></span><span class="hs-comment">-- &gt;&gt;&gt; tzNameF t</span><span>
+</span><span id="line-170"></span><span class="hs-comment">-- &quot;CST&quot;</span><span>
+</span><span id="line-171"></span><span id="local-6989586621679067662"><span class="annot"><a href="Fmt.Time.html#tzNameF"><span class="hs-identifier hs-type">tzNameF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067662"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067662"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-172"></span><span id="tzNameF"><span class="annot"><span class="annottext">tzNameF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#tzNameF"><span class="hs-identifier hs-var hs-var">tzNameF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%Z&quot;</span></span><span>
+</span><span id="line-173"></span><span>
+</span><span id="line-174"></span><span class="hs-comment">-- | As 'dateTimeFmt' @locale@ (e.g. @%a %b %e %H:%M:%S %Z %Y@).</span><span>
+</span><span id="line-175"></span><span class="hs-comment">--</span><span>
+</span><span id="line-176"></span><span class="hs-comment">-- &gt;&gt;&gt; dateTimeF t</span><span>
+</span><span id="line-177"></span><span class="hs-comment">-- &quot;Wed Feb 14 16:20:45 CST 2018&quot;</span><span>
+</span><span id="line-178"></span><span id="local-6989586621679067667"><span class="annot"><a href="Fmt.Time.html#dateTimeF"><span class="hs-identifier hs-type">dateTimeF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067667"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067667"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-179"></span><span id="dateTimeF"><span class="annot"><span class="annottext">dateTimeF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dateTimeF"><span class="hs-identifier hs-var hs-var">dateTimeF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%c&quot;</span></span><span>
+</span><span id="line-180"></span><span>
+</span><span id="line-181"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-182"></span><span class="hs-comment">-- For 'TimeOfDay' (and 'LocalTime' and 'ZonedTime' and 'UTCTime')</span><span>
+</span><span id="line-183"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-184"></span><span>
+</span><span id="line-185"></span><span class="hs-comment">-- | Same as @%H:%M@.</span><span>
+</span><span id="line-186"></span><span class="hs-comment">--</span><span>
+</span><span id="line-187"></span><span class="hs-comment">-- &gt;&gt;&gt; hmF t</span><span>
+</span><span id="line-188"></span><span class="hs-comment">-- &quot;16:20&quot;</span><span>
+</span><span id="line-189"></span><span id="local-6989586621679067671"><span class="annot"><a href="Fmt.Time.html#hmF"><span class="hs-identifier hs-type">hmF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067671"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067671"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-190"></span><span id="hmF"><span class="annot"><span class="annottext">hmF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#hmF"><span class="hs-identifier hs-var hs-var">hmF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%R&quot;</span></span><span>
+</span><span id="line-191"></span><span>
+</span><span id="line-192"></span><span class="hs-comment">-- | Same as @%H:%M:%S@.</span><span>
+</span><span id="line-193"></span><span class="hs-comment">--</span><span>
+</span><span id="line-194"></span><span class="hs-comment">-- &gt;&gt;&gt; hmsF t</span><span>
+</span><span id="line-195"></span><span class="hs-comment">-- &quot;16:20:45&quot;</span><span>
+</span><span id="line-196"></span><span id="local-6989586621679067675"><span class="annot"><a href="Fmt.Time.html#hmsF"><span class="hs-identifier hs-type">hmsF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067675"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067675"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-197"></span><span id="hmsF"><span class="annot"><span class="annottext">hmsF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#hmsF"><span class="hs-identifier hs-var hs-var">hmsF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%T&quot;</span></span><span>
+</span><span id="line-198"></span><span>
+</span><span id="line-199"></span><span class="hs-comment">-- | As 'timeFmt' @locale@ (e.g. @%H:%M:%S@).</span><span>
+</span><span id="line-200"></span><span class="hs-comment">--</span><span>
+</span><span id="line-201"></span><span class="hs-comment">-- &gt;&gt;&gt; hmsLF t</span><span>
+</span><span id="line-202"></span><span class="hs-comment">-- &quot;16:20:45&quot;</span><span>
+</span><span id="line-203"></span><span id="local-6989586621679067680"><span class="annot"><a href="Fmt.Time.html#hmsLF"><span class="hs-identifier hs-type">hmsLF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067680"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067680"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-204"></span><span id="hmsLF"><span class="annot"><span class="annottext">hmsLF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#hmsLF"><span class="hs-identifier hs-var hs-var">hmsLF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%X&quot;</span></span><span>
+</span><span id="line-205"></span><span>
+</span><span id="line-206"></span><span class="hs-comment">-- | As 'time12Fmt' @locale@ (e.g. @%I:%M:%S %p@).</span><span>
+</span><span id="line-207"></span><span class="hs-comment">--</span><span>
+</span><span id="line-208"></span><span class="hs-comment">-- &gt;&gt;&gt; hmsPLF t</span><span>
+</span><span id="line-209"></span><span class="hs-comment">-- &quot;04:20:45 PM&quot;</span><span>
+</span><span id="line-210"></span><span id="local-6989586621679067685"><span class="annot"><a href="Fmt.Time.html#hmsPLF"><span class="hs-identifier hs-type">hmsPLF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067685"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067685"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-211"></span><span id="hmsPLF"><span class="annot"><span class="annottext">hmsPLF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#hmsPLF"><span class="hs-identifier hs-var hs-var">hmsPLF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%r&quot;</span></span><span>
+</span><span id="line-212"></span><span>
+</span><span id="line-213"></span><span class="hs-comment">-- | Day half from ('amPm' @locale@), converted to lowercase, @am@, @pm@.</span><span>
+</span><span id="line-214"></span><span class="hs-comment">--</span><span>
+</span><span id="line-215"></span><span class="hs-comment">-- &gt;&gt;&gt; dayHalfF t</span><span>
+</span><span id="line-216"></span><span class="hs-comment">-- &quot;pm&quot;</span><span>
+</span><span id="line-217"></span><span id="local-6989586621679067690"><span class="annot"><a href="Fmt.Time.html#dayHalfF"><span class="hs-identifier hs-type">dayHalfF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067690"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067690"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-218"></span><span id="dayHalfF"><span class="annot"><span class="annottext">dayHalfF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayHalfF"><span class="hs-identifier hs-var hs-var">dayHalfF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%P&quot;</span></span><span>
+</span><span id="line-219"></span><span>
+</span><span id="line-220"></span><span class="hs-comment">-- | Day half from ('amPm' @locale@), @AM@, @PM@.</span><span>
+</span><span id="line-221"></span><span class="hs-comment">--</span><span>
+</span><span id="line-222"></span><span class="hs-comment">-- &gt;&gt;&gt; dayHalfUF t</span><span>
+</span><span id="line-223"></span><span class="hs-comment">-- &quot;PM&quot;</span><span>
+</span><span id="line-224"></span><span id="local-6989586621679067694"><span class="annot"><a href="Fmt.Time.html#dayHalfUF"><span class="hs-identifier hs-type">dayHalfUF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067694"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067694"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-225"></span><span id="dayHalfUF"><span class="annot"><span class="annottext">dayHalfUF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayHalfUF"><span class="hs-identifier hs-var hs-var">dayHalfUF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%p&quot;</span></span><span>
+</span><span id="line-226"></span><span>
+</span><span id="line-227"></span><span class="hs-comment">-- | Hour, 24-hour, leading 0 as needed, @00@ - @23@.</span><span>
+</span><span id="line-228"></span><span class="hs-comment">--</span><span>
+</span><span id="line-229"></span><span class="hs-comment">-- &gt;&gt;&gt; hour24F t</span><span>
+</span><span id="line-230"></span><span class="hs-comment">-- &quot;16&quot;</span><span>
+</span><span id="line-231"></span><span class="hs-comment">-- &gt;&gt;&gt; hour24F midnight</span><span>
+</span><span id="line-232"></span><span class="hs-comment">-- &quot;00&quot;</span><span>
+</span><span id="line-233"></span><span id="local-6989586621679067698"><span class="annot"><a href="Fmt.Time.html#hour24F"><span class="hs-identifier hs-type">hour24F</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067698"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067698"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-234"></span><span id="hour24F"><span class="annot"><span class="annottext">hour24F :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#hour24F"><span class="hs-identifier hs-var hs-var">hour24F</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%H&quot;</span></span><span>
+</span><span id="line-235"></span><span>
+</span><span id="line-236"></span><span class="hs-comment">-- | Hour, 12-hour, leading 0 as needed, @01@ - @12@.</span><span>
+</span><span id="line-237"></span><span class="hs-comment">--</span><span>
+</span><span id="line-238"></span><span class="hs-comment">-- &gt;&gt;&gt; hour12F t</span><span>
+</span><span id="line-239"></span><span class="hs-comment">-- &quot;04&quot;</span><span>
+</span><span id="line-240"></span><span class="hs-comment">-- &gt;&gt;&gt; hour12F midnight</span><span>
+</span><span id="line-241"></span><span class="hs-comment">-- &quot;12&quot;</span><span>
+</span><span id="line-242"></span><span id="local-6989586621679067702"><span class="annot"><a href="Fmt.Time.html#hour12F"><span class="hs-identifier hs-type">hour12F</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067702"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067702"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-243"></span><span id="hour12F"><span class="annot"><span class="annottext">hour12F :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#hour12F"><span class="hs-identifier hs-var hs-var">hour12F</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%I&quot;</span></span><span>
+</span><span id="line-244"></span><span>
+</span><span id="line-245"></span><span class="hs-comment">-- | Hour, 24-hour, leading space as needed, @ 0@ - @23@.</span><span>
+</span><span id="line-246"></span><span class="hs-comment">--</span><span>
+</span><span id="line-247"></span><span class="hs-comment">-- &gt;&gt;&gt; hour24SF t</span><span>
+</span><span id="line-248"></span><span class="hs-comment">-- &quot;16&quot;</span><span>
+</span><span id="line-249"></span><span class="hs-comment">-- &gt;&gt;&gt; hour24SF midnight</span><span>
+</span><span id="line-250"></span><span class="hs-comment">-- &quot; 0&quot;</span><span>
+</span><span id="line-251"></span><span id="local-6989586621679067706"><span class="annot"><a href="Fmt.Time.html#hour24SF"><span class="hs-identifier hs-type">hour24SF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067706"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067706"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-252"></span><span id="hour24SF"><span class="annot"><span class="annottext">hour24SF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#hour24SF"><span class="hs-identifier hs-var hs-var">hour24SF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%k&quot;</span></span><span>
+</span><span id="line-253"></span><span>
+</span><span id="line-254"></span><span class="hs-comment">-- | Hour, 12-hour, leading space as needed, @ 1@ - @12@.</span><span>
+</span><span id="line-255"></span><span class="hs-comment">--</span><span>
+</span><span id="line-256"></span><span class="hs-comment">-- &gt;&gt;&gt; hour12SF t</span><span>
+</span><span id="line-257"></span><span class="hs-comment">-- &quot; 4&quot;</span><span>
+</span><span id="line-258"></span><span class="hs-comment">-- &gt;&gt;&gt; hour12SF midnight</span><span>
+</span><span id="line-259"></span><span class="hs-comment">-- &quot;12&quot;</span><span>
+</span><span id="line-260"></span><span id="local-6989586621679067710"><span class="annot"><a href="Fmt.Time.html#hour12SF"><span class="hs-identifier hs-type">hour12SF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067710"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067710"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-261"></span><span id="hour12SF"><span class="annot"><span class="annottext">hour12SF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#hour12SF"><span class="hs-identifier hs-var hs-var">hour12SF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%l&quot;</span></span><span>
+</span><span id="line-262"></span><span>
+</span><span id="line-263"></span><span class="hs-comment">-- | Minute, @00@ - @59@.</span><span>
+</span><span id="line-264"></span><span class="hs-comment">--</span><span>
+</span><span id="line-265"></span><span class="hs-comment">-- &gt;&gt;&gt; minuteF t</span><span>
+</span><span id="line-266"></span><span class="hs-comment">-- &quot;20&quot;</span><span>
+</span><span id="line-267"></span><span id="local-6989586621679067714"><span class="annot"><a href="Fmt.Time.html#minuteF"><span class="hs-identifier hs-type">minuteF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067714"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067714"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-268"></span><span id="minuteF"><span class="annot"><span class="annottext">minuteF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#minuteF"><span class="hs-identifier hs-var hs-var">minuteF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%M&quot;</span></span><span>
+</span><span id="line-269"></span><span>
+</span><span id="line-270"></span><span class="hs-comment">-- | Second, without decimal part, @00@ - @60@.</span><span>
+</span><span id="line-271"></span><span class="hs-comment">--</span><span>
+</span><span id="line-272"></span><span class="hs-comment">-- &gt;&gt;&gt; secondF t</span><span>
+</span><span id="line-273"></span><span class="hs-comment">-- &quot;45&quot;</span><span>
+</span><span id="line-274"></span><span id="local-6989586621679067718"><span class="annot"><a href="Fmt.Time.html#secondF"><span class="hs-identifier hs-type">secondF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067718"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067718"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-275"></span><span id="secondF"><span class="annot"><span class="annottext">secondF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#secondF"><span class="hs-identifier hs-var hs-var">secondF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%S&quot;</span></span><span>
+</span><span id="line-276"></span><span>
+</span><span id="line-277"></span><span class="hs-comment">-- | Picosecond, including trailing zeros, @000000000000@ - @999999999999@.</span><span>
+</span><span id="line-278"></span><span class="hs-comment">--</span><span>
+</span><span id="line-279"></span><span class="hs-comment">-- &gt;&gt;&gt; picosecondF t</span><span>
+</span><span id="line-280"></span><span class="hs-comment">-- &quot;500000000000&quot;</span><span>
+</span><span id="line-281"></span><span id="local-6989586621679067722"><span class="annot"><a href="Fmt.Time.html#picosecondF"><span class="hs-identifier hs-type">picosecondF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067722"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067722"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-282"></span><span id="picosecondF"><span class="annot"><span class="annottext">picosecondF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#picosecondF"><span class="hs-identifier hs-var hs-var">picosecondF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%q&quot;</span></span><span>
+</span><span id="line-283"></span><span>
+</span><span id="line-284"></span><span class="hs-comment">-- | Decimal point of the second. Up to 12 digits, without trailing zeros.</span><span>
+</span><span id="line-285"></span><span class="hs-comment">-- For a whole number of seconds, this produces an empty string.</span><span>
+</span><span id="line-286"></span><span class="hs-comment">--</span><span>
+</span><span id="line-287"></span><span class="hs-comment">-- &gt;&gt;&gt; subsecondF t</span><span>
+</span><span id="line-288"></span><span class="hs-comment">-- &quot;.5&quot;</span><span>
+</span><span id="line-289"></span><span id="local-6989586621679067726"><span class="annot"><a href="Fmt.Time.html#subsecondF"><span class="hs-identifier hs-type">subsecondF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067726"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067726"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-290"></span><span id="subsecondF"><span class="annot"><span class="annottext">subsecondF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#subsecondF"><span class="hs-identifier hs-var hs-var">subsecondF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%Q&quot;</span></span><span>
+</span><span id="line-291"></span><span>
+</span><span id="line-292"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-293"></span><span class="hs-comment">-- For 'UTCTime' and 'ZonedTime'</span><span>
+</span><span id="line-294"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-295"></span><span>
+</span><span id="line-296"></span><span class="hs-comment">-- | Number of whole seconds since the Unix epoch. For times before the Unix</span><span>
+</span><span id="line-297"></span><span class="hs-comment">-- epoch, this is a negative number. Note that in @%s.%q@ and @%s%Q@ the</span><span>
+</span><span id="line-298"></span><span class="hs-comment">-- decimals are positive, not negative. For example, 0.9 seconds before the</span><span>
+</span><span id="line-299"></span><span class="hs-comment">-- Unix epoch is formatted as @-1.1@ with @%s%Q@.</span><span>
+</span><span id="line-300"></span><span class="hs-comment">--</span><span>
+</span><span id="line-301"></span><span class="hs-comment">-- &gt;&gt;&gt; epochF t</span><span>
+</span><span id="line-302"></span><span class="hs-comment">-- &quot;1518646845&quot;</span><span>
+</span><span id="line-303"></span><span id="local-6989586621679067730"><span class="annot"><a href="Fmt.Time.html#epochF"><span class="hs-identifier hs-type">epochF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067730"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067730"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-304"></span><span id="epochF"><span class="annot"><span class="annottext">epochF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#epochF"><span class="hs-identifier hs-var hs-var">epochF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%s&quot;</span></span><span>
+</span><span id="line-305"></span><span>
+</span><span id="line-306"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-307"></span><span class="hs-comment">-- For 'Day' (and 'LocalTime' and 'ZonedTime' and 'UTCTime')</span><span>
+</span><span id="line-308"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-309"></span><span>
+</span><span id="line-310"></span><span class="hs-comment">-- | Same as @%m\/%d\/%y@.</span><span>
+</span><span id="line-311"></span><span class="hs-comment">--</span><span>
+</span><span id="line-312"></span><span class="hs-comment">-- &gt;&gt;&gt; dateSlashF t</span><span>
+</span><span id="line-313"></span><span class="hs-comment">-- &quot;02/14/18&quot;</span><span>
+</span><span id="line-314"></span><span id="local-6989586621679067734"><span class="annot"><a href="Fmt.Time.html#dateSlashF"><span class="hs-identifier hs-type">dateSlashF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067734"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067734"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-315"></span><span id="dateSlashF"><span class="annot"><span class="annottext">dateSlashF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dateSlashF"><span class="hs-identifier hs-var hs-var">dateSlashF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%D&quot;</span></span><span>
+</span><span id="line-316"></span><span>
+</span><span id="line-317"></span><span class="hs-comment">-- | Same as @%Y-%m-%d@.</span><span>
+</span><span id="line-318"></span><span class="hs-comment">--</span><span>
+</span><span id="line-319"></span><span class="hs-comment">-- &gt;&gt;&gt; dateDashF t</span><span>
+</span><span id="line-320"></span><span class="hs-comment">-- &quot;2018-02-14&quot;</span><span>
+</span><span id="line-321"></span><span id="local-6989586621679067738"><span class="annot"><a href="Fmt.Time.html#dateDashF"><span class="hs-identifier hs-type">dateDashF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067738"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067738"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-322"></span><span id="dateDashF"><span class="annot"><span class="annottext">dateDashF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dateDashF"><span class="hs-identifier hs-var hs-var">dateDashF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%F&quot;</span></span><span>
+</span><span id="line-323"></span><span>
+</span><span id="line-324"></span><span class="hs-comment">-- | As 'dateFmt' @locale@ (e.g. @%m\/%d\/%y@).</span><span>
+</span><span id="line-325"></span><span class="hs-comment">--</span><span>
+</span><span id="line-326"></span><span class="hs-comment">-- &gt;&gt;&gt; dateSlashLF t</span><span>
+</span><span id="line-327"></span><span class="hs-comment">-- &quot;02/14/18&quot;</span><span>
+</span><span id="line-328"></span><span id="local-6989586621679067743"><span class="annot"><a href="Fmt.Time.html#dateSlashLF"><span class="hs-identifier hs-type">dateSlashLF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067743"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067743"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-329"></span><span id="dateSlashLF"><span class="annot"><span class="annottext">dateSlashLF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dateSlashLF"><span class="hs-identifier hs-var hs-var">dateSlashLF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%x&quot;</span></span><span>
+</span><span id="line-330"></span><span>
+</span><span id="line-331"></span><span class="hs-comment">-- | Year.</span><span>
+</span><span id="line-332"></span><span class="hs-comment">--</span><span>
+</span><span id="line-333"></span><span class="hs-comment">-- &gt;&gt;&gt; yearF t</span><span>
+</span><span id="line-334"></span><span class="hs-comment">-- &quot;2018&quot;</span><span>
+</span><span id="line-335"></span><span id="local-6989586621679067747"><span class="annot"><a href="Fmt.Time.html#yearF"><span class="hs-identifier hs-type">yearF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067747"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067747"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-336"></span><span id="yearF"><span class="annot"><span class="annottext">yearF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#yearF"><span class="hs-identifier hs-var hs-var">yearF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%Y&quot;</span></span><span>
+</span><span id="line-337"></span><span>
+</span><span id="line-338"></span><span class="hs-comment">-- | Last two digits of year, @00@ - @99@.</span><span>
+</span><span id="line-339"></span><span class="hs-comment">--</span><span>
+</span><span id="line-340"></span><span class="hs-comment">-- &gt;&gt;&gt; yyF t</span><span>
+</span><span id="line-341"></span><span class="hs-comment">-- &quot;18&quot;</span><span>
+</span><span id="line-342"></span><span id="local-6989586621679067751"><span class="annot"><a href="Fmt.Time.html#yyF"><span class="hs-identifier hs-type">yyF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067751"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067751"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-343"></span><span id="yyF"><span class="annot"><span class="annottext">yyF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#yyF"><span class="hs-identifier hs-var hs-var">yyF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%y&quot;</span></span><span>
+</span><span id="line-344"></span><span>
+</span><span id="line-345"></span><span class="hs-comment">-- | Century (being the first two digits of the year), @00@ - @99@.</span><span>
+</span><span id="line-346"></span><span class="hs-comment">--</span><span>
+</span><span id="line-347"></span><span class="hs-comment">-- &gt;&gt;&gt; centuryF t</span><span>
+</span><span id="line-348"></span><span class="hs-comment">-- &quot;20&quot;</span><span>
+</span><span id="line-349"></span><span id="local-6989586621679067755"><span class="annot"><a href="Fmt.Time.html#centuryF"><span class="hs-identifier hs-type">centuryF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067755"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067755"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-350"></span><span id="centuryF"><span class="annot"><span class="annottext">centuryF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#centuryF"><span class="hs-identifier hs-var hs-var">centuryF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%C&quot;</span></span><span>
+</span><span id="line-351"></span><span>
+</span><span id="line-352"></span><span class="hs-comment">-- | Month name, long form ('fst' from 'months' @locale@), @January@ -</span><span>
+</span><span id="line-353"></span><span class="hs-comment">-- @December@.</span><span>
+</span><span id="line-354"></span><span class="hs-comment">--</span><span>
+</span><span id="line-355"></span><span class="hs-comment">-- &gt;&gt;&gt; monthNameF t</span><span>
+</span><span id="line-356"></span><span class="hs-comment">-- &quot;February&quot;</span><span>
+</span><span id="line-357"></span><span id="local-6989586621679067761"><span class="annot"><a href="Fmt.Time.html#monthNameF"><span class="hs-identifier hs-type">monthNameF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067761"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067761"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-358"></span><span id="monthNameF"><span class="annot"><span class="annottext">monthNameF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#monthNameF"><span class="hs-identifier hs-var hs-var">monthNameF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%B&quot;</span></span><span>
+</span><span id="line-359"></span><span>
+</span><span id="line-360"></span><span class="hs-comment">-- | Month name, short form ('snd' from 'months' @locale@), @Jan@ - @Dec@.</span><span>
+</span><span id="line-361"></span><span class="hs-comment">--</span><span>
+</span><span id="line-362"></span><span class="hs-comment">-- &gt;&gt;&gt; monthNameShortF t</span><span>
+</span><span id="line-363"></span><span class="hs-comment">-- &quot;Feb&quot;</span><span>
+</span><span id="line-364"></span><span id="local-6989586621679067766"><span class="annot"><a href="Fmt.Time.html#monthNameShortF"><span class="hs-identifier hs-type">monthNameShortF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067766"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067766"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-365"></span><span id="monthNameShortF"><span class="annot"><span class="annottext">monthNameShortF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#monthNameShortF"><span class="hs-identifier hs-var hs-var">monthNameShortF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%b&quot;</span></span><span>
+</span><span id="line-366"></span><span>
+</span><span id="line-367"></span><span class="hs-comment">-- | Month of year, leading 0 as needed, @01@ - @12@.</span><span>
+</span><span id="line-368"></span><span class="hs-comment">--</span><span>
+</span><span id="line-369"></span><span class="hs-comment">-- &gt;&gt;&gt; monthF t</span><span>
+</span><span id="line-370"></span><span class="hs-comment">-- &quot;02&quot;</span><span>
+</span><span id="line-371"></span><span id="local-6989586621679067770"><span class="annot"><a href="Fmt.Time.html#monthF"><span class="hs-identifier hs-type">monthF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067770"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067770"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-372"></span><span id="monthF"><span class="annot"><span class="annottext">monthF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#monthF"><span class="hs-identifier hs-var hs-var">monthF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%m&quot;</span></span><span>
+</span><span id="line-373"></span><span>
+</span><span id="line-374"></span><span class="hs-comment">-- | Day of month, leading 0 as needed, @01@ - @31@.</span><span>
+</span><span id="line-375"></span><span class="hs-comment">--</span><span>
+</span><span id="line-376"></span><span class="hs-comment">-- &gt;&gt;&gt; dayOfMonthF t</span><span>
+</span><span id="line-377"></span><span class="hs-comment">-- &quot;14&quot;</span><span>
+</span><span id="line-378"></span><span id="local-6989586621679067774"><span class="annot"><a href="Fmt.Time.html#dayOfMonthF"><span class="hs-identifier hs-type">dayOfMonthF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067774"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067774"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-379"></span><span id="dayOfMonthF"><span class="annot"><span class="annottext">dayOfMonthF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayOfMonthF"><span class="hs-identifier hs-var hs-var">dayOfMonthF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%d&quot;</span></span><span>
+</span><span id="line-380"></span><span>
+</span><span id="line-381"></span><span class="hs-comment">-- | Day of month, @1st@, @2nd@, @25th@, etc.</span><span>
+</span><span id="line-382"></span><span class="hs-comment">--</span><span>
+</span><span id="line-383"></span><span class="hs-comment">-- &gt;&gt;&gt; dayOfMonthOrdF t</span><span>
+</span><span id="line-384"></span><span class="hs-comment">-- &quot;14th&quot;</span><span>
+</span><span id="line-385"></span><span id="local-6989586621679067778"><span class="annot"><a href="Fmt.Time.html#dayOfMonthOrdF"><span class="hs-identifier hs-type">dayOfMonthOrdF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067778"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067778"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-386"></span><span id="dayOfMonthOrdF"><span class="annot"><span class="annottext">dayOfMonthOrdF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayOfMonthOrdF"><span class="hs-identifier hs-var hs-var">dayOfMonthOrdF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Builder
+forall a. (Buildable a, Integral a) =&gt; a -&gt; Builder
+</span><a href="Fmt.Internal.Numeric.html#ordinalF"><span class="hs-identifier hs-var">ordinalF</span></a></span><span> </span><span class="annot"><span class="annottext">(Int -&gt; Builder) -&gt; (a -&gt; Int) -&gt; a -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; Int
+forall a. FormatTime a =&gt; a -&gt; Int
+</span><a href="#local-6989586621679067785"><span class="hs-identifier hs-var">timeToInt</span></a></span><span>
+</span><span id="line-387"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-388"></span><span>    </span><span id="local-6989586621679067543"><span class="annot"><a href="#local-6989586621679067785"><span class="hs-identifier hs-type">timeToInt</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067543"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067543"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span></span><span>
+</span><span id="line-389"></span><span>    </span><span id="local-6989586621679067785"><span class="annot"><span class="annottext">timeToInt :: forall a. FormatTime a =&gt; a -&gt; Int
+</span><a href="#local-6989586621679067785"><span class="hs-identifier hs-var hs-var">timeToInt</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; Int
+forall a. Read a =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">read</span></span><span> </span><span class="annot"><span class="annottext">(String -&gt; Int) -&gt; (a -&gt; String) -&gt; a -&gt; Int
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">TimeLocale -&gt; String -&gt; a -&gt; String
+forall t. FormatTime t =&gt; TimeLocale -&gt; String -&gt; t -&gt; String
+</span><span class="hs-identifier hs-var">formatTime</span></span><span> </span><span class="annot"><span class="annottext">TimeLocale
+</span><span class="hs-identifier hs-var">defaultTimeLocale</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;%d&quot;</span></span><span>
+</span><span id="line-390"></span><span>
+</span><span id="line-391"></span><span class="annot"><span class="hs-comment">-- | Day of month, leading space as needed, @ 1@ - @31@.</span></span><span>
+</span><span id="line-392"></span><span id="local-6989586621679067791"><span class="annot"><a href="Fmt.Time.html#dayOfMonthSF"><span class="hs-identifier hs-type">dayOfMonthSF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067791"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067791"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-393"></span><span id="dayOfMonthSF"><span class="annot"><span class="annottext">dayOfMonthSF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayOfMonthSF"><span class="hs-identifier hs-var hs-var">dayOfMonthSF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%e&quot;</span></span><span>
+</span><span id="line-394"></span><span>
+</span><span id="line-395"></span><span class="hs-comment">-- | Day of year for Ordinal Date format, @001@ - @366@.</span><span>
+</span><span id="line-396"></span><span class="hs-comment">--</span><span>
+</span><span id="line-397"></span><span class="hs-comment">-- &gt;&gt;&gt; dayF t</span><span>
+</span><span id="line-398"></span><span class="hs-comment">-- &quot;045&quot;</span><span>
+</span><span id="line-399"></span><span id="local-6989586621679067795"><span class="annot"><a href="Fmt.Time.html#dayF"><span class="hs-identifier hs-type">dayF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067795"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067795"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-400"></span><span id="dayF"><span class="annot"><span class="annottext">dayF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayF"><span class="hs-identifier hs-var hs-var">dayF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%j&quot;</span></span><span>
+</span><span id="line-401"></span><span>
+</span><span id="line-402"></span><span class="hs-comment">-- | Year for Week Date format e.g. @2013@.</span><span>
+</span><span id="line-403"></span><span class="hs-comment">--</span><span>
+</span><span id="line-404"></span><span class="hs-comment">-- &gt;&gt;&gt; weekYearF t</span><span>
+</span><span id="line-405"></span><span class="hs-comment">-- &quot;2018&quot;</span><span>
+</span><span id="line-406"></span><span id="local-6989586621679067799"><span class="annot"><a href="Fmt.Time.html#weekYearF"><span class="hs-identifier hs-type">weekYearF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067799"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067799"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-407"></span><span id="weekYearF"><span class="annot"><span class="annottext">weekYearF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#weekYearF"><span class="hs-identifier hs-var hs-var">weekYearF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%G&quot;</span></span><span>
+</span><span id="line-408"></span><span>
+</span><span id="line-409"></span><span class="hs-comment">-- | Last two digits of year for Week Date format, @00@ - @99@.</span><span>
+</span><span id="line-410"></span><span class="hs-comment">--</span><span>
+</span><span id="line-411"></span><span class="hs-comment">-- &gt;&gt;&gt; weekYYF t</span><span>
+</span><span id="line-412"></span><span class="hs-comment">-- &quot;18&quot;</span><span>
+</span><span id="line-413"></span><span id="local-6989586621679067803"><span class="annot"><a href="Fmt.Time.html#weekYYF"><span class="hs-identifier hs-type">weekYYF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067803"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067803"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-414"></span><span id="weekYYF"><span class="annot"><span class="annottext">weekYYF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#weekYYF"><span class="hs-identifier hs-var hs-var">weekYYF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%g&quot;</span></span><span>
+</span><span id="line-415"></span><span>
+</span><span id="line-416"></span><span class="hs-comment">-- | Century (first two digits of year) for Week Date format, @00@ - @99@.</span><span>
+</span><span id="line-417"></span><span class="hs-comment">--</span><span>
+</span><span id="line-418"></span><span class="hs-comment">-- &gt;&gt;&gt; weekCenturyF t</span><span>
+</span><span id="line-419"></span><span class="hs-comment">-- &quot;20&quot;</span><span>
+</span><span id="line-420"></span><span id="local-6989586621679067807"><span class="annot"><a href="Fmt.Time.html#weekCenturyF"><span class="hs-identifier hs-type">weekCenturyF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067807"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067807"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-421"></span><span id="weekCenturyF"><span class="annot"><span class="annottext">weekCenturyF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#weekCenturyF"><span class="hs-identifier hs-var hs-var">weekCenturyF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%f&quot;</span></span><span>
+</span><span id="line-422"></span><span>
+</span><span id="line-423"></span><span class="hs-comment">-- | Week for Week Date format, @01@ - @53@.</span><span>
+</span><span id="line-424"></span><span class="hs-comment">--</span><span>
+</span><span id="line-425"></span><span class="hs-comment">-- &gt;&gt;&gt; weekF t</span><span>
+</span><span id="line-426"></span><span class="hs-comment">-- &quot;07&quot;</span><span>
+</span><span id="line-427"></span><span id="local-6989586621679067811"><span class="annot"><a href="Fmt.Time.html#weekF"><span class="hs-identifier hs-type">weekF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067811"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067811"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-428"></span><span id="weekF"><span class="annot"><span class="annottext">weekF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#weekF"><span class="hs-identifier hs-var hs-var">weekF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%V&quot;</span></span><span>
+</span><span id="line-429"></span><span>
+</span><span id="line-430"></span><span class="hs-comment">-- | Day for Week Date format, @1@ - @7@.</span><span>
+</span><span id="line-431"></span><span class="hs-comment">--</span><span>
+</span><span id="line-432"></span><span class="hs-comment">-- &gt;&gt;&gt; dayOfWeekF t</span><span>
+</span><span id="line-433"></span><span class="hs-comment">-- &quot;3&quot;</span><span>
+</span><span id="line-434"></span><span id="local-6989586621679067815"><span class="annot"><a href="Fmt.Time.html#dayOfWeekF"><span class="hs-identifier hs-type">dayOfWeekF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067815"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067815"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-435"></span><span id="dayOfWeekF"><span class="annot"><span class="annottext">dayOfWeekF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayOfWeekF"><span class="hs-identifier hs-var hs-var">dayOfWeekF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%u&quot;</span></span><span>
+</span><span id="line-436"></span><span>
+</span><span id="line-437"></span><span class="hs-comment">-- | Day of week, short form ('snd' from 'wDays' @locale@), @Sun@ - @Sat@.</span><span>
+</span><span id="line-438"></span><span class="hs-comment">--</span><span>
+</span><span id="line-439"></span><span class="hs-comment">-- &gt;&gt;&gt; dayNameShortF t</span><span>
+</span><span id="line-440"></span><span class="hs-comment">-- &quot;Wed&quot;</span><span>
+</span><span id="line-441"></span><span id="local-6989586621679067820"><span class="annot"><a href="Fmt.Time.html#dayNameShortF"><span class="hs-identifier hs-type">dayNameShortF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067820"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067820"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-442"></span><span id="dayNameShortF"><span class="annot"><span class="annottext">dayNameShortF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayNameShortF"><span class="hs-identifier hs-var hs-var">dayNameShortF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%a&quot;</span></span><span>
+</span><span id="line-443"></span><span>
+</span><span id="line-444"></span><span class="hs-comment">-- | Day of week, long form ('fst' from 'wDays' @locale@), @Sunday@ -</span><span>
+</span><span id="line-445"></span><span class="hs-comment">-- @Saturday@.</span><span>
+</span><span id="line-446"></span><span class="hs-comment">--</span><span>
+</span><span id="line-447"></span><span class="hs-comment">-- &gt;&gt;&gt; dayNameF t</span><span>
+</span><span id="line-448"></span><span class="hs-comment">-- &quot;Wednesday&quot;</span><span>
+</span><span id="line-449"></span><span id="local-6989586621679067824"><span class="annot"><a href="Fmt.Time.html#dayNameF"><span class="hs-identifier hs-type">dayNameF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067824"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067824"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-450"></span><span id="dayNameF"><span class="annot"><span class="annottext">dayNameF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayNameF"><span class="hs-identifier hs-var hs-var">dayNameF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%A&quot;</span></span><span>
+</span><span id="line-451"></span><span>
+</span><span id="line-452"></span><span class="hs-comment">-- | Week number of year, where weeks start on Sunday (as</span><span>
+</span><span id="line-453"></span><span class="hs-comment">-- 'sundayStartWeek'), @00@ - @53@.</span><span>
+</span><span id="line-454"></span><span class="hs-comment">--</span><span>
+</span><span id="line-455"></span><span class="hs-comment">-- &gt;&gt;&gt; weekFromZeroF t</span><span>
+</span><span id="line-456"></span><span class="hs-comment">-- &quot;06&quot;</span><span>
+</span><span id="line-457"></span><span id="local-6989586621679067828"><span class="annot"><a href="Fmt.Time.html#weekFromZeroF"><span class="hs-identifier hs-type">weekFromZeroF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067828"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067828"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-458"></span><span id="weekFromZeroF"><span class="annot"><span class="annottext">weekFromZeroF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#weekFromZeroF"><span class="hs-identifier hs-var hs-var">weekFromZeroF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%U&quot;</span></span><span>
+</span><span id="line-459"></span><span>
+</span><span id="line-460"></span><span class="hs-comment">-- | Day of week number, @0@ (= Sunday) - @6@ (= Saturday).</span><span>
+</span><span id="line-461"></span><span class="hs-comment">--</span><span>
+</span><span id="line-462"></span><span class="hs-comment">-- &gt;&gt;&gt; dayOfWeekFromZeroF t</span><span>
+</span><span id="line-463"></span><span class="hs-comment">-- &quot;3&quot;</span><span>
+</span><span id="line-464"></span><span id="local-6989586621679067832"><span class="annot"><a href="Fmt.Time.html#dayOfWeekFromZeroF"><span class="hs-identifier hs-type">dayOfWeekFromZeroF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067832"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067832"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-465"></span><span id="dayOfWeekFromZeroF"><span class="annot"><span class="annottext">dayOfWeekFromZeroF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#dayOfWeekFromZeroF"><span class="hs-identifier hs-var hs-var">dayOfWeekFromZeroF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%w&quot;</span></span><span>
+</span><span id="line-466"></span><span>
+</span><span id="line-467"></span><span class="hs-comment">-- | Week number of year, where weeks start on Monday (as</span><span>
+</span><span id="line-468"></span><span class="hs-comment">-- 'mondayStartWeek'), @00@ - @53@.</span><span>
+</span><span id="line-469"></span><span class="hs-comment">--</span><span>
+</span><span id="line-470"></span><span class="hs-comment">-- &gt;&gt;&gt; weekOfYearMonF t</span><span>
+</span><span id="line-471"></span><span class="hs-comment">-- &quot;07&quot;</span><span>
+</span><span id="line-472"></span><span id="local-6989586621679067836"><span class="annot"><a href="Fmt.Time.html#weekOfYearMonF"><span class="hs-identifier hs-type">weekOfYearMonF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FormatTime</span></span><span> </span><span class="annot"><a href="#local-6989586621679067836"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067836"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-473"></span><span id="weekOfYearMonF"><span class="annot"><span class="annottext">weekOfYearMonF :: forall a. FormatTime a =&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#weekOfYearMonF"><span class="hs-identifier hs-var hs-var">weekOfYearMonF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; a -&gt; Builder
+forall a. FormatTime a =&gt; Text -&gt; a -&gt; Builder
+</span><a href="Fmt.Time.html#timeF"><span class="hs-identifier hs-var">timeF</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;%W&quot;</span></span><span>
+</span><span id="line-474"></span><span>
+</span><span id="line-475"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-476"></span><span class="hs-comment">-- Time spans, diffs, 'NominalDiffTime', 'DiffTime', etc.</span><span>
+</span><span id="line-477"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-478"></span><span>
+</span><span id="line-479"></span><span class="hs-comment">-- | Display a time span as one time relative to another. Input is assumed to</span><span>
+</span><span id="line-480"></span><span class="hs-comment">-- be seconds. Typical inputs are 'NominalDiffTime' and 'DiffTime'.</span><span>
+</span><span id="line-481"></span><span class="hs-comment">--</span><span>
+</span><span id="line-482"></span><span class="hs-comment">-- &gt;&gt;&gt; diffF False 100</span><span>
+</span><span id="line-483"></span><span class="hs-comment">-- &quot;a minute&quot;</span><span>
+</span><span id="line-484"></span><span class="hs-comment">-- &gt;&gt;&gt; diffF True 100</span><span>
+</span><span id="line-485"></span><span class="hs-comment">-- &quot;in a minute&quot;</span><span>
+</span><span id="line-486"></span><span class="annot"><a href="Fmt.Time.html#diffF"><span class="hs-identifier hs-type">diffF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-keyword">forall</span><span> </span><span id="local-6989586621679067558"><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span></span><span> </span><span class="hs-operator">.</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-487"></span><span>      </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span>     </span><span class="annot"><span class="hs-comment">-- ^ Whether to display the @in/ago@ prefix or not</span></span><span>
+</span><span id="line-488"></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span>        </span><span class="annot"><span class="hs-comment">-- ^ Example: @3 seconds ago@, @in 2 days@</span></span><span>
+</span><span id="line-489"></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span>
+</span><span id="line-490"></span><span id="diffF"><span class="annot"><span class="annottext">diffF :: forall n. RealFrac n =&gt; Bool -&gt; n -&gt; Builder
+</span><a href="Fmt.Time.html#diffF"><span class="hs-identifier hs-var hs-var">diffF</span></a></span></span><span> </span><span id="local-6989586621679067855"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679067855"><span class="hs-identifier hs-var">fix</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">n -&gt; Builder
+RealFrac n =&gt; n -&gt; Builder
+</span><a href="#local-6989586621679067856"><span class="hs-identifier hs-var">diffed</span></a></span><span>
+</span><span id="line-491"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-492"></span><span>    </span><span class="annot"><a href="#local-6989586621679067856"><span class="hs-identifier hs-type">diffed</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span>
+</span><span id="line-493"></span><span>    </span><span id="local-6989586621679067856"><span class="annot"><span class="annottext">diffed :: RealFrac n =&gt; n -&gt; Builder
+</span><a href="#local-6989586621679067856"><span class="hs-identifier hs-var hs-var">diffed</span></a></span></span><span> </span><span id="local-6989586621679067868"><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067868"><span class="hs-identifier hs-var">ts</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-494"></span><span>      </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">((n, Int -&gt; Builder, n) -&gt; Bool)
+-&gt; [(n, Int -&gt; Builder, n)] -&gt; Maybe (n, Int -&gt; Builder, n)
+forall (t :: * -&gt; *) a. Foldable t =&gt; (a -&gt; Bool) -&gt; t a -&gt; Maybe a
+</span><span class="hs-identifier hs-var">find</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span class="hs-special">(</span><span id="local-6989586621679067869"><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067869"><span class="hs-identifier hs-var">s</span></a></span></span><span class="hs-special">,</span><span class="annot"><span class="annottext">Int -&gt; Builder
+</span><span class="hs-identifier">_</span></span><span class="hs-special">,</span><span class="annot"><span class="annottext">n
+</span><span class="hs-identifier">_</span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall a. Num a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">abs</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067868"><span class="hs-identifier hs-var">ts</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&gt;=</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067869"><span class="hs-identifier hs-var">s</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[(n, Int -&gt; Builder, n)] -&gt; [(n, Int -&gt; Builder, n)]
+forall a. [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">reverse</span></span><span> </span><span class="annot"><span class="annottext">[(n, Int -&gt; Builder, n)]
+RealFrac n =&gt; [(n, Int -&gt; Builder, n)]
+</span><a href="#local-6989586621679067872"><span class="hs-identifier hs-var">ranges</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-495"></span><span>        </span><span class="annot"><span class="annottext">Maybe (n, Int -&gt; Builder, n)
+</span><span class="hs-identifier hs-var">Nothing</span></span><span>           </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;unknown&quot;</span></span><span>
+</span><span id="line-496"></span><span>        </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><span class="hs-identifier">_</span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679067873"><span class="annot"><span class="annottext">Int -&gt; Builder
+</span><a href="#local-6989586621679067873"><span class="hs-identifier hs-var">f</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679067874"><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067874"><span class="hs-identifier hs-var">base</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><a href="#local-6989586621679067875"><span class="hs-identifier hs-var">prefix</span></a></span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Builder -&gt; Builder
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Builder
+</span><a href="#local-6989586621679067873"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n -&gt; n -&gt; Int
+RealFrac n =&gt; n -&gt; n -&gt; Int
+</span><a href="#local-6989586621679067876"><span class="hs-identifier hs-var">toInt</span></a></span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067868"><span class="hs-identifier hs-var">ts</span></a></span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067874"><span class="hs-identifier hs-var">base</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Builder -&gt; Builder
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><a href="#local-6989586621679067877"><span class="hs-identifier hs-var">suffix</span></a></span><span>
+</span><span id="line-497"></span><span>      </span><span class="hs-keyword">where</span><span>
+</span><span id="line-498"></span><span>        </span><span id="local-6989586621679067875"><span class="annot"><span class="annottext">prefix :: Builder
+</span><a href="#local-6989586621679067875"><span class="hs-identifier hs-var hs-var">prefix</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679067855"><span class="hs-identifier hs-var">fix</span></a></span><span> </span><span class="annot"><span class="annottext">Bool -&gt; Bool -&gt; Bool
+</span><span class="hs-operator hs-var">&amp;&amp;</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067868"><span class="hs-identifier hs-var">ts</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&gt;</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span> </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;in &quot;</span></span><span>  </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;&quot;</span></span><span>
+</span><span id="line-499"></span><span>        </span><span id="local-6989586621679067877"><span class="annot"><span class="annottext">suffix :: Builder
+</span><a href="#local-6989586621679067877"><span class="hs-identifier hs-var hs-var">suffix</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679067855"><span class="hs-identifier hs-var">fix</span></a></span><span> </span><span class="annot"><span class="annottext">Bool -&gt; Bool -&gt; Bool
+</span><span class="hs-operator hs-var">&amp;&amp;</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067868"><span class="hs-identifier hs-var">ts</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span> </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; ago&quot;</span></span><span> </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;&quot;</span></span><span>
+</span><span id="line-500"></span><span>
+</span><span id="line-501"></span><span>    </span><span class="annot"><a href="#local-6989586621679067876"><span class="hs-identifier hs-type">toInt</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-502"></span><span>    </span><span id="local-6989586621679067876"><span class="annot"><span class="annottext">toInt :: RealFrac n =&gt; n -&gt; n -&gt; Int
+</span><a href="#local-6989586621679067876"><span class="hs-identifier hs-var hs-var">toInt</span></a></span></span><span> </span><span id="local-6989586621679067897"><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067897"><span class="hs-identifier hs-var">ts</span></a></span></span><span> </span><span id="local-6989586621679067898"><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067898"><span class="hs-identifier hs-var">base</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">abs</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n -&gt; Int
+forall b. Integral b =&gt; n -&gt; b
+forall a b. (RealFrac a, Integral b) =&gt; a -&gt; b
+</span><span class="hs-identifier hs-var">round</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067897"><span class="hs-identifier hs-var">ts</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067898"><span class="hs-identifier hs-var">base</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-503"></span><span>
+</span><span id="line-504"></span><span>    </span><span class="annot"><a href="#local-6989586621679067901"><span class="hs-identifier hs-type">intF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span>
+</span><span id="line-505"></span><span>    </span><span id="local-6989586621679067901"><span class="annot"><span class="annottext">intF :: Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var hs-var">intF</span></a></span></span><span> </span><span id="local-6989586621679067902"><span class="annot"><span class="annottext">Builder
+</span><a href="#local-6989586621679067902"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span id="local-6989586621679067903"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679067903"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Builder
+forall p. Buildable p =&gt; p -&gt; Builder
+</span><span class="hs-identifier hs-var">build</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679067903"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Builder -&gt; Builder
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><a href="#local-6989586621679067902"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-506"></span><span>
+</span><span id="line-507"></span><span>    </span><span class="annot"><a href="#local-6989586621679067872"><span class="hs-identifier hs-type">ranges</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="#local-6989586621679067558"><span class="hs-identifier hs-type">n</span></a></span><span class="hs-special">)</span><span class="hs-special">]</span><span>
+</span><span id="line-508"></span><span>    </span><span id="local-6989586621679067872"><span class="annot"><span class="annottext">ranges :: RealFrac n =&gt; [(n, Int -&gt; Builder, n)]
+</span><a href="#local-6989586621679067872"><span class="hs-identifier hs-var hs-var">ranges</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-509"></span><span>      </span><span class="hs-special">[</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>           </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; milliseconds&quot;</span></span><span> </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0.001</span></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-510"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">1</span></span><span>           </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; seconds&quot;</span></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">1</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-511"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067955"><span class="hs-identifier hs-var">minute</span></a></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;a minute&quot;</span></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-512"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067955"><span class="hs-identifier hs-var">minute</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">2</span></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; minutes&quot;</span></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067955"><span class="hs-identifier hs-var">minute</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-513"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067955"><span class="hs-identifier hs-var">minute</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">30</span></span><span> </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;half an hour&quot;</span></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-514"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067955"><span class="hs-identifier hs-var">minute</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">31</span></span><span> </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; minutes&quot;</span></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067955"><span class="hs-identifier hs-var">minute</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-515"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067958"><span class="hs-identifier hs-var">hour</span></a></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;an hour&quot;</span></span><span>       </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-516"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067958"><span class="hs-identifier hs-var">hour</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">2</span></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; hours&quot;</span></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067958"><span class="hs-identifier hs-var">hour</span></a></span><span>  </span><span class="hs-special">)</span><span>
+</span><span id="line-517"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067958"><span class="hs-identifier hs-var">hour</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">3</span></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;a few hours&quot;</span></span><span>   </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-518"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067958"><span class="hs-identifier hs-var">hour</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">4</span></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; hours&quot;</span></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067958"><span class="hs-identifier hs-var">hour</span></a></span><span>  </span><span class="hs-special">)</span><span>
+</span><span id="line-519"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067959"><span class="hs-identifier hs-var">day</span></a></span><span>         </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;a day&quot;</span></span><span>         </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-520"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067959"><span class="hs-identifier hs-var">day</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">2</span></span><span>     </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; days&quot;</span></span><span>         </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067959"><span class="hs-identifier hs-var">day</span></a></span><span>   </span><span class="hs-special">)</span><span>
+</span><span id="line-521"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067960"><span class="hs-identifier hs-var">week</span></a></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;a week&quot;</span></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-522"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067960"><span class="hs-identifier hs-var">week</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">2</span></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; weeks&quot;</span></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067960"><span class="hs-identifier hs-var">week</span></a></span><span>  </span><span class="hs-special">)</span><span>
+</span><span id="line-523"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067961"><span class="hs-identifier hs-var">month</span></a></span><span>       </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;a month&quot;</span></span><span>       </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-524"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067961"><span class="hs-identifier hs-var">month</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">2</span></span><span>   </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; months&quot;</span></span><span>       </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067961"><span class="hs-identifier hs-var">month</span></a></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-525"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067962"><span class="hs-identifier hs-var">year</span></a></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+forall a b. a -&gt; b -&gt; a
+</span><span class="hs-identifier hs-var">const</span></span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;a year&quot;</span></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">0</span></span><span>     </span><span class="hs-special">)</span><span>
+</span><span id="line-526"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067962"><span class="hs-identifier hs-var">year</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">2</span></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Int -&gt; Builder
+</span><a href="#local-6989586621679067901"><span class="hs-identifier hs-var">intF</span></a></span><span>  </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot; years&quot;</span></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067962"><span class="hs-identifier hs-var">year</span></a></span><span>  </span><span class="hs-special">)</span><span>
+</span><span id="line-527"></span><span>      </span><span class="hs-special">]</span><span>
+</span><span id="line-528"></span><span>      </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679067962"><span class="annot"><span class="annottext">year :: n
+</span><a href="#local-6989586621679067962"><span class="hs-identifier hs-var hs-var">year</span></a></span></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067961"><span class="hs-identifier hs-var">month</span></a></span><span>  </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">12</span></span><span>
+</span><span id="line-529"></span><span>            </span><span id="local-6989586621679067961"><span class="annot"><span class="annottext">month :: n
+</span><a href="#local-6989586621679067961"><span class="hs-identifier hs-var hs-var">month</span></a></span></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067959"><span class="hs-identifier hs-var">day</span></a></span><span>    </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">30</span></span><span>
+</span><span id="line-530"></span><span>            </span><span id="local-6989586621679067960"><span class="annot"><span class="annottext">week :: n
+</span><a href="#local-6989586621679067960"><span class="hs-identifier hs-var hs-var">week</span></a></span></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067959"><span class="hs-identifier hs-var">day</span></a></span><span>    </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">7</span></span><span>
+</span><span id="line-531"></span><span>            </span><span id="local-6989586621679067959"><span class="annot"><span class="annottext">day :: n
+</span><a href="#local-6989586621679067959"><span class="hs-identifier hs-var hs-var">day</span></a></span></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067958"><span class="hs-identifier hs-var">hour</span></a></span><span>   </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">24</span></span><span>
+</span><span id="line-532"></span><span>            </span><span id="local-6989586621679067958"><span class="annot"><span class="annottext">hour :: n
+</span><a href="#local-6989586621679067958"><span class="hs-identifier hs-var hs-var">hour</span></a></span></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">n
+</span><a href="#local-6989586621679067955"><span class="hs-identifier hs-var">minute</span></a></span><span> </span><span class="annot"><span class="annottext">n -&gt; n -&gt; n
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">60</span></span><span>
+</span><span id="line-533"></span><span>            </span><span id="local-6989586621679067955"><span class="annot"><span class="annottext">minute :: n
+</span><a href="#local-6989586621679067955"><span class="hs-identifier hs-var hs-var">minute</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">n
+</span><span class="hs-number">60</span></span><span>
+</span><span id="line-534"></span><span>
+</span><span id="line-535"></span><span class="hs-comment">-- | Display the absolute value time span in years.</span><span>
+</span><span id="line-536"></span><span class="hs-comment">--</span><span>
+</span><span id="line-537"></span><span class="hs-comment">-- &gt;&gt;&gt; epochF t    -- time passed since Jan 1, 1970</span><span>
+</span><span id="line-538"></span><span class="hs-comment">-- &quot;1518646845&quot;</span><span>
+</span><span id="line-539"></span><span class="hs-comment">-- &gt;&gt;&gt; yearsF 3 1518646845</span><span>
+</span><span id="line-540"></span><span class="hs-comment">-- &quot;48.156&quot;</span><span>
+</span><span id="line-541"></span><span id="local-6989586621679067572"><span class="annot"><a href="Fmt.Time.html#yearsF"><span class="hs-identifier hs-type">yearsF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679067572"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-542"></span><span>       </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Decimal places.</span></span><span>
+</span><span id="line-543"></span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067572"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-544"></span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-545"></span><span id="yearsF"><span class="annot"><span class="annottext">yearsF :: forall n. RealFrac n =&gt; Int -&gt; n -&gt; Builder
+</span><a href="Fmt.Time.html#yearsF"><span class="hs-identifier hs-var hs-var">yearsF</span></a></span></span><span> </span><span id="local-6989586621679067981"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679067981"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; n -&gt; Builder
+forall a. Real a =&gt; Int -&gt; a -&gt; Builder
+</span><a href="Fmt.Internal.Numeric.html#fixedF"><span class="hs-identifier hs-var">fixedF</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679067981"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">(n -&gt; Builder) -&gt; (n -&gt; n) -&gt; n -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall a. Num a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">abs</span></span><span> </span><span class="annot"><span class="annottext">(n -&gt; n) -&gt; (n -&gt; n) -&gt; n -&gt; n
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall {a}. Fractional a =&gt; a -&gt; a
+</span><a href="#local-6989586621679067982"><span class="hs-identifier hs-var">count</span></a></span><span>
+</span><span id="line-546"></span><span>  </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679067982"><span class="annot"><span class="annottext">count :: a -&gt; a
+</span><a href="#local-6989586621679067982"><span class="hs-identifier hs-var hs-var">count</span></a></span></span><span> </span><span id="local-6989586621679067995"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679067995"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679067995"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">365</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">24</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">60</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">60</span></span><span>
+</span><span id="line-547"></span><span>
+</span><span id="line-548"></span><span class="hs-comment">-- | Display the absolute value time span in days.</span><span>
+</span><span id="line-549"></span><span class="hs-comment">--</span><span>
+</span><span id="line-550"></span><span class="hs-comment">-- &gt;&gt;&gt; daysF 3 1518646845</span><span>
+</span><span id="line-551"></span><span class="hs-comment">-- &quot;17576.931&quot;</span><span>
+</span><span id="line-552"></span><span id="local-6989586621679067996"><span class="annot"><a href="Fmt.Time.html#daysF"><span class="hs-identifier hs-type">daysF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679067996"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-553"></span><span>      </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Decimal places.</span></span><span>
+</span><span id="line-554"></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679067996"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-555"></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-556"></span><span id="daysF"><span class="annot"><span class="annottext">daysF :: forall n. RealFrac n =&gt; Int -&gt; n -&gt; Builder
+</span><a href="Fmt.Time.html#daysF"><span class="hs-identifier hs-var hs-var">daysF</span></a></span></span><span> </span><span id="local-6989586621679068004"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679068004"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; n -&gt; Builder
+forall a. Real a =&gt; Int -&gt; a -&gt; Builder
+</span><a href="Fmt.Internal.Numeric.html#fixedF"><span class="hs-identifier hs-var">fixedF</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679068004"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">(n -&gt; Builder) -&gt; (n -&gt; n) -&gt; n -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall a. Num a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">abs</span></span><span> </span><span class="annot"><span class="annottext">(n -&gt; n) -&gt; (n -&gt; n) -&gt; n -&gt; n
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall {a}. Fractional a =&gt; a -&gt; a
+</span><a href="#local-6989586621679068005"><span class="hs-identifier hs-var">count</span></a></span><span>
+</span><span id="line-557"></span><span>  </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679068005"><span class="annot"><span class="annottext">count :: a -&gt; a
+</span><a href="#local-6989586621679068005"><span class="hs-identifier hs-var hs-var">count</span></a></span></span><span> </span><span id="local-6989586621679068015"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679068015"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679068015"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">24</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">60</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">60</span></span><span>
+</span><span id="line-558"></span><span>
+</span><span id="line-559"></span><span class="hs-comment">-- | Display the absolute value time span in hours.</span><span>
+</span><span id="line-560"></span><span class="hs-comment">--</span><span>
+</span><span id="line-561"></span><span class="hs-comment">-- &gt;&gt;&gt; hoursF 3 3600</span><span>
+</span><span id="line-562"></span><span class="hs-comment">-- &quot;1.000&quot;</span><span>
+</span><span id="line-563"></span><span id="local-6989586621679068016"><span class="annot"><a href="Fmt.Time.html#hoursF"><span class="hs-identifier hs-type">hoursF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679068016"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-564"></span><span>       </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Decimal places.</span></span><span>
+</span><span id="line-565"></span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679068016"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-566"></span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-567"></span><span id="hoursF"><span class="annot"><span class="annottext">hoursF :: forall n. RealFrac n =&gt; Int -&gt; n -&gt; Builder
+</span><a href="Fmt.Time.html#hoursF"><span class="hs-identifier hs-var hs-var">hoursF</span></a></span></span><span> </span><span id="local-6989586621679068024"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679068024"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; n -&gt; Builder
+forall a. Real a =&gt; Int -&gt; a -&gt; Builder
+</span><a href="Fmt.Internal.Numeric.html#fixedF"><span class="hs-identifier hs-var">fixedF</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679068024"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">(n -&gt; Builder) -&gt; (n -&gt; n) -&gt; n -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall a. Num a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">abs</span></span><span> </span><span class="annot"><span class="annottext">(n -&gt; n) -&gt; (n -&gt; n) -&gt; n -&gt; n
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall {a}. Fractional a =&gt; a -&gt; a
+</span><a href="#local-6989586621679068025"><span class="hs-identifier hs-var">count</span></a></span><span>
+</span><span id="line-568"></span><span>  </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679068025"><span class="annot"><span class="annottext">count :: a -&gt; a
+</span><a href="#local-6989586621679068025"><span class="hs-identifier hs-var hs-var">count</span></a></span></span><span> </span><span id="local-6989586621679068033"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679068033"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679068033"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">60</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">60</span></span><span>
+</span><span id="line-569"></span><span>
+</span><span id="line-570"></span><span class="hs-comment">-- | Display the absolute value time span in minutes.</span><span>
+</span><span id="line-571"></span><span class="hs-comment">--</span><span>
+</span><span id="line-572"></span><span class="hs-comment">-- &gt;&gt;&gt; minutesF 3 150</span><span>
+</span><span id="line-573"></span><span class="hs-comment">-- &quot;2.500&quot;</span><span>
+</span><span id="line-574"></span><span id="local-6989586621679068034"><span class="annot"><a href="Fmt.Time.html#minutesF"><span class="hs-identifier hs-type">minutesF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679068034"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-575"></span><span>         </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Decimal places.</span></span><span>
+</span><span id="line-576"></span><span>         </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679068034"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-577"></span><span>         </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-578"></span><span id="minutesF"><span class="annot"><span class="annottext">minutesF :: forall n. RealFrac n =&gt; Int -&gt; n -&gt; Builder
+</span><a href="Fmt.Time.html#minutesF"><span class="hs-identifier hs-var hs-var">minutesF</span></a></span></span><span> </span><span id="local-6989586621679068042"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679068042"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; n -&gt; Builder
+forall a. Real a =&gt; Int -&gt; a -&gt; Builder
+</span><a href="Fmt.Internal.Numeric.html#fixedF"><span class="hs-identifier hs-var">fixedF</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679068042"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">(n -&gt; Builder) -&gt; (n -&gt; n) -&gt; n -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall a. Num a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">abs</span></span><span> </span><span class="annot"><span class="annottext">(n -&gt; n) -&gt; (n -&gt; n) -&gt; n -&gt; n
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall {a}. Fractional a =&gt; a -&gt; a
+</span><a href="#local-6989586621679068043"><span class="hs-identifier hs-var">count</span></a></span><span>
+</span><span id="line-579"></span><span>  </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679068043"><span class="annot"><span class="annottext">count :: a -&gt; a
+</span><a href="#local-6989586621679068043"><span class="hs-identifier hs-var hs-var">count</span></a></span></span><span> </span><span id="local-6989586621679068049"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679068049"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679068049"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">a -&gt; a -&gt; a
+forall a. Fractional a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">/</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">60</span></span><span>
+</span><span id="line-580"></span><span>
+</span><span id="line-581"></span><span class="hs-comment">-- | Display the absolute value time span in seconds.</span><span>
+</span><span id="line-582"></span><span class="hs-comment">--</span><span>
+</span><span id="line-583"></span><span class="hs-comment">-- &gt;&gt;&gt; secondsF 3 100</span><span>
+</span><span id="line-584"></span><span class="hs-comment">-- &quot;100.000&quot;</span><span>
+</span><span id="line-585"></span><span id="local-6989586621679068050"><span class="annot"><a href="Fmt.Time.html#secondsF"><span class="hs-identifier hs-type">secondsF</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">RealFrac</span></span><span> </span><span class="annot"><a href="#local-6989586621679068050"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-586"></span><span>         </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Decimal places.</span></span><span>
+</span><span id="line-587"></span><span>         </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679068050"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-588"></span><span>         </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span></span><span>
+</span><span id="line-589"></span><span id="secondsF"><span class="annot"><span class="annottext">secondsF :: forall n. RealFrac n =&gt; Int -&gt; n -&gt; Builder
+</span><a href="Fmt.Time.html#secondsF"><span class="hs-identifier hs-var hs-var">secondsF</span></a></span></span><span> </span><span id="local-6989586621679068056"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679068056"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; n -&gt; Builder
+forall a. Real a =&gt; Int -&gt; a -&gt; Builder
+</span><a href="Fmt.Internal.Numeric.html#fixedF"><span class="hs-identifier hs-var">fixedF</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679068056"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">(n -&gt; Builder) -&gt; (n -&gt; n) -&gt; n -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">n -&gt; n
+forall a. Num a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">abs</span></span><span>
+</span><span id="line-590"></span></pre></body></html>

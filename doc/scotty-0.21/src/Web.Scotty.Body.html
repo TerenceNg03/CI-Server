@@ -1,0 +1,408 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE FlexibleContexts, FlexibleInstances, RecordWildCards,
+             OverloadedStrings, MultiWayIf #-}</span><span>
+</span><span id="line-3"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Web.Scotty.Body</span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-4"></span><span>  </span><span class="annot"><a href="Web.Scotty.Body.html#newBodyInfo"><span class="hs-identifier">newBodyInfo</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-5"></span><span>  </span><span class="annot"><a href="Web.Scotty.Body.html#cloneBodyInfo"><span class="hs-identifier">cloneBodyInfo</span></a></span><span>
+</span><span id="line-6"></span><span>
+</span><span id="line-7"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Body.html#getFormParamsAndFilesAction"><span class="hs-identifier">getFormParamsAndFilesAction</span></a></span><span>
+</span><span id="line-8"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Body.html#getBodyAction"><span class="hs-identifier">getBodyAction</span></a></span><span>
+</span><span id="line-9"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Body.html#getBodyChunkAction"><span class="hs-identifier">getBodyChunkAction</span></a></span><span>
+</span><span id="line-10"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-11"></span><span>
+</span><span id="line-12"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Concurrent.MVar</span></span><span>
+</span><span id="line-13"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.IO.Class</span></span><span>
+</span><span id="line-14"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BS</span></span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Char8</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">B</span></span><span>
+</span><span id="line-16"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Lazy.Char8</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BL</span></span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Maybe</span></span><span>
+</span><span id="line-18"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">GHC.Exception</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">E</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">throw</span></span><span class="hs-special">)</span><span>
+</span><span id="line-19"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Network.Wai</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Request</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">getRequestBodyChunk</span></span><span class="hs-special">)</span><span>
+</span><span id="line-20"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Network.Wai.Parse</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">W</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">File</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">Param</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">getRequestBodyType</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">BackEnd</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">lbsBackEnd</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">sinkRequestBody</span></span><span class="hs-special">)</span><span>
+</span><span id="line-21"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Web.Scotty.Action.html"><span class="hs-identifier">Web.Scotty.Action</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier">Param</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-22"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Web.Scotty.Internal.Types.html"><span class="hs-identifier">Web.Scotty.Internal.Types</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier">BodyInfo</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier">BodyChunkBuffer</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyPartiallyStreamed"><span class="hs-identifier">BodyPartiallyStreamed</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier">RouteOptions</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-23"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Web.Scotty.Util.html"><span class="hs-identifier">Web.Scotty.Util</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Util.html#readRequestBody"><span class="hs-identifier">readRequestBody</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Util.html#strictByteStringToLazyText"><span class="hs-identifier">strictByteStringToLazyText</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">decodeUtf8Lenient</span></span><span class="hs-special">)</span><span>
+</span><span id="line-24"></span><span>
+</span><span id="line-25"></span><span class="annot"><span class="hs-comment">-- | Make a new BodyInfo with readProgress at 0 and an empty BodyChunkBuffer.</span></span><span>
+</span><span id="line-26"></span><span id="local-6989586621679121952"><span class="annot"><a href="Web.Scotty.Body.html#newBodyInfo"><span class="hs-identifier hs-type">newBodyInfo</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679121952"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Request</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679121952"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span></span><span>
+</span><span id="line-27"></span><span id="newBodyInfo"><span class="annot"><span class="annottext">newBodyInfo :: forall (m :: * -&gt; *). MonadIO m =&gt; Request -&gt; m BodyInfo
+</span><a href="Web.Scotty.Body.html#newBodyInfo"><span class="hs-identifier hs-var hs-var">newBodyInfo</span></a></span></span><span> </span><span id="local-6989586621679122059"><span class="annot"><span class="annottext">Request
+</span><a href="#local-6989586621679122059"><span class="hs-identifier hs-var">req</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO BodyInfo -&gt; m BodyInfo
+forall a. IO a -&gt; m a
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; m a
+</span><span class="hs-identifier hs-var">liftIO</span></span><span> </span><span class="annot"><span class="annottext">(IO BodyInfo -&gt; m BodyInfo) -&gt; IO BodyInfo -&gt; m BodyInfo
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-28"></span><span>  </span><span id="local-6989586621679122061"><span class="annot"><span class="annottext">MVar Int
+</span><a href="#local-6989586621679122061"><span class="hs-identifier hs-var">readProgress</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Int -&gt; IO (MVar Int)
+forall a. a -&gt; IO (MVar a)
+</span><span class="hs-identifier hs-var">newMVar</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-29"></span><span>  </span><span id="local-6989586621679122063"><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+</span><a href="#local-6989586621679122063"><span class="hs-identifier hs-var">chunkBuffer</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">BodyChunkBuffer -&gt; IO (MVar BodyChunkBuffer)
+forall a. a -&gt; IO (MVar a)
+</span><span class="hs-identifier hs-var">newMVar</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; [ByteString] -&gt; BodyChunkBuffer
+</span><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier hs-var">BodyChunkBuffer</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">False</span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-30"></span><span>  </span><span class="annot"><span class="annottext">BodyInfo -&gt; IO BodyInfo
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><span class="annottext">(BodyInfo -&gt; IO BodyInfo) -&gt; BodyInfo -&gt; IO BodyInfo
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">MVar Int -&gt; MVar BodyChunkBuffer -&gt; IO ByteString -&gt; BodyInfo
+</span><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-var">BodyInfo</span></a></span><span> </span><span class="annot"><span class="annottext">MVar Int
+</span><a href="#local-6989586621679122061"><span class="hs-identifier hs-var">readProgress</span></a></span><span> </span><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+</span><a href="#local-6989586621679122063"><span class="hs-identifier hs-var">chunkBuffer</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Request -&gt; IO ByteString
+</span><span class="hs-identifier hs-var">getRequestBodyChunk</span></span><span> </span><span class="annot"><span class="annottext">Request
+</span><a href="#local-6989586621679122059"><span class="hs-identifier hs-var">req</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-31"></span><span>
+</span><span id="line-32"></span><span class="hs-comment">-- | Make a copy of a BodyInfo, sharing the previous BodyChunkBuffer but with the</span><span>
+</span><span id="line-33"></span><span class="hs-comment">-- readProgress MVar reset to 0.</span><span>
+</span><span id="line-34"></span><span id="local-6989586621679121967"><span class="annot"><a href="Web.Scotty.Body.html#cloneBodyInfo"><span class="hs-identifier hs-type">cloneBodyInfo</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679121967"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679121967"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span></span><span>
+</span><span id="line-35"></span><span id="cloneBodyInfo"><span class="annot"><span class="annottext">cloneBodyInfo :: forall (m :: * -&gt; *). MonadIO m =&gt; BodyInfo -&gt; m BodyInfo
+</span><a href="Web.Scotty.Body.html#cloneBodyInfo"><span class="hs-identifier hs-var hs-var">cloneBodyInfo</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span class="annot"><span class="annottext">MVar Int
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679122071"><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+</span><a href="#local-6989586621679122071"><span class="hs-identifier hs-var">chunkBufferVar</span></a></span></span><span> </span><span id="local-6989586621679122072"><span class="annot"><span class="annottext">IO ByteString
+</span><a href="#local-6989586621679122072"><span class="hs-identifier hs-var">getChunk</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO BodyInfo -&gt; m BodyInfo
+forall a. IO a -&gt; m a
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; m a
+</span><span class="hs-identifier hs-var">liftIO</span></span><span> </span><span class="annot"><span class="annottext">(IO BodyInfo -&gt; m BodyInfo) -&gt; IO BodyInfo -&gt; m BodyInfo
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-36"></span><span>  </span><span id="local-6989586621679122073"><span class="annot"><span class="annottext">MVar Int
+</span><a href="#local-6989586621679122073"><span class="hs-identifier hs-var">cleanReadProgressVar</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Int -&gt; IO (MVar Int)
+forall a. a -&gt; IO (MVar a)
+</span><span class="hs-identifier hs-var">newMVar</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-37"></span><span>  </span><span class="annot"><span class="annottext">BodyInfo -&gt; IO BodyInfo
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><span class="annottext">(BodyInfo -&gt; IO BodyInfo) -&gt; BodyInfo -&gt; IO BodyInfo
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">MVar Int -&gt; MVar BodyChunkBuffer -&gt; IO ByteString -&gt; BodyInfo
+</span><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-var">BodyInfo</span></a></span><span> </span><span class="annot"><span class="annottext">MVar Int
+</span><a href="#local-6989586621679122073"><span class="hs-identifier hs-var">cleanReadProgressVar</span></a></span><span> </span><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+</span><a href="#local-6989586621679122071"><span class="hs-identifier hs-var">chunkBufferVar</span></a></span><span> </span><span class="annot"><span class="annottext">IO ByteString
+</span><a href="#local-6989586621679122072"><span class="hs-identifier hs-var">getChunk</span></a></span><span>
+</span><span id="line-38"></span><span>
+</span><span id="line-39"></span><span class="annot"><span class="hs-comment">-- | Get the form params and files from the request. Requires reading the whole body.</span></span><span>
+</span><span id="line-40"></span><span class="annot"><a href="Web.Scotty.Body.html#getFormParamsAndFilesAction"><span class="hs-identifier hs-type">getFormParamsAndFilesAction</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Request</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-type">RouteOptions</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">W.File</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BL.ByteString</span></span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-41"></span><span id="getFormParamsAndFilesAction"><span class="annot"><span class="annottext">getFormParamsAndFilesAction :: Request
+-&gt; BodyInfo -&gt; RouteOptions -&gt; IO ([Param], [File ByteString])
+</span><a href="Web.Scotty.Body.html#getFormParamsAndFilesAction"><span class="hs-identifier hs-var hs-var">getFormParamsAndFilesAction</span></a></span></span><span> </span><span id="local-6989586621679122074"><span class="annot"><span class="annottext">Request
+</span><a href="#local-6989586621679122074"><span class="hs-identifier hs-var">req</span></a></span></span><span> </span><span id="local-6989586621679122075"><span class="annot"><span class="annottext">BodyInfo
+</span><a href="#local-6989586621679122075"><span class="hs-identifier hs-var">bodyInfo</span></a></span></span><span> </span><span id="local-6989586621679122076"><span class="annot"><span class="annottext">RouteOptions
+</span><a href="#local-6989586621679122076"><span class="hs-identifier hs-var">opts</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-42"></span><span>  </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679122077"><span class="annot"><span class="annottext">shouldParseBody :: Bool
+</span><a href="#local-6989586621679122077"><span class="hs-identifier hs-var hs-var">shouldParseBody</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Maybe RequestBodyType -&gt; Bool
+forall a. Maybe a -&gt; Bool
+</span><span class="hs-identifier hs-var">isJust</span></span><span> </span><span class="annot"><span class="annottext">(Maybe RequestBodyType -&gt; Bool) -&gt; Maybe RequestBodyType -&gt; Bool
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Request -&gt; Maybe RequestBodyType
+</span><span class="hs-identifier hs-var">W.getRequestBodyType</span></span><span> </span><span class="annot"><span class="annottext">Request
+</span><a href="#local-6989586621679122074"><span class="hs-identifier hs-var">req</span></a></span><span>
+</span><span id="line-43"></span><span>
+</span><span id="line-44"></span><span>  </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679122077"><span class="hs-identifier hs-var">shouldParseBody</span></a></span><span>
+</span><span id="line-45"></span><span>    </span><span class="hs-keyword">then</span><span>
+</span><span id="line-46"></span><span>    </span><span class="hs-keyword">do</span><span>
+</span><span id="line-47"></span><span>      </span><span id="local-6989586621679122079"><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122079"><span class="hs-identifier hs-var">bs</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">BodyInfo -&gt; RouteOptions -&gt; IO ByteString
+</span><a href="Web.Scotty.Body.html#getBodyAction"><span class="hs-identifier hs-var">getBodyAction</span></a></span><span> </span><span class="annot"><span class="annottext">BodyInfo
+</span><a href="#local-6989586621679122075"><span class="hs-identifier hs-var">bodyInfo</span></a></span><span> </span><span class="annot"><span class="annottext">RouteOptions
+</span><a href="#local-6989586621679122076"><span class="hs-identifier hs-var">opts</span></a></span><span>
+</span><span id="line-48"></span><span>      </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679122080"><span class="annot"><span class="annottext">wholeBody :: [ByteString]
+</span><a href="#local-6989586621679122080"><span class="hs-identifier hs-var hs-var">wholeBody</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; [ByteString]
+</span><span class="hs-identifier hs-var">BL.toChunks</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122079"><span class="hs-identifier hs-var">bs</span></a></span><span>
+</span><span id="line-49"></span><span>      </span><span class="hs-special">(</span><span id="local-6989586621679122082"><span class="annot"><span class="annottext">[Param]
+</span><a href="#local-6989586621679122082"><span class="hs-identifier hs-var">formparams</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679122083"><span class="annot"><span class="annottext">[File ByteString]
+</span><a href="#local-6989586621679122083"><span class="hs-identifier hs-var">fs</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">[ByteString]
+-&gt; BackEnd ByteString -&gt; Request -&gt; IO ([Param], [File ByteString])
+forall (m :: * -&gt; *) y.
+MonadIO m =&gt;
+[ByteString] -&gt; BackEnd y -&gt; Request -&gt; m ([Param], [File y])
+</span><a href="Web.Scotty.Body.html#parseRequestBody"><span class="hs-identifier hs-var">parseRequestBody</span></a></span><span> </span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122080"><span class="hs-identifier hs-var">wholeBody</span></a></span><span> </span><span class="annot"><span class="annottext">BackEnd ByteString
+forall (m :: * -&gt; *) ignored1 ignored2.
+Monad m =&gt;
+ignored1 -&gt; ignored2 -&gt; m ByteString -&gt; m ByteString
+</span><span class="hs-identifier hs-var">W.lbsBackEnd</span></span><span> </span><span class="annot"><span class="annottext">Request
+</span><a href="#local-6989586621679122074"><span class="hs-identifier hs-var">req</span></a></span><span> </span><span class="hs-comment">-- NB this loads the whole body into memory</span><span>
+</span><span id="line-50"></span><span>      </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679122085"><span class="annot"><span class="annottext">convert :: Param -&gt; Param
+</span><a href="#local-6989586621679122085"><span class="hs-identifier hs-var hs-var">convert</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679122086"><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122086"><span class="hs-identifier hs-var">k</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679122087"><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122087"><span class="hs-identifier hs-var">v</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ByteString -&gt; Text
+</span><span class="hs-identifier hs-var">decodeUtf8Lenient</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122086"><span class="hs-identifier hs-var">k</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Text
+</span><span class="hs-identifier hs-var">decodeUtf8Lenient</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122087"><span class="hs-identifier hs-var">v</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-51"></span><span>      </span><span class="annot"><span class="annottext">([Param], [File ByteString]) -&gt; IO ([Param], [File ByteString])
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Param -&gt; Param
+</span><a href="#local-6989586621679122085"><span class="hs-identifier hs-var">convert</span></a></span><span> </span><span class="annot"><span class="annottext">(Param -&gt; Param) -&gt; [Param] -&gt; [Param]
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">[Param]
+</span><a href="#local-6989586621679122082"><span class="hs-identifier hs-var">formparams</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[File ByteString]
+</span><a href="#local-6989586621679122083"><span class="hs-identifier hs-var">fs</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-52"></span><span>    </span><span class="hs-keyword">else</span><span>
+</span><span id="line-53"></span><span>    </span><span class="annot"><span class="annottext">([Param], [File ByteString]) -&gt; IO ([Param], [File ByteString])
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-54"></span><span>
+</span><span id="line-55"></span><span class="hs-comment">-- | Retrieve the entire body, using the cached chunks in the BodyInfo and reading any other</span><span>
+</span><span id="line-56"></span><span class="hs-comment">-- chunks if they still exist.</span><span>
+</span><span id="line-57"></span><span class="hs-comment">-- Mimic the previous behavior by throwing BodyPartiallyStreamed if the user has already</span><span>
+</span><span id="line-58"></span><span class="hs-comment">-- started reading the body by chunks.</span><span>
+</span><span id="line-59"></span><span class="annot"><a href="Web.Scotty.Body.html#getBodyAction"><span class="hs-identifier hs-type">getBodyAction</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RouteOptions"><span class="hs-identifier hs-type">RouteOptions</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">BL.ByteString</span></span><span class="hs-special">)</span><span>
+</span><span id="line-60"></span><span id="getBodyAction"><span class="annot"><span class="annottext">getBodyAction :: BodyInfo -&gt; RouteOptions -&gt; IO ByteString
+</span><a href="Web.Scotty.Body.html#getBodyAction"><span class="hs-identifier hs-var hs-var">getBodyAction</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span id="local-6989586621679122089"><span class="annot"><span class="annottext">MVar Int
+</span><a href="#local-6989586621679122089"><span class="hs-identifier hs-var">readProgress</span></a></span></span><span> </span><span id="local-6989586621679122090"><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+</span><a href="#local-6989586621679122090"><span class="hs-identifier hs-var">chunkBufferVar</span></a></span></span><span> </span><span id="local-6989586621679122091"><span class="annot"><span class="annottext">IO ByteString
+</span><a href="#local-6989586621679122091"><span class="hs-identifier hs-var">getChunk</span></a></span></span><span class="hs-special">)</span><span> </span><span id="local-6989586621679122092"><span class="annot"><span class="annottext">RouteOptions
+</span><a href="#local-6989586621679122092"><span class="hs-identifier hs-var">opts</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-61"></span><span>  </span><span class="annot"><span class="annottext">MVar Int -&gt; (Int -&gt; IO (Int, ByteString)) -&gt; IO ByteString
+forall a b. MVar a -&gt; (a -&gt; IO (a, b)) -&gt; IO b
+</span><span class="hs-identifier hs-var">modifyMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar Int
+</span><a href="#local-6989586621679122089"><span class="hs-identifier hs-var">readProgress</span></a></span><span> </span><span class="annot"><span class="annottext">((Int -&gt; IO (Int, ByteString)) -&gt; IO ByteString)
+-&gt; (Int -&gt; IO (Int, ByteString)) -&gt; IO ByteString
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679122094"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122094"><span class="hs-identifier hs-var">index</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-62"></span><span>    </span><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+-&gt; (BodyChunkBuffer -&gt; IO (BodyChunkBuffer, (Int, ByteString)))
+-&gt; IO (Int, ByteString)
+forall a b. MVar a -&gt; (a -&gt; IO (a, b)) -&gt; IO b
+</span><span class="hs-identifier hs-var">modifyMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+</span><a href="#local-6989586621679122090"><span class="hs-identifier hs-var">chunkBufferVar</span></a></span><span> </span><span class="annot"><span class="annottext">((BodyChunkBuffer -&gt; IO (BodyChunkBuffer, (Int, ByteString)))
+ -&gt; IO (Int, ByteString))
+-&gt; (BodyChunkBuffer -&gt; IO (BodyChunkBuffer, (Int, ByteString)))
+-&gt; IO (Int, ByteString)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679122095"><span class="annot"><span class="annottext">bcb :: BodyChunkBuffer
+</span><a href="#local-6989586621679122095"><span class="hs-identifier hs-var">bcb</span></a></span></span><span class="hs-glyph">@</span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier hs-type">BodyChunkBuffer</span></a></span><span> </span><span id="local-6989586621679122096"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679122096"><span class="hs-identifier hs-var">hasFinished</span></a></span></span><span> </span><span id="local-6989586621679122097"><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122097"><span class="hs-identifier hs-var">chunks</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-63"></span><span>      </span><span class="hs-keyword">if</span><span> </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122094"><span class="hs-identifier hs-var">index</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">BodyPartiallyStreamed -&gt; IO (BodyChunkBuffer, (Int, ByteString))
+forall a e. Exception e =&gt; e -&gt; a
+</span><span class="hs-identifier hs-var">E.throw</span></span><span> </span><span class="annot"><span class="annottext">BodyPartiallyStreamed
+</span><a href="Web.Scotty.Internal.Types.html#BodyPartiallyStreamed"><span class="hs-identifier hs-var">BodyPartiallyStreamed</span></a></span><span>
+</span><span id="line-64"></span><span>         </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679122096"><span class="hs-identifier hs-var">hasFinished</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">(BodyChunkBuffer, (Int, ByteString))
+-&gt; IO (BodyChunkBuffer, (Int, ByteString))
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">BodyChunkBuffer
+</span><a href="#local-6989586621679122095"><span class="hs-identifier hs-var">bcb</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122094"><span class="hs-identifier hs-var">index</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; ByteString
+</span><span class="hs-identifier hs-var">BL.fromChunks</span></span><span> </span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122097"><span class="hs-identifier hs-var">chunks</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-65"></span><span>         </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">otherwise</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-66"></span><span>             </span><span id="local-6989586621679122101"><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122101"><span class="hs-identifier hs-var">newChunks</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO ByteString
+-&gt; ([ByteString] -&gt; IO [ByteString])
+-&gt; Maybe Int
+-&gt; IO [ByteString]
+</span><a href="Web.Scotty.Util.html#readRequestBody"><span class="hs-identifier hs-var">readRequestBody</span></a></span><span> </span><span class="annot"><span class="annottext">IO ByteString
+</span><a href="#local-6989586621679122091"><span class="hs-identifier hs-var">getChunk</span></a></span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; IO [ByteString]
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">RouteOptions -&gt; Maybe Int
+</span><a href="Web.Scotty.Internal.Types.html#maxRequestBodySize"><span class="hs-identifier hs-var">maxRequestBodySize</span></a></span><span> </span><span class="annot"><span class="annottext">RouteOptions
+</span><a href="#local-6989586621679122092"><span class="hs-identifier hs-var">opts</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-67"></span><span>             </span><span class="annot"><span class="annottext">(BodyChunkBuffer, (Int, ByteString))
+-&gt; IO (BodyChunkBuffer, (Int, ByteString))
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><span class="annottext">((BodyChunkBuffer, (Int, ByteString))
+ -&gt; IO (BodyChunkBuffer, (Int, ByteString)))
+-&gt; (BodyChunkBuffer, (Int, ByteString))
+-&gt; IO (BodyChunkBuffer, (Int, ByteString))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; [ByteString] -&gt; BodyChunkBuffer
+</span><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier hs-var">BodyChunkBuffer</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122097"><span class="hs-identifier hs-var">chunks</span></a></span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; [ByteString] -&gt; [ByteString]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122101"><span class="hs-identifier hs-var">newChunks</span></a></span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122094"><span class="hs-identifier hs-var">index</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; ByteString
+</span><span class="hs-identifier hs-var">BL.fromChunks</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122097"><span class="hs-identifier hs-var">chunks</span></a></span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; [ByteString] -&gt; [ByteString]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122101"><span class="hs-identifier hs-var">newChunks</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-68"></span><span>
+</span><span id="line-69"></span><span class="hs-comment">-- | Retrieve a chunk from the body at the index stored in the readProgress MVar.</span><span>
+</span><span id="line-70"></span><span class="hs-comment">-- Serve the chunk from the cached array if it's already present; otherwise read another</span><span>
+</span><span id="line-71"></span><span class="hs-comment">-- chunk from WAI and advance the index.</span><span>
+</span><span id="line-72"></span><span class="annot"><a href="Web.Scotty.Body.html#getBodyChunkAction"><span class="hs-identifier hs-type">getBodyChunkAction</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span>
+</span><span id="line-73"></span><span id="getBodyChunkAction"><span class="annot"><span class="annottext">getBodyChunkAction :: BodyInfo -&gt; IO ByteString
+</span><a href="Web.Scotty.Body.html#getBodyChunkAction"><span class="hs-identifier hs-var hs-var">getBodyChunkAction</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyInfo"><span class="hs-identifier hs-type">BodyInfo</span></a></span><span> </span><span id="local-6989586621679122103"><span class="annot"><span class="annottext">MVar Int
+</span><a href="#local-6989586621679122103"><span class="hs-identifier hs-var">readProgress</span></a></span></span><span> </span><span id="local-6989586621679122104"><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+</span><a href="#local-6989586621679122104"><span class="hs-identifier hs-var">chunkBufferVar</span></a></span></span><span> </span><span id="local-6989586621679122105"><span class="annot"><span class="annottext">IO ByteString
+</span><a href="#local-6989586621679122105"><span class="hs-identifier hs-var">getChunk</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-74"></span><span>  </span><span class="annot"><span class="annottext">MVar Int -&gt; (Int -&gt; IO (Int, ByteString)) -&gt; IO ByteString
+forall a b. MVar a -&gt; (a -&gt; IO (a, b)) -&gt; IO b
+</span><span class="hs-identifier hs-var">modifyMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar Int
+</span><a href="#local-6989586621679122103"><span class="hs-identifier hs-var">readProgress</span></a></span><span> </span><span class="annot"><span class="annottext">((Int -&gt; IO (Int, ByteString)) -&gt; IO ByteString)
+-&gt; (Int -&gt; IO (Int, ByteString)) -&gt; IO ByteString
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679122106"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122106"><span class="hs-identifier hs-var">index</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-75"></span><span>    </span><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+-&gt; (BodyChunkBuffer -&gt; IO (BodyChunkBuffer, (Int, ByteString)))
+-&gt; IO (Int, ByteString)
+forall a b. MVar a -&gt; (a -&gt; IO (a, b)) -&gt; IO b
+</span><span class="hs-identifier hs-var">modifyMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar BodyChunkBuffer
+</span><a href="#local-6989586621679122104"><span class="hs-identifier hs-var">chunkBufferVar</span></a></span><span> </span><span class="annot"><span class="annottext">((BodyChunkBuffer -&gt; IO (BodyChunkBuffer, (Int, ByteString)))
+ -&gt; IO (Int, ByteString))
+-&gt; (BodyChunkBuffer -&gt; IO (BodyChunkBuffer, (Int, ByteString)))
+-&gt; IO (Int, ByteString)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679122107"><span class="annot"><span class="annottext">bcb :: BodyChunkBuffer
+</span><a href="#local-6989586621679122107"><span class="hs-identifier hs-var">bcb</span></a></span></span><span class="hs-glyph">@</span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier hs-type">BodyChunkBuffer</span></a></span><span> </span><span id="local-6989586621679122108"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679122108"><span class="hs-identifier hs-var">hasFinished</span></a></span></span><span> </span><span id="local-6989586621679122109"><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122109"><span class="hs-identifier hs-var">chunks</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-76"></span><span>      </span><span class="hs-keyword">if</span><span> </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122106"><span class="hs-identifier hs-var">index</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; Int
+forall a. [a] -&gt; Int
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Int
+</span><span class="hs-identifier hs-var">length</span></span><span> </span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122109"><span class="hs-identifier hs-var">chunks</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">(BodyChunkBuffer, (Int, ByteString))
+-&gt; IO (BodyChunkBuffer, (Int, ByteString))
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">BodyChunkBuffer
+</span><a href="#local-6989586621679122107"><span class="hs-identifier hs-var">bcb</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122106"><span class="hs-identifier hs-var">index</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122109"><span class="hs-identifier hs-var">chunks</span></a></span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; Int -&gt; ByteString
+forall a. HasCallStack =&gt; [a] -&gt; Int -&gt; a
+</span><span class="hs-operator hs-var">!!</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122106"><span class="hs-identifier hs-var">index</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-77"></span><span>         </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679122108"><span class="hs-identifier hs-var">hasFinished</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">(BodyChunkBuffer, (Int, ByteString))
+-&gt; IO (BodyChunkBuffer, (Int, ByteString))
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">BodyChunkBuffer
+</span><a href="#local-6989586621679122107"><span class="hs-identifier hs-var">bcb</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122106"><span class="hs-identifier hs-var">index</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">ByteString
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-78"></span><span>         </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">otherwise</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-79"></span><span>             </span><span id="local-6989586621679122114"><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122114"><span class="hs-identifier hs-var">newChunk</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO ByteString
+</span><a href="#local-6989586621679122105"><span class="hs-identifier hs-var">getChunk</span></a></span><span>
+</span><span id="line-80"></span><span>             </span><span class="annot"><span class="annottext">(BodyChunkBuffer, (Int, ByteString))
+-&gt; IO (BodyChunkBuffer, (Int, ByteString))
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; [ByteString] -&gt; BodyChunkBuffer
+</span><a href="Web.Scotty.Internal.Types.html#BodyChunkBuffer"><span class="hs-identifier hs-var">BodyChunkBuffer</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122114"><span class="hs-identifier hs-var">newChunk</span></a></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; ByteString -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+forall a. Monoid a =&gt; a
+</span><span class="hs-identifier hs-var">mempty</span></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122109"><span class="hs-identifier hs-var">chunks</span></a></span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; [ByteString] -&gt; [ByteString]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122114"><span class="hs-identifier hs-var">newChunk</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679122106"><span class="hs-identifier hs-var">index</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122114"><span class="hs-identifier hs-var">newChunk</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-81"></span><span>
+</span><span id="line-82"></span><span>
+</span><span id="line-83"></span><span class="hs-comment">-- Stolen from wai-extra's Network.Wai.Parse, modified to accept body as list of Bytestrings.</span><span>
+</span><span id="line-84"></span><span class="hs-comment">-- Reason: WAI's requestBody is an IO action that returns the body as chunks. Once read,</span><span>
+</span><span id="line-85"></span><span class="hs-comment">-- they can't be read again. We read them into a lazy Bytestring, so Scotty user can get</span><span>
+</span><span id="line-86"></span><span class="hs-comment">-- the raw body, even if they also want to call wai-extra's parsing routines.</span><span>
+</span><span id="line-87"></span><span id="local-6989586621679121977"><span id="local-6989586621679121978"><span class="annot"><a href="Web.Scotty.Body.html#parseRequestBody"><span class="hs-identifier hs-type">parseRequestBody</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">MonadIO</span></span><span> </span><span class="annot"><a href="#local-6989586621679121977"><span class="hs-identifier hs-type">m</span></a></span><span>
+</span><span id="line-88"></span><span>                 </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">B.ByteString</span></span><span class="hs-special">]</span><span>
+</span><span id="line-89"></span><span>                 </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">W.BackEnd</span></span><span> </span><span class="annot"><a href="#local-6989586621679121978"><span class="hs-identifier hs-type">y</span></a></span><span>
+</span><span id="line-90"></span><span>                 </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Request</span></span><span>
+</span><span id="line-91"></span><span>                 </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679121977"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">W.Param</span></span><span class="hs-special">]</span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">W.File</span></span><span> </span><span class="annot"><a href="#local-6989586621679121978"><span class="hs-identifier hs-type">y</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-92"></span><span id="parseRequestBody"><span class="annot"><span class="annottext">parseRequestBody :: forall (m :: * -&gt; *) y.
+MonadIO m =&gt;
+[ByteString] -&gt; BackEnd y -&gt; Request -&gt; m ([Param], [File y])
+</span><a href="Web.Scotty.Body.html#parseRequestBody"><span class="hs-identifier hs-var hs-var">parseRequestBody</span></a></span></span><span> </span><span id="local-6989586621679122122"><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122122"><span class="hs-identifier hs-var">bl</span></a></span></span><span> </span><span id="local-6989586621679122123"><span class="annot"><span class="annottext">BackEnd y
+</span><a href="#local-6989586621679122123"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span id="local-6989586621679122124"><span class="annot"><span class="annottext">Request
+</span><a href="#local-6989586621679122124"><span class="hs-identifier hs-var">r</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-93"></span><span>    </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Request -&gt; Maybe RequestBodyType
+</span><span class="hs-identifier hs-var">W.getRequestBodyType</span></span><span> </span><span class="annot"><span class="annottext">Request
+</span><a href="#local-6989586621679122124"><span class="hs-identifier hs-var">r</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-94"></span><span>        </span><span class="annot"><span class="annottext">Maybe RequestBodyType
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">([Param], [File y]) -&gt; m ([Param], [File y])
+forall a. a -&gt; m a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-95"></span><span>        </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span id="local-6989586621679122125"><span class="annot"><span class="annottext">RequestBodyType
+</span><a href="#local-6989586621679122125"><span class="hs-identifier hs-var">rbt</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-96"></span><span>            </span><span id="local-6989586621679122126"><span class="annot"><span class="annottext">MVar [ByteString]
+</span><a href="#local-6989586621679122126"><span class="hs-identifier hs-var">mvar</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO (MVar [ByteString]) -&gt; m (MVar [ByteString])
+forall a. IO a -&gt; m a
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; m a
+</span><span class="hs-identifier hs-var">liftIO</span></span><span> </span><span class="annot"><span class="annottext">(IO (MVar [ByteString]) -&gt; m (MVar [ByteString]))
+-&gt; IO (MVar [ByteString]) -&gt; m (MVar [ByteString])
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[ByteString] -&gt; IO (MVar [ByteString])
+forall a. a -&gt; IO (MVar a)
+</span><span class="hs-identifier hs-var">newMVar</span></span><span> </span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122122"><span class="hs-identifier hs-var">bl</span></a></span><span> </span><span class="hs-comment">-- MVar is a bit of a hack so we don't have to inline</span><span>
+</span><span id="line-97"></span><span>                                        </span><span class="hs-comment">-- large portions of Network.Wai.Parse</span><span>
+</span><span id="line-98"></span><span>            </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679122129"><span class="annot"><span class="annottext">provider :: IO ByteString
+</span><a href="#local-6989586621679122129"><span class="hs-identifier hs-var hs-var">provider</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">MVar [ByteString]
+-&gt; ([ByteString] -&gt; IO ([ByteString], ByteString)) -&gt; IO ByteString
+forall a b. MVar a -&gt; (a -&gt; IO (a, b)) -&gt; IO b
+</span><span class="hs-identifier hs-var">modifyMVar</span></span><span> </span><span class="annot"><span class="annottext">MVar [ByteString]
+</span><a href="#local-6989586621679122126"><span class="hs-identifier hs-var">mvar</span></a></span><span> </span><span class="annot"><span class="annottext">(([ByteString] -&gt; IO ([ByteString], ByteString)) -&gt; IO ByteString)
+-&gt; ([ByteString] -&gt; IO ([ByteString], ByteString)) -&gt; IO ByteString
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679122130"><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122130"><span class="hs-identifier hs-var">bsold</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122130"><span class="hs-identifier hs-var">bsold</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-99"></span><span>                                                </span><span class="hs-special">[</span><span class="hs-special">]</span><span>     </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">([ByteString], ByteString) -&gt; IO ([ByteString], ByteString)
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><span class="hs-identifier hs-var">B.empty</span></span><span class="hs-special">)</span><span>
+</span><span id="line-100"></span><span>                                                </span><span class="hs-special">(</span><span id="local-6989586621679122132"><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122132"><span class="hs-identifier hs-var">b</span></a></span></span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span id="local-6989586621679122133"><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122133"><span class="hs-identifier hs-var">bs</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">([ByteString], ByteString) -&gt; IO ([ByteString], ByteString)
+forall a. a -&gt; IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[ByteString]
+</span><a href="#local-6989586621679122133"><span class="hs-identifier hs-var">bs</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679122132"><span class="hs-identifier hs-var">b</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-101"></span><span>            </span><span class="annot"><span class="annottext">IO ([Param], [File y]) -&gt; m ([Param], [File y])
+forall a. IO a -&gt; m a
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; m a
+</span><span class="hs-identifier hs-var">liftIO</span></span><span> </span><span class="annot"><span class="annottext">(IO ([Param], [File y]) -&gt; m ([Param], [File y]))
+-&gt; IO ([Param], [File y]) -&gt; m ([Param], [File y])
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">BackEnd y
+-&gt; RequestBodyType -&gt; IO ByteString -&gt; IO ([Param], [File y])
+forall y.
+BackEnd y
+-&gt; RequestBodyType -&gt; IO ByteString -&gt; IO ([Param], [File y])
+</span><span class="hs-identifier hs-var">W.sinkRequestBody</span></span><span> </span><span class="annot"><span class="annottext">BackEnd y
+</span><a href="#local-6989586621679122123"><span class="hs-identifier hs-var">s</span></a></span><span> </span><span class="annot"><span class="annottext">RequestBodyType
+</span><a href="#local-6989586621679122125"><span class="hs-identifier hs-var">rbt</span></a></span><span> </span><span class="annot"><span class="annottext">IO ByteString
+</span><a href="#local-6989586621679122129"><span class="hs-identifier hs-var">provider</span></a></span><span>
+</span><span id="line-102"></span></pre></body></html>

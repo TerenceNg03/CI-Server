@@ -1,0 +1,186 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE UndecidableInstances #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances #-}</span><span>
+</span><span id="line-4"></span><span>
+</span><span id="line-5"></span><span>
+</span><span id="line-6"></span><span class="annot"><span class="hs-comment">{- | A module providing access to internals (in case you really need them).
+Can change at any time, though probably won't.
+-}</span></span><span>
+</span><span id="line-9"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Fmt.Internal</span><span>
+</span><span id="line-10"></span><span class="hs-special">(</span><span>
+</span><span id="line-11"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Classes</span></span><span>
+</span><span id="line-12"></span><span>  </span><span class="annot"><a href="Fmt.Internal.html#FormatAsHex"><span class="hs-identifier">FormatAsHex</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-13"></span><span>  </span><span class="annot"><a href="Fmt.Internal.html#FormatAsBase64"><span class="hs-identifier">FormatAsBase64</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-14"></span><span>
+</span><span id="line-15"></span><span>  </span><span class="annot"><span class="hs-comment">-- * Reexports</span></span><span>
+</span><span id="line-16"></span><span>  </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Fmt.Internal.Core.html"><span class="hs-identifier">Fmt.Internal.Core</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-17"></span><span>  </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html"><span class="hs-identifier">Fmt.Internal.Formatters</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-18"></span><span>  </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Fmt.Internal.Template.html"><span class="hs-identifier">Fmt.Internal.Template</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-19"></span><span>  </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Fmt.Internal.Tuple.html"><span class="hs-identifier">Fmt.Internal.Tuple</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-20"></span><span>  </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Fmt.Internal.Numeric.html"><span class="hs-identifier">Fmt.Internal.Numeric</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-21"></span><span>  </span><span class="hs-keyword">module</span><span> </span><span class="annot"><a href="Fmt.Internal.Generic.html"><span class="hs-identifier">Fmt.Internal.Generic</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-22"></span><span class="hs-special">)</span><span>
+</span><span id="line-23"></span><span class="hs-keyword">where</span><span>
+</span><span id="line-24"></span><span>
+</span><span id="line-25"></span><span>
+</span><span id="line-26"></span><span class="hs-comment">-- Text</span><span>
+</span><span id="line-27"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Encoding</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-28"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy.Encoding</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">TL</span></span><span>
+</span><span id="line-29"></span><span class="hs-comment">-- 'Buildable' and raw 'Builder' formatters</span><span>
+</span><span id="line-30"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Formatting.Internal.Raw</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">F</span></span><span>
+</span><span id="line-31"></span><span class="hs-comment">-- Text 'Builder'</span><span>
+</span><span id="line-32"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy.Builder</span></span><span> </span><span class="hs-keyword">hiding</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">fromString</span></span><span class="hs-special">)</span><span>
+</span><span id="line-33"></span><span class="hs-comment">-- Bytestring</span><span>
+</span><span id="line-34"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BS</span></span><span>
+</span><span id="line-35"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Lazy</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BSL</span></span><span>
+</span><span id="line-36"></span><span class="hs-comment">-- Formatting bytestrings</span><span>
+</span><span id="line-37"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Builder</span></span><span>         </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BB</span></span><span>
+</span><span id="line-38"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Base64</span></span><span>          </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">B64</span></span><span>
+</span><span id="line-39"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Base64.Lazy</span></span><span>     </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">B64L</span></span><span>
+</span><span id="line-40"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Base64.URL</span></span><span>      </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">B64U</span></span><span>
+</span><span id="line-41"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Base64.URL.Lazy</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">B64UL</span></span><span>
+</span><span id="line-42"></span><span>
+</span><span id="line-43"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Fmt.Internal.Core.html"><span class="hs-identifier">Fmt.Internal.Core</span></a></span><span>
+</span><span id="line-44"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Fmt.Internal.Formatters.html"><span class="hs-identifier">Fmt.Internal.Formatters</span></a></span><span>
+</span><span id="line-45"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Fmt.Internal.Template.html"><span class="hs-identifier">Fmt.Internal.Template</span></a></span><span>
+</span><span id="line-46"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Fmt.Internal.Tuple.html"><span class="hs-identifier">Fmt.Internal.Tuple</span></a></span><span>
+</span><span id="line-47"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Fmt.Internal.Numeric.html"><span class="hs-identifier">Fmt.Internal.Numeric</span></a></span><span>
+</span><span id="line-48"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Fmt.Internal.Generic.html"><span class="hs-identifier">Fmt.Internal.Generic</span></a></span><span>
+</span><span id="line-49"></span><span>
+</span><span id="line-50"></span><span class="hs-comment">-- $setup</span><span>
+</span><span id="line-51"></span><span class="hs-comment">-- &gt;&gt;&gt; import Fmt</span><span>
+</span><span id="line-52"></span><span>
+</span><span id="line-53"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-54"></span><span class="hs-comment">-- Hex</span><span>
+</span><span id="line-55"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-56"></span><span>
+</span><span id="line-57"></span><span class="hs-keyword">class</span><span> </span><span id="FormatAsHex"><span class="annot"><a href="Fmt.Internal.html#FormatAsHex"><span class="hs-identifier hs-var">FormatAsHex</span></a></span></span><span> </span><span id="local-6989586621679067349"><span class="annot"><a href="#local-6989586621679067349"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-58"></span><span>  </span><span class="hs-comment">{- |
+Format a number or bytestring as hex:
+
+&gt;&gt;&gt; hexF 3635
+&quot;e33&quot;
+&gt;&gt;&gt; hexF (&quot;\0\50\63\80&quot; :: BS.ByteString)
+&quot;00323f50&quot;
+  -}</span><span>
+</span><span id="line-66"></span><span>  </span><span id="hexF"><span class="annot"><a href="Fmt.Internal.html#hexF"><span class="hs-identifier hs-type">hexF</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="#local-6989586621679067349"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span>
+</span><span id="line-67"></span><span>
+</span><span id="line-68"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Fmt.Internal.html#FormatAsHex"><span class="hs-identifier hs-type">FormatAsHex</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-69"></span><span>  </span><span id="local-6989586621679067371"><span class="annot"><span class="annottext">hexF :: ByteString -&gt; Builder
+</span><a href="Fmt.Internal.html#hexF"><span class="hs-identifier hs-var hs-var hs-var hs-var">hexF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+</span><span class="hs-identifier hs-var">fromLazyText</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Builder) -&gt; (ByteString -&gt; Text) -&gt; ByteString -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Text
+</span><span class="hs-identifier hs-var">TL.decodeLatin1</span></span><span> </span><span class="annot"><span class="annottext">(ByteString -&gt; Text)
+-&gt; (ByteString -&gt; ByteString) -&gt; ByteString -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Builder -&gt; ByteString
+</span><span class="hs-identifier hs-var">BB.toLazyByteString</span></span><span> </span><span class="annot"><span class="annottext">(Builder -&gt; ByteString)
+-&gt; (ByteString -&gt; Builder) -&gt; ByteString -&gt; ByteString
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Builder
+</span><span class="hs-identifier hs-var">BB.byteStringHex</span></span><span>
+</span><span id="line-70"></span><span>
+</span><span id="line-71"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Fmt.Internal.html#FormatAsHex"><span class="hs-identifier hs-type">FormatAsHex</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BSL.ByteString</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-72"></span><span>  </span><span id="local-6989586621679067379"><span class="annot"><span class="annottext">hexF :: ByteString -&gt; Builder
+</span><a href="Fmt.Internal.html#hexF"><span class="hs-identifier hs-var hs-var hs-var hs-var">hexF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+</span><span class="hs-identifier hs-var">fromLazyText</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Builder) -&gt; (ByteString -&gt; Text) -&gt; ByteString -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Text
+</span><span class="hs-identifier hs-var">TL.decodeLatin1</span></span><span> </span><span class="annot"><span class="annottext">(ByteString -&gt; Text)
+-&gt; (ByteString -&gt; ByteString) -&gt; ByteString -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Builder -&gt; ByteString
+</span><span class="hs-identifier hs-var">BB.toLazyByteString</span></span><span> </span><span class="annot"><span class="annottext">(Builder -&gt; ByteString)
+-&gt; (ByteString -&gt; Builder) -&gt; ByteString -&gt; ByteString
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Builder
+</span><span class="hs-identifier hs-var">BB.lazyByteStringHex</span></span><span>
+</span><span id="line-73"></span><span>
+</span><span id="line-74"></span><span class="hs-keyword">instance</span><span> </span><span class="hs-pragma">{-# OVERLAPPABLE</span><span> </span><span class="hs-pragma">#-}</span><span> </span><span id="local-6989586621679067357"><span class="annot"><span class="hs-identifier hs-type">Integral</span></span><span> </span><span class="annot"><a href="#local-6989586621679067357"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Fmt.Internal.html#FormatAsHex"><span class="hs-identifier hs-type">FormatAsHex</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679067357"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-75"></span><span>  </span><span id="local-6989586621679067396"><span class="annot"><span class="annottext">hexF :: a -&gt; Builder
+</span><a href="Fmt.Internal.html#hexF"><span class="hs-identifier hs-var hs-var hs-var hs-var">hexF</span></a></span></span><span> </span><span id="local-6989586621679067397"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679067397"><span class="hs-identifier hs-var">i</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><a href="#local-6989586621679067398"><span class="hs-identifier hs-var">sgn</span></a></span><span> </span><span class="annot"><span class="annottext">Builder -&gt; Builder -&gt; Builder
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; Builder
+forall a. Integral a =&gt; a -&gt; Builder
+</span><span class="hs-identifier hs-var">F.hex</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a -&gt; a
+forall a. Num a =&gt; a -&gt; a
+</span><span class="hs-identifier hs-var">abs</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679067397"><span class="hs-identifier hs-var">i</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-76"></span><span>    </span><span class="hs-keyword">where</span><span>
+</span><span id="line-77"></span><span>      </span><span id="local-6989586621679067398"><span class="annot"><span class="annottext">sgn :: Builder
+</span><a href="#local-6989586621679067398"><span class="hs-identifier hs-var hs-var">sgn</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679067397"><span class="hs-identifier hs-var">i</span></a></span><span class="annot"><span class="annottext">a -&gt; a -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;</span></span><span class="annot"><span class="annottext">a
+</span><span class="hs-number">0</span></span><span> </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;-&quot;</span></span><span> </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">Builder
+</span><span class="hs-string">&quot;&quot;</span></span><span>
+</span><span id="line-78"></span><span>
+</span><span id="line-79"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-80"></span><span class="hs-comment">-- Base64</span><span>
+</span><span id="line-81"></span><span class="hs-comment">----------------------------------------------------------------------------</span><span>
+</span><span id="line-82"></span><span>
+</span><span id="line-83"></span><span class="hs-keyword">class</span><span> </span><span id="FormatAsBase64"><span class="annot"><a href="Fmt.Internal.html#FormatAsBase64"><span class="hs-identifier hs-var">FormatAsBase64</span></a></span></span><span> </span><span id="local-6989586621679067364"><span class="annot"><a href="#local-6989586621679067364"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-84"></span><span>  </span><span class="hs-comment">{- |
+Convert a bytestring to base64:
+
+&gt;&gt;&gt; base64F (&quot;\0\50\63\80&quot; :: BS.ByteString)
+&quot;ADI/UA==&quot;
+  -}</span><span>
+</span><span id="line-90"></span><span>  </span><span id="base64F"><span class="annot"><a href="Fmt.Internal.html#base64F"><span class="hs-identifier hs-type">base64F</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="#local-6989586621679067364"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span>
+</span><span id="line-91"></span><span>  </span><span class="hs-comment">{- |
+Convert a bytestring to base64url (a variant of base64 which omits @\/@ and
+thus can be used in URLs):
+
+&gt;&gt;&gt; base64UrlF (&quot;\0\50\63\80&quot; :: BS.ByteString)
+&quot;ADI_UA==&quot;
+  -}</span><span>
+</span><span id="line-98"></span><span>  </span><span id="base64UrlF"><span class="annot"><a href="Fmt.Internal.html#base64UrlF"><span class="hs-identifier hs-type">base64UrlF</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="#local-6989586621679067364"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Builder</span></span><span>
+</span><span id="line-99"></span><span>
+</span><span id="line-100"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Fmt.Internal.html#FormatAsBase64"><span class="hs-identifier hs-type">FormatAsBase64</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-101"></span><span>  </span><span id="local-6989586621679067414"><span class="annot"><span class="annottext">base64F :: ByteString -&gt; Builder
+</span><a href="Fmt.Internal.html#base64F"><span class="hs-identifier hs-var hs-var hs-var hs-var">base64F</span></a></span></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+</span><span class="hs-identifier hs-var">fromText</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Builder) -&gt; (ByteString -&gt; Text) -&gt; ByteString -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Text
+</span><span class="hs-identifier hs-var">T.decodeLatin1</span></span><span> </span><span class="annot"><span class="annottext">(ByteString -&gt; Text)
+-&gt; (ByteString -&gt; ByteString) -&gt; ByteString -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; ByteString
+</span><span class="hs-identifier hs-var">B64.encode</span></span><span>
+</span><span id="line-102"></span><span>  </span><span id="local-6989586621679067418"><span class="annot"><span class="annottext">base64UrlF :: ByteString -&gt; Builder
+</span><a href="Fmt.Internal.html#base64UrlF"><span class="hs-identifier hs-var hs-var hs-var hs-var">base64UrlF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+</span><span class="hs-identifier hs-var">fromText</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Builder) -&gt; (ByteString -&gt; Text) -&gt; ByteString -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Text
+</span><span class="hs-identifier hs-var">T.decodeLatin1</span></span><span> </span><span class="annot"><span class="annottext">(ByteString -&gt; Text)
+-&gt; (ByteString -&gt; ByteString) -&gt; ByteString -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; ByteString
+</span><span class="hs-identifier hs-var">B64U.encode</span></span><span>
+</span><span id="line-103"></span><span>
+</span><span id="line-104"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><a href="Fmt.Internal.html#FormatAsBase64"><span class="hs-identifier hs-type">FormatAsBase64</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BSL.ByteString</span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-105"></span><span>  </span><span id="local-6989586621679067423"><span class="annot"><span class="annottext">base64F :: ByteString -&gt; Builder
+</span><a href="Fmt.Internal.html#base64F"><span class="hs-identifier hs-var hs-var hs-var hs-var">base64F</span></a></span></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+</span><span class="hs-identifier hs-var">fromLazyText</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Builder) -&gt; (ByteString -&gt; Text) -&gt; ByteString -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Text
+</span><span class="hs-identifier hs-var">TL.decodeLatin1</span></span><span> </span><span class="annot"><span class="annottext">(ByteString -&gt; Text)
+-&gt; (ByteString -&gt; ByteString) -&gt; ByteString -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; ByteString
+</span><span class="hs-identifier hs-var">B64L.encode</span></span><span>
+</span><span id="line-106"></span><span>  </span><span id="local-6989586621679067425"><span class="annot"><span class="annottext">base64UrlF :: ByteString -&gt; Builder
+</span><a href="Fmt.Internal.html#base64UrlF"><span class="hs-identifier hs-var hs-var hs-var hs-var">base64UrlF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Builder
+</span><span class="hs-identifier hs-var">fromLazyText</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Builder) -&gt; (ByteString -&gt; Text) -&gt; ByteString -&gt; Builder
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Text
+</span><span class="hs-identifier hs-var">TL.decodeLatin1</span></span><span> </span><span class="annot"><span class="annottext">(ByteString -&gt; Text)
+-&gt; (ByteString -&gt; ByteString) -&gt; ByteString -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; ByteString
+</span><span class="hs-identifier hs-var">B64UL.encode</span></span><span>
+</span><span id="line-107"></span></pre></body></html>

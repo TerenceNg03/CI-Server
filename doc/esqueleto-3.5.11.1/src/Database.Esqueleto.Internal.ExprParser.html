@@ -1,0 +1,264 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE RecordWildCards #-}</span><span>
+</span><span id="line-3"></span><span>
+</span><span id="line-4"></span><span class="hs-comment">-- | This is an internal module. This module may have breaking changes without</span><span>
+</span><span id="line-5"></span><span class="hs-comment">-- a corresponding major version bump. If you use this module, please open an</span><span>
+</span><span id="line-6"></span><span class="hs-comment">-- issue with your use-case so we can safely support it.</span><span>
+</span><span id="line-7"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Database.Esqueleto.Internal.ExprParser</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-8"></span><span>
+</span><span id="line-9"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Prelude</span></span><span> </span><span class="hs-keyword">hiding</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">takeWhile</span></span><span class="hs-special">)</span><span>
+</span><span id="line-10"></span><span>
+</span><span id="line-11"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Applicative</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-operator">(&lt;|&gt;)</span></span><span class="hs-special">)</span><span>
+</span><span id="line-12"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">void</span></span><span class="hs-special">)</span><span>
+</span><span id="line-13"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Attoparsec.Text</span></span><span>
+</span><span id="line-14"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Set</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Set</span></span><span class="hs-special">)</span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Set</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Set</span></span><span>
+</span><span id="line-16"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Text</span></span><span>
+</span><span id="line-18"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Database.Persist.Sql</span></span><span>
+</span><span id="line-19"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Database.Persist.SqlBackend</span></span><span>
+</span><span id="line-20"></span><span>
+</span><span id="line-21"></span><span class="hs-comment">-- | A type representing the access of a table value. In Esqueleto, we get</span><span>
+</span><span id="line-22"></span><span class="hs-comment">-- a guarantee that the access will look something like:</span><span>
+</span><span id="line-23"></span><span class="hs-comment">--</span><span>
+</span><span id="line-24"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-25"></span><span class="hs-comment">-- escape-char [character] escape-char . escape-char [character] escape-char</span><span>
+</span><span id="line-26"></span><span class="hs-comment">--             ^^^^^^^^^^^                           ^^^^^^^^^^^</span><span>
+</span><span id="line-27"></span><span class="hs-comment">--             table name                            column name</span><span>
+</span><span id="line-28"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-29"></span><span class="hs-keyword">data</span><span> </span><span id="TableAccess"><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#TableAccess"><span class="hs-identifier hs-var">TableAccess</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="TableAccess"><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#TableAccess"><span class="hs-identifier hs-var">TableAccess</span></a></span></span><span>
+</span><span id="line-30"></span><span>    </span><span class="hs-special">{</span><span> </span><span id="tableAccessTable"><span class="annot"><span class="annottext">TableAccess -&gt; Text
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#tableAccessTable"><span class="hs-identifier hs-var hs-var">tableAccessTable</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-31"></span><span>    </span><span class="hs-special">,</span><span> </span><span id="tableAccessColumn"><span class="annot"><span class="annottext">TableAccess -&gt; Text
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#tableAccessColumn"><span class="hs-identifier hs-var hs-var">tableAccessColumn</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-32"></span><span>    </span><span class="hs-special">}</span><span>
+</span><span id="line-33"></span><span>    </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679295631"><span id="local-6989586621679295636"><span class="annot"><span class="annottext">TableAccess -&gt; TableAccess -&gt; Bool
+(TableAccess -&gt; TableAccess -&gt; Bool)
+-&gt; (TableAccess -&gt; TableAccess -&gt; Bool) -&gt; Eq TableAccess
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: TableAccess -&gt; TableAccess -&gt; Bool
+== :: TableAccess -&gt; TableAccess -&gt; Bool
+$c/= :: TableAccess -&gt; TableAccess -&gt; Bool
+/= :: TableAccess -&gt; TableAccess -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679295643"><span id="local-6989586621679295648"><span id="local-6989586621679295652"><span id="local-6989586621679295655"><span id="local-6989586621679295658"><span id="local-6989586621679295661"><span id="local-6989586621679295664"><span class="annot"><span class="annottext">Eq TableAccess
+Eq TableAccess =&gt;
+(TableAccess -&gt; TableAccess -&gt; Ordering)
+-&gt; (TableAccess -&gt; TableAccess -&gt; Bool)
+-&gt; (TableAccess -&gt; TableAccess -&gt; Bool)
+-&gt; (TableAccess -&gt; TableAccess -&gt; Bool)
+-&gt; (TableAccess -&gt; TableAccess -&gt; Bool)
+-&gt; (TableAccess -&gt; TableAccess -&gt; TableAccess)
+-&gt; (TableAccess -&gt; TableAccess -&gt; TableAccess)
+-&gt; Ord TableAccess
+TableAccess -&gt; TableAccess -&gt; Bool
+TableAccess -&gt; TableAccess -&gt; Ordering
+TableAccess -&gt; TableAccess -&gt; TableAccess
+forall a.
+Eq a =&gt;
+(a -&gt; a -&gt; Ordering)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; Bool)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; (a -&gt; a -&gt; a)
+-&gt; Ord a
+$ccompare :: TableAccess -&gt; TableAccess -&gt; Ordering
+compare :: TableAccess -&gt; TableAccess -&gt; Ordering
+$c&lt; :: TableAccess -&gt; TableAccess -&gt; Bool
+&lt; :: TableAccess -&gt; TableAccess -&gt; Bool
+$c&lt;= :: TableAccess -&gt; TableAccess -&gt; Bool
+&lt;= :: TableAccess -&gt; TableAccess -&gt; Bool
+$c&gt; :: TableAccess -&gt; TableAccess -&gt; Bool
+&gt; :: TableAccess -&gt; TableAccess -&gt; Bool
+$c&gt;= :: TableAccess -&gt; TableAccess -&gt; Bool
+&gt;= :: TableAccess -&gt; TableAccess -&gt; Bool
+$cmax :: TableAccess -&gt; TableAccess -&gt; TableAccess
+max :: TableAccess -&gt; TableAccess -&gt; TableAccess
+$cmin :: TableAccess -&gt; TableAccess -&gt; TableAccess
+min :: TableAccess -&gt; TableAccess -&gt; TableAccess
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Ord</span></span></span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679295668"><span id="local-6989586621679295675"><span id="local-6989586621679295679"><span class="annot"><span class="annottext">Int -&gt; TableAccess -&gt; ShowS
+[TableAccess] -&gt; ShowS
+TableAccess -&gt; String
+(Int -&gt; TableAccess -&gt; ShowS)
+-&gt; (TableAccess -&gt; String)
+-&gt; ([TableAccess] -&gt; ShowS)
+-&gt; Show TableAccess
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; TableAccess -&gt; ShowS
+showsPrec :: Int -&gt; TableAccess -&gt; ShowS
+$cshow :: TableAccess -&gt; String
+show :: TableAccess -&gt; String
+$cshowList :: [TableAccess] -&gt; ShowS
+showList :: [TableAccess] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-34"></span><span>
+</span><span id="line-35"></span><span class="hs-comment">-- | Parse a @SqlExpr (Value Bool)@'s textual representation into a list of</span><span>
+</span><span id="line-36"></span><span class="hs-comment">-- 'TableAccess'</span><span>
+</span><span id="line-37"></span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#parseOnExpr"><span class="hs-identifier hs-type">parseOnExpr</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">SqlBackend</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Set</span></span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#TableAccess"><span class="hs-identifier hs-type">TableAccess</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-38"></span><span id="parseOnExpr"><span class="annot"><span class="annottext">parseOnExpr :: SqlBackend -&gt; Text -&gt; Either String (Set TableAccess)
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#parseOnExpr"><span class="hs-identifier hs-var hs-var">parseOnExpr</span></a></span></span><span> </span><span id="local-6989586621679295683"><span class="annot"><span class="annottext">SqlBackend
+</span><a href="#local-6989586621679295683"><span class="hs-identifier hs-var">sqlBackend</span></a></span></span><span> </span><span id="local-6989586621679295684"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679295684"><span class="hs-identifier hs-var">text</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-39"></span><span>    </span><span id="local-6989586621679295685"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295685"><span class="hs-identifier hs-var">c</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">SqlBackend -&gt; Either String Char
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#mkEscapeChar"><span class="hs-identifier hs-var">mkEscapeChar</span></a></span><span> </span><span class="annot"><span class="annottext">SqlBackend
+</span><a href="#local-6989586621679295683"><span class="hs-identifier hs-var">sqlBackend</span></a></span><span>
+</span><span id="line-40"></span><span>    </span><span class="annot"><span class="annottext">Parser (Set TableAccess) -&gt; Text -&gt; Either String (Set TableAccess)
+forall a. Parser a -&gt; Text -&gt; Either String a
+</span><span class="hs-identifier hs-var">parseOnly</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ExprParser (Set TableAccess)
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#onExpr"><span class="hs-identifier hs-var">onExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295685"><span class="hs-identifier hs-var">c</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679295684"><span class="hs-identifier hs-var">text</span></a></span><span>
+</span><span id="line-41"></span><span>
+</span><span id="line-42"></span><span class="hs-comment">-- | This function uses the 'connEscapeName' function in the 'SqlBackend' with an</span><span>
+</span><span id="line-43"></span><span class="hs-comment">-- empty identifier to pull out an escape character. This implementation works</span><span>
+</span><span id="line-44"></span><span class="hs-comment">-- with postgresql, mysql, and sqlite backends.</span><span>
+</span><span id="line-45"></span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#mkEscapeChar"><span class="hs-identifier hs-type">mkEscapeChar</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">SqlBackend</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Char</span></span><span>
+</span><span id="line-46"></span><span id="mkEscapeChar"><span class="annot"><span class="annottext">mkEscapeChar :: SqlBackend -&gt; Either String Char
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#mkEscapeChar"><span class="hs-identifier hs-var hs-var">mkEscapeChar</span></a></span></span><span> </span><span id="local-6989586621679295689"><span class="annot"><span class="annottext">SqlBackend
+</span><a href="#local-6989586621679295689"><span class="hs-identifier hs-var">sqlBackend</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-47"></span><span>    </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Maybe (Char, Text)
+</span><span class="hs-identifier hs-var">Text.uncons</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Text -&gt; SqlBackend -&gt; Text
+forall backend (m :: * -&gt; *).
+(BackendCompatible SqlBackend backend, MonadReader backend m) =&gt;
+Text -&gt; m Text
+</span><span class="hs-identifier hs-var">getEscapedRawName</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;&quot;</span></span><span> </span><span class="annot"><span class="annottext">SqlBackend
+</span><a href="#local-6989586621679295689"><span class="hs-identifier hs-var">sqlBackend</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-48"></span><span>        </span><span class="annot"><span class="annottext">Maybe (Char, Text)
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-49"></span><span>            </span><span class="annot"><span class="annottext">String -&gt; Either String Char
+forall a b. a -&gt; Either a b
+</span><span class="hs-identifier hs-var">Left</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Failed to get an escape character from the SQL backend.&quot;</span></span><span>
+</span><span id="line-50"></span><span>        </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679295692"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295692"><span class="hs-identifier hs-var">c</span></a></span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-identifier">_</span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-51"></span><span>            </span><span class="annot"><span class="annottext">Char -&gt; Either String Char
+forall a b. b -&gt; Either a b
+</span><span class="hs-identifier hs-var">Right</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295692"><span class="hs-identifier hs-var">c</span></a></span><span>
+</span><span id="line-52"></span><span>
+</span><span id="line-53"></span><span class="hs-keyword">type</span><span> </span><span id="ExprParser"><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#ExprParser"><span class="hs-identifier hs-var">ExprParser</span></a></span></span><span> </span><span id="local-6989586621679295693"><span class="annot"><a href="#local-6989586621679295693"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Char</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Parser</span></span><span> </span><span class="annot"><a href="#local-6989586621679295693"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-54"></span><span>
+</span><span id="line-55"></span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#onExpr"><span class="hs-identifier hs-type">onExpr</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#ExprParser"><span class="hs-identifier hs-type">ExprParser</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Set</span></span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#TableAccess"><span class="hs-identifier hs-type">TableAccess</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-56"></span><span id="onExpr"><span class="annot"><span class="annottext">onExpr :: ExprParser (Set TableAccess)
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#onExpr"><span class="hs-identifier hs-var hs-var">onExpr</span></a></span></span><span> </span><span id="local-6989586621679295694"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295694"><span class="hs-identifier hs-var">e</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[TableAccess] -&gt; Set TableAccess
+forall a. Ord a =&gt; [a] -&gt; Set a
+</span><span class="hs-identifier hs-var">Set.fromList</span></span><span> </span><span class="annot"><span class="annottext">([TableAccess] -&gt; Set TableAccess)
+-&gt; Parser Text [TableAccess] -&gt; Parser (Set TableAccess)
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">Parser Text TableAccess -&gt; Parser Text [TableAccess]
+forall (m :: * -&gt; *) a. MonadPlus m =&gt; m a -&gt; m [a]
+</span><span class="hs-identifier hs-var">many'</span></span><span> </span><span class="annot"><span class="annottext">Parser Text TableAccess
+</span><a href="#local-6989586621679295698"><span class="hs-identifier hs-var">tableAccesses</span></a></span><span>
+</span><span id="line-57"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-58"></span><span>    </span><span id="local-6989586621679295698"><span class="annot"><span class="annottext">tableAccesses :: Parser Text TableAccess
+</span><a href="#local-6989586621679295698"><span class="hs-identifier hs-var hs-var">tableAccesses</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-59"></span><span>        </span><span class="annot"><span class="annottext">ExprParser ()
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#skipToEscape"><span class="hs-identifier hs-var">skipToEscape</span></a></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295694"><span class="hs-identifier hs-var">e</span></a></span><span> </span><span class="annot"><span class="annottext">Parser Text () -&gt; String -&gt; Parser Text ()
+forall i a. Parser i a -&gt; String -&gt; Parser i a
+</span><span class="hs-operator hs-var">&lt;?&gt;</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Skipping to an escape char&quot;</span></span><span>
+</span><span id="line-60"></span><span>        </span><span class="annot"><span class="annottext">ExprParser TableAccess
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#parseTableAccess"><span class="hs-identifier hs-var">parseTableAccess</span></a></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295694"><span class="hs-identifier hs-var">e</span></a></span><span> </span><span class="annot"><span class="annottext">Parser Text TableAccess -&gt; String -&gt; Parser Text TableAccess
+forall i a. Parser i a -&gt; String -&gt; Parser i a
+</span><span class="hs-operator hs-var">&lt;?&gt;</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Parsing a table access&quot;</span></span><span>
+</span><span id="line-61"></span><span>
+</span><span id="line-62"></span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#skipToEscape"><span class="hs-identifier hs-type">skipToEscape</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#ExprParser"><span class="hs-identifier hs-type">ExprParser</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-63"></span><span id="skipToEscape"><span class="annot"><span class="annottext">skipToEscape :: ExprParser ()
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#skipToEscape"><span class="hs-identifier hs-var hs-var">skipToEscape</span></a></span></span><span> </span><span id="local-6989586621679295703"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295703"><span class="hs-identifier hs-var">escapeChar</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Parser Text Text -&gt; Parser Text ()
+forall (f :: * -&gt; *) a. Functor f =&gt; f a -&gt; f ()
+</span><span class="hs-identifier hs-var">void</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(Char -&gt; Bool) -&gt; Parser Text Text
+</span><span class="hs-identifier hs-var">takeWhile</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Char -&gt; Char -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">/=</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295703"><span class="hs-identifier hs-var">escapeChar</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-64"></span><span>
+</span><span id="line-65"></span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#parseEscapedIdentifier"><span class="hs-identifier hs-type">parseEscapedIdentifier</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#ExprParser"><span class="hs-identifier hs-type">ExprParser</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Char</span></span><span class="hs-special">]</span><span>
+</span><span id="line-66"></span><span id="parseEscapedIdentifier"><span class="annot"><span class="annottext">parseEscapedIdentifier :: ExprParser String
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#parseEscapedIdentifier"><span class="hs-identifier hs-var hs-var">parseEscapedIdentifier</span></a></span></span><span> </span><span id="local-6989586621679295707"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295707"><span class="hs-identifier hs-var">escapeChar</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-67"></span><span>    </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Char -&gt; Parser Char
+</span><span class="hs-identifier hs-var">char</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295707"><span class="hs-identifier hs-var">escapeChar</span></a></span><span>
+</span><span id="line-68"></span><span>    </span><span id="local-6989586621679295709"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679295709"><span class="hs-identifier hs-var">str</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">ExprParser String
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#parseEscapedChars"><span class="hs-identifier hs-var">parseEscapedChars</span></a></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295707"><span class="hs-identifier hs-var">escapeChar</span></a></span><span>
+</span><span id="line-69"></span><span>    </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Char -&gt; Parser Char
+</span><span class="hs-identifier hs-var">char</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295707"><span class="hs-identifier hs-var">escapeChar</span></a></span><span>
+</span><span id="line-70"></span><span>    </span><span class="annot"><span class="annottext">String -&gt; Parser String
+forall a. a -&gt; Parser Text a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679295709"><span class="hs-identifier hs-var">str</span></a></span><span>
+</span><span id="line-71"></span><span>
+</span><span id="line-72"></span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#parseTableAccess"><span class="hs-identifier hs-type">parseTableAccess</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#ExprParser"><span class="hs-identifier hs-type">ExprParser</span></a></span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#TableAccess"><span class="hs-identifier hs-type">TableAccess</span></a></span><span>
+</span><span id="line-73"></span><span id="parseTableAccess"><span class="annot"><span class="annottext">parseTableAccess :: ExprParser TableAccess
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#parseTableAccess"><span class="hs-identifier hs-var hs-var">parseTableAccess</span></a></span></span><span> </span><span id="local-6989586621679295711"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295711"><span class="hs-identifier hs-var">ec</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-74"></span><span>    </span><span id="local-6989586621679295712"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679295712"><span class="hs-identifier hs-var">tableAccessTable</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; Text
+</span><span class="hs-identifier hs-var">Text.pack</span></span><span> </span><span class="annot"><span class="annottext">(String -&gt; Text) -&gt; Parser String -&gt; Parser Text Text
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">ExprParser String
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#parseEscapedIdentifier"><span class="hs-identifier hs-var">parseEscapedIdentifier</span></a></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295711"><span class="hs-identifier hs-var">ec</span></a></span><span>
+</span><span id="line-75"></span><span>    </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Char -&gt; Parser Char
+</span><span class="hs-identifier hs-var">char</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-char">'.'</span></span><span>
+</span><span id="line-76"></span><span>    </span><span id="local-6989586621679295714"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679295714"><span class="hs-identifier hs-var">tableAccessColumn</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; Text
+</span><span class="hs-identifier hs-var">Text.pack</span></span><span> </span><span class="annot"><span class="annottext">(String -&gt; Text) -&gt; Parser String -&gt; Parser Text Text
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;$&gt;</span></span><span> </span><span class="annot"><span class="annottext">ExprParser String
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#parseEscapedIdentifier"><span class="hs-identifier hs-var">parseEscapedIdentifier</span></a></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295711"><span class="hs-identifier hs-var">ec</span></a></span><span>
+</span><span id="line-77"></span><span>    </span><span class="annot"><span class="annottext">TableAccess -&gt; Parser Text TableAccess
+forall a. a -&gt; Parser Text a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#TableAccess"><span class="hs-identifier hs-type">TableAccess</span></a></span><span> </span><span class="hs-special">{</span><span class="annot"><span class="annottext">Text
+tableAccessTable :: Text
+tableAccessColumn :: Text
+tableAccessTable :: Text
+tableAccessColumn :: Text
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#tableAccessTable"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span><span class="hs-special">}</span><span>
+</span><span id="line-78"></span><span>
+</span><span id="line-79"></span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#parseEscapedChars"><span class="hs-identifier hs-type">parseEscapedChars</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Database.Esqueleto.Internal.ExprParser.html#ExprParser"><span class="hs-identifier hs-type">ExprParser</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Char</span></span><span class="hs-special">]</span><span>
+</span><span id="line-80"></span><span id="parseEscapedChars"><span class="annot"><span class="annottext">parseEscapedChars :: ExprParser String
+</span><a href="Database.Esqueleto.Internal.ExprParser.html#parseEscapedChars"><span class="hs-identifier hs-var hs-var">parseEscapedChars</span></a></span></span><span> </span><span id="local-6989586621679295715"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295715"><span class="hs-identifier hs-var">escapeChar</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Parser String
+</span><a href="#local-6989586621679295716"><span class="hs-identifier hs-var">go</span></a></span><span>
+</span><span id="line-81"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-82"></span><span>    </span><span id="local-6989586621679295718"><span class="annot"><span class="annottext">twoEscapes :: Parser Char
+</span><a href="#local-6989586621679295718"><span class="hs-identifier hs-var hs-var">twoEscapes</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Char -&gt; Parser Char
+</span><span class="hs-identifier hs-var">char</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295715"><span class="hs-identifier hs-var">escapeChar</span></a></span><span> </span><span class="annot"><span class="annottext">Parser Char -&gt; Parser Char -&gt; Parser Char
+forall a b. Parser Text a -&gt; Parser Text b -&gt; Parser Text b
+forall (f :: * -&gt; *) a b. Applicative f =&gt; f a -&gt; f b -&gt; f b
+</span><span class="hs-operator hs-var">*&gt;</span></span><span> </span><span class="annot"><span class="annottext">Char -&gt; Parser Char
+</span><span class="hs-identifier hs-var">char</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295715"><span class="hs-identifier hs-var">escapeChar</span></a></span><span>
+</span><span id="line-83"></span><span>    </span><span id="local-6989586621679295716"><span class="annot"><span class="annottext">go :: Parser String
+</span><a href="#local-6989586621679295716"><span class="hs-identifier hs-var hs-var">go</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Parser Char -&gt; Parser String
+forall (m :: * -&gt; *) a. MonadPlus m =&gt; m a -&gt; m [a]
+</span><span class="hs-identifier hs-var">many'</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Char -&gt; Parser Char
+</span><span class="hs-identifier hs-var">notChar</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679295715"><span class="hs-identifier hs-var">escapeChar</span></a></span><span> </span><span class="annot"><span class="annottext">Parser Char -&gt; Parser Char -&gt; Parser Char
+forall a. Parser Text a -&gt; Parser Text a -&gt; Parser Text a
+forall (f :: * -&gt; *) a. Alternative f =&gt; f a -&gt; f a -&gt; f a
+</span><span class="hs-operator hs-var">&lt;|&gt;</span></span><span> </span><span class="annot"><span class="annottext">Parser Char
+</span><a href="#local-6989586621679295718"><span class="hs-identifier hs-var">twoEscapes</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-84"></span></pre></body></html>

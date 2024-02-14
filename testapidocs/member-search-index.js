@@ -1,0 +1,1 @@
+memberSearchIndex = [{"p":"ci","c":"AppTest","l":"AppTest()","u":"%3Cinit%3E()"},{"p":"ci","c":"AppTest","l":"runBuildAlwaysFailTest()"},{"p":"ci","c":"AppTest","l":"runBuildShouldFailIfFaultyDirectory()"},{"p":"ci","c":"AppTest","l":"runTestShouldFailIfFaultyDirectory()"},{"p":"ci","c":"AppTest","l":"shouldAnswerWithTrue()"}];updateSearchResults();

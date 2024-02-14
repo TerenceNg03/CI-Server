@@ -1,0 +1,809 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE OverloadedStrings, RankNTypes #-}</span><span>
+</span><span id="line-2"></span><span class="hs-comment">-- | It should be noted that most of the code snippets below depend on the</span><span>
+</span><span id="line-3"></span><span class="hs-comment">-- OverloadedStrings language pragma.</span><span>
+</span><span id="line-4"></span><span class="hs-comment">--</span><span>
+</span><span id="line-5"></span><span class="hs-comment">-- Scotty is set up by default for development mode. For production servers,</span><span>
+</span><span id="line-6"></span><span class="hs-comment">-- you will likely want to modify 'Trans.settings' and the 'defaultHandler'. See</span><span>
+</span><span id="line-7"></span><span class="hs-comment">-- the comments on each of these functions for more information.</span><span>
+</span><span id="line-8"></span><span class="hs-comment">--</span><span>
+</span><span id="line-9"></span><span class="hs-comment">-- Please refer to the @examples@ directory and the @spec@ test suite for concrete use cases, e.g. constructing responses, exception handling and useful implementation details.</span><span>
+</span><span id="line-10"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Web.Scotty</span><span>
+</span><span id="line-11"></span><span>    </span><span class="hs-special">(</span><span> </span><span class="annot"><span class="hs-comment">-- * Running 'scotty' servers</span></span><span>
+</span><span id="line-12"></span><span>      </span><span class="annot"><a href="Web.Scotty.html#scotty"><span class="hs-identifier">scotty</span></a></span><span>
+</span><span id="line-13"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#scottyOpts"><span class="hs-identifier">scottyOpts</span></a></span><span>
+</span><span id="line-14"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#scottySocket"><span class="hs-identifier">scottySocket</span></a></span><span>
+</span><span id="line-15"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier">Options</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#defaultOptions"><span class="hs-identifier">defaultOptions</span></a></span><span>
+</span><span id="line-16"></span><span>      </span><span class="annot"><span class="hs-comment">-- ** scotty-to-WAI</span></span><span>
+</span><span id="line-17"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#scottyApp"><span class="hs-identifier">scottyApp</span></a></span><span>
+</span><span id="line-18"></span><span>      </span><span class="annot"><span class="hs-comment">-- * Defining Middleware and Routes</span></span><span>
+</span><span id="line-19"></span><span>      </span><span class="hs-comment">--</span><span>
+</span><span id="line-20"></span><span>      </span><span class="hs-comment">-- | 'Middleware' and routes are run in the order in which they</span><span>
+</span><span id="line-21"></span><span>      </span><span class="hs-comment">-- are defined. All middleware is run first, followed by the first</span><span>
+</span><span id="line-22"></span><span>      </span><span class="hs-comment">-- route that matches. If no route matches, a 404 response is given.</span><span>
+</span><span id="line-23"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#middleware"><span class="hs-identifier">middleware</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#get"><span class="hs-identifier">get</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#post"><span class="hs-identifier">post</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#put"><span class="hs-identifier">put</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#delete"><span class="hs-identifier">delete</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#patch"><span class="hs-identifier">patch</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#options"><span class="hs-identifier">options</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#addroute"><span class="hs-identifier">addroute</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#matchAny"><span class="hs-identifier">matchAny</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#notFound"><span class="hs-identifier">notFound</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#nested"><span class="hs-identifier">nested</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#setMaxRequestBodySize"><span class="hs-identifier">setMaxRequestBodySize</span></a></span><span>
+</span><span id="line-24"></span><span>      </span><span class="annot"><span class="hs-comment">-- ** Route Patterns</span></span><span>
+</span><span id="line-25"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#capture"><span class="hs-identifier">capture</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#regex"><span class="hs-identifier">regex</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#function"><span class="hs-identifier">function</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#literal"><span class="hs-identifier">literal</span></a></span><span>
+</span><span id="line-26"></span><span>      </span><span class="annot"><span class="hs-comment">-- ** Accessing the Request and its fields</span></span><span>
+</span><span id="line-27"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#request"><span class="hs-identifier">request</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#header"><span class="hs-identifier">header</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#headers"><span class="hs-identifier">headers</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#body"><span class="hs-identifier">body</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#bodyReader"><span class="hs-identifier">bodyReader</span></a></span><span>
+</span><span id="line-28"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#jsonData"><span class="hs-identifier">jsonData</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#files"><span class="hs-identifier">files</span></a></span><span>
+</span><span id="line-29"></span><span>      </span><span class="annot"><span class="hs-comment">-- ** Accessing Path, Form and Query Parameters</span></span><span>
+</span><span id="line-30"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#param"><span class="hs-identifier">param</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#params"><span class="hs-identifier">params</span></a></span><span>
+</span><span id="line-31"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#pathParam"><span class="hs-identifier">pathParam</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#captureParam"><span class="hs-identifier">captureParam</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#formParam"><span class="hs-identifier">formParam</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#queryParam"><span class="hs-identifier">queryParam</span></a></span><span>
+</span><span id="line-32"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#pathParamMaybe"><span class="hs-identifier">pathParamMaybe</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#captureParamMaybe"><span class="hs-identifier">captureParamMaybe</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#formParamMaybe"><span class="hs-identifier">formParamMaybe</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#queryParamMaybe"><span class="hs-identifier">queryParamMaybe</span></a></span><span>
+</span><span id="line-33"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#pathParams"><span class="hs-identifier">pathParams</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#captureParams"><span class="hs-identifier">captureParams</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#formParams"><span class="hs-identifier">formParams</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#queryParams"><span class="hs-identifier">queryParams</span></a></span><span>
+</span><span id="line-34"></span><span>      </span><span class="annot"><span class="hs-comment">-- ** Modifying the Response and Redirecting</span></span><span>
+</span><span id="line-35"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#status"><span class="hs-identifier">status</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#addHeader"><span class="hs-identifier">addHeader</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#setHeader"><span class="hs-identifier">setHeader</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#redirect"><span class="hs-identifier">redirect</span></a></span><span>
+</span><span id="line-36"></span><span>      </span><span class="annot"><span class="hs-comment">-- ** Setting Response Body</span></span><span>
+</span><span id="line-37"></span><span>      </span><span class="hs-comment">--</span><span>
+</span><span id="line-38"></span><span>      </span><span class="hs-comment">-- | Note: only one of these should be present in any given route</span><span>
+</span><span id="line-39"></span><span>      </span><span class="hs-comment">-- definition, as they completely replace the current 'Response' body.</span><span>
+</span><span id="line-40"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#text"><span class="hs-identifier">text</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#html"><span class="hs-identifier">html</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#file"><span class="hs-identifier">file</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#json"><span class="hs-identifier">json</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#stream"><span class="hs-identifier">stream</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#raw"><span class="hs-identifier">raw</span></a></span><span>
+</span><span id="line-41"></span><span>      </span><span class="annot"><span class="hs-comment">-- ** Accessing the fields of the Response</span></span><span>
+</span><span id="line-42"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#getResponseHeaders"><span class="hs-identifier">getResponseHeaders</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#getResponseStatus"><span class="hs-identifier">getResponseStatus</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#getResponseContent"><span class="hs-identifier">getResponseContent</span></a></span><span>
+</span><span id="line-43"></span><span>      </span><span class="annot"><span class="hs-comment">-- ** Exceptions</span></span><span>
+</span><span id="line-44"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#raise"><span class="hs-identifier">raise</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#raiseStatus"><span class="hs-identifier">raiseStatus</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#throw"><span class="hs-identifier">throw</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#rescue"><span class="hs-identifier">rescue</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#next"><span class="hs-identifier">next</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#finish"><span class="hs-identifier">finish</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#defaultHandler"><span class="hs-identifier">defaultHandler</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#liftAndCatchIO"><span class="hs-identifier">liftAndCatchIO</span></a></span><span>
+</span><span id="line-45"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">liftIO</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">catch</span></span><span>
+</span><span id="line-46"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#StatusError"><span class="hs-identifier">StatusError</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-47"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyException"><span class="hs-identifier">ScottyException</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-48"></span><span>      </span><span class="annot"><span class="hs-comment">-- * Parsing Parameters</span></span><span>
+</span><span id="line-49"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier">Param</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier">Trans.Parsable</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Action.html#readEither"><span class="hs-identifier">Trans.readEither</span></a></span><span>
+</span><span id="line-50"></span><span>      </span><span class="annot"><span class="hs-comment">-- * Types</span></span><span>
+</span><span id="line-51"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier">ScottyM</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier">ActionM</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier">RoutePattern</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#File"><span class="hs-identifier">File</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Content"><span class="hs-identifier">Content</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Kilobytes"><span class="hs-identifier">Kilobytes</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ErrorHandler"><span class="hs-identifier">ErrorHandler</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">Handler</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-52"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier">ScottyState</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#defaultScottyState"><span class="hs-identifier">defaultScottyState</span></a></span><span>
+</span><span id="line-53"></span><span>    </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-54"></span><span>
+</span><span id="line-55"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Web.Scotty.Trans.html"><span class="hs-identifier">Web.Scotty.Trans</span></a></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Trans</span></span><span>
+</span><span id="line-56"></span><span>
+</span><span id="line-57"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Exception</span></span><span>          </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">E</span></span><span>
+</span><span id="line-58"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.IO.Class</span></span><span>
+</span><span id="line-59"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">FromJSON</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">ToJSON</span></span><span class="hs-special">)</span><span>
+</span><span id="line-60"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BS</span></span><span>
+</span><span id="line-61"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Lazy.Char8</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">ByteString</span></span><span class="hs-special">)</span><span>
+</span><span id="line-62"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">toStrict</span></span><span class="hs-special">)</span><span>
+</span><span id="line-63"></span><span>
+</span><span id="line-64"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Network.HTTP.Types</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Status</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">StdMethod</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">ResponseHeaders</span></span><span class="hs-special">)</span><span>
+</span><span id="line-65"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Network.Socket</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Socket</span></span><span class="hs-special">)</span><span>
+</span><span id="line-66"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Network.Wai</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Application</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">Middleware</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">Request</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">StreamingBody</span></span><span class="hs-special">)</span><span>
+</span><span id="line-67"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Network.Wai.Handler.Warp</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Port</span></span><span class="hs-special">)</span><span>
+</span><span id="line-68"></span><span>
+</span><span id="line-69"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html"><span class="hs-identifier">Web.Scotty.Internal.Types</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyT"><span class="hs-identifier">ScottyT</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier">ActionT</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ErrorHandler"><span class="hs-identifier">ErrorHandler</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier">Param</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier">RoutePattern</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier">Options</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#defaultOptions"><span class="hs-identifier">defaultOptions</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#File"><span class="hs-identifier">File</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Kilobytes"><span class="hs-identifier">Kilobytes</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyState"><span class="hs-identifier">ScottyState</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#defaultScottyState"><span class="hs-identifier">defaultScottyState</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyException"><span class="hs-identifier">ScottyException</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#StatusError"><span class="hs-identifier">StatusError</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Content"><span class="hs-identifier">Content</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-70"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">UnliftIO.Exception</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Handler</span></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">catch</span></span><span class="hs-special">)</span><span>
+</span><span id="line-71"></span><span>
+</span><span id="line-72"></span><span class="annot"><span class="hs-comment">{- $setup
+&gt;&gt;&gt; :{
+import Control.Monad.IO.Class (MonadIO(..))
+import qualified Network.HTTP.Client as H
+import qualified Network.HTTP.Types as H
+import qualified Network.Wai as W (httpVersion)
+import qualified Data.ByteString.Lazy.Char8 as LBS (unpack)
+import qualified Data.Text as T (pack)
+import Control.Concurrent (ThreadId, forkIO, killThread)
+import Control.Exception (bracket)
+import qualified Web.Scotty as S (ScottyM, scottyOpts, get, text, regex, pathParam, Options(..), defaultOptions)
+-- | GET an HTTP path
+curl :: MonadIO m =&gt;
+        String -- ^ path
+     -&gt; m String -- ^ response body
+curl path = liftIO $ do
+  req0 &lt;- H.parseRequest path
+  let req = req0 { H.method = &quot;GET&quot;}
+  mgr &lt;- H.newManager H.defaultManagerSettings
+  (LBS.unpack . H.responseBody) &lt;$&gt; H.httpLbs req mgr
+-- | Fork a process, run a Scotty server in it and run an action while the server is running. Kills the scotty thread once the inner action is done.
+withScotty :: S.ScottyM ()
+           -&gt; IO a -- ^ inner action, e.g. 'curl &quot;localhost:3000/&quot;'
+           -&gt; IO a
+withScotty serv act = bracket (forkIO $ S.scottyOpts (S.defaultOptions{ S.verbose = 0 }) serv) killThread (\_ -&gt; act)
+:}
+-}</span></span><span>
+</span><span id="line-99"></span><span>
+</span><span id="line-100"></span><span class="hs-keyword">type</span><span> </span><span id="ScottyM"><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-var">ScottyM</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ScottyT"><span class="hs-identifier hs-type">ScottyT</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span>
+</span><span id="line-101"></span><span class="hs-keyword">type</span><span> </span><span id="ActionM"><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-var">ActionM</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ActionT"><span class="hs-identifier hs-type">ActionT</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span>
+</span><span id="line-102"></span><span>
+</span><span id="line-103"></span><span class="annot"><span class="hs-comment">-- | Run a scotty application using the warp server.</span></span><span>
+</span><span id="line-104"></span><span class="annot"><a href="Web.Scotty.html#scotty"><span class="hs-identifier hs-type">scotty</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Port</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-105"></span><span id="scotty"><span class="annot"><span class="annottext">scotty :: Port -&gt; ScottyM () -&gt; IO ()
+</span><a href="Web.Scotty.html#scotty"><span class="hs-identifier hs-var hs-var">scotty</span></a></span></span><span> </span><span id="local-6989586621679123167"><span class="annot"><span class="annottext">Port
+</span><a href="#local-6989586621679123167"><span class="hs-identifier hs-var">p</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Port -&gt; (IO Response -&gt; IO Response) -&gt; ScottyM () -&gt; IO ()
+forall (m :: * -&gt; *) (n :: * -&gt; *).
+(Monad m, MonadIO n) =&gt;
+Port -&gt; (m Response -&gt; IO Response) -&gt; ScottyT m () -&gt; n ()
+</span><a href="Web.Scotty.Trans.html#scottyT"><span class="hs-identifier hs-var">Trans.scottyT</span></a></span><span> </span><span class="annot"><span class="annottext">Port
+</span><a href="#local-6989586621679123167"><span class="hs-identifier hs-var">p</span></a></span><span> </span><span class="annot"><span class="annottext">IO Response -&gt; IO Response
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span>
+</span><span id="line-106"></span><span>
+</span><span id="line-107"></span><span class="annot"><span class="hs-comment">-- | Run a scotty application using the warp server, passing extra options.</span></span><span>
+</span><span id="line-108"></span><span class="annot"><a href="Web.Scotty.html#scottyOpts"><span class="hs-identifier hs-type">scottyOpts</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier hs-type">Options</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-109"></span><span id="scottyOpts"><span class="annot"><span class="annottext">scottyOpts :: Options -&gt; ScottyM () -&gt; IO ()
+</span><a href="Web.Scotty.html#scottyOpts"><span class="hs-identifier hs-var hs-var">scottyOpts</span></a></span></span><span> </span><span id="local-6989586621679123170"><span class="annot"><span class="annottext">Options
+</span><a href="#local-6989586621679123170"><span class="hs-identifier hs-var">opts</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Options -&gt; (IO Response -&gt; IO Response) -&gt; ScottyM () -&gt; IO ()
+forall (m :: * -&gt; *) (n :: * -&gt; *).
+(Monad m, MonadIO n) =&gt;
+Options -&gt; (m Response -&gt; IO Response) -&gt; ScottyT m () -&gt; n ()
+</span><a href="Web.Scotty.Trans.html#scottyOptsT"><span class="hs-identifier hs-var">Trans.scottyOptsT</span></a></span><span> </span><span class="annot"><span class="annottext">Options
+</span><a href="#local-6989586621679123170"><span class="hs-identifier hs-var">opts</span></a></span><span> </span><span class="annot"><span class="annottext">IO Response -&gt; IO Response
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span>
+</span><span id="line-110"></span><span>
+</span><span id="line-111"></span><span class="hs-comment">-- | Run a scotty application using the warp server, passing extra options,</span><span>
+</span><span id="line-112"></span><span class="hs-comment">-- and listening on the provided socket. This allows the user to provide, for</span><span>
+</span><span id="line-113"></span><span class="hs-comment">-- example, a Unix named socket, which can be used when reverse HTTP proxying</span><span>
+</span><span id="line-114"></span><span class="hs-comment">-- into your application.</span><span>
+</span><span id="line-115"></span><span class="annot"><a href="Web.Scotty.html#scottySocket"><span class="hs-identifier hs-type">scottySocket</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Options"><span class="hs-identifier hs-type">Options</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Socket</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-116"></span><span id="scottySocket"><span class="annot"><span class="annottext">scottySocket :: Options -&gt; Socket -&gt; ScottyM () -&gt; IO ()
+</span><a href="Web.Scotty.html#scottySocket"><span class="hs-identifier hs-var hs-var">scottySocket</span></a></span></span><span> </span><span id="local-6989586621679123172"><span class="annot"><span class="annottext">Options
+</span><a href="#local-6989586621679123172"><span class="hs-identifier hs-var">opts</span></a></span></span><span> </span><span id="local-6989586621679123173"><span class="annot"><span class="annottext">Socket
+</span><a href="#local-6989586621679123173"><span class="hs-identifier hs-var">sock</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Options
+-&gt; Socket -&gt; (IO Response -&gt; IO Response) -&gt; ScottyM () -&gt; IO ()
+forall (m :: * -&gt; *) (n :: * -&gt; *).
+(Monad m, MonadIO n) =&gt;
+Options
+-&gt; Socket -&gt; (m Response -&gt; IO Response) -&gt; ScottyT m () -&gt; n ()
+</span><a href="Web.Scotty.Trans.html#scottySocketT"><span class="hs-identifier hs-var">Trans.scottySocketT</span></a></span><span> </span><span class="annot"><span class="annottext">Options
+</span><a href="#local-6989586621679123172"><span class="hs-identifier hs-var">opts</span></a></span><span> </span><span class="annot"><span class="annottext">Socket
+</span><a href="#local-6989586621679123173"><span class="hs-identifier hs-var">sock</span></a></span><span> </span><span class="annot"><span class="annottext">IO Response -&gt; IO Response
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span>
+</span><span id="line-117"></span><span>
+</span><span id="line-118"></span><span class="hs-comment">-- | Turn a scotty application into a WAI 'Application', which can be</span><span>
+</span><span id="line-119"></span><span class="hs-comment">-- run with any WAI handler.</span><span>
+</span><span id="line-120"></span><span class="annot"><a href="Web.Scotty.html#scottyApp"><span class="hs-identifier hs-type">scottyApp</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Application</span></span><span>
+</span><span id="line-121"></span><span id="scottyApp"><span class="annot"><span class="annottext">scottyApp :: ScottyM () -&gt; IO Application
+</span><a href="Web.Scotty.html#scottyApp"><span class="hs-identifier hs-var hs-var">scottyApp</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(IO Response -&gt; IO Response) -&gt; ScottyM () -&gt; IO Application
+forall (m :: * -&gt; *) (n :: * -&gt; *).
+(Monad m, Monad n) =&gt;
+(m Response -&gt; IO Response) -&gt; ScottyT m () -&gt; n Application
+</span><a href="Web.Scotty.Trans.html#scottyAppT"><span class="hs-identifier hs-var">Trans.scottyAppT</span></a></span><span> </span><span class="annot"><span class="annottext">IO Response -&gt; IO Response
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span>
+</span><span id="line-122"></span><span>
+</span><span id="line-123"></span><span class="annot"><span class="hs-comment">-- | Global handler for user-defined exceptions.</span></span><span>
+</span><span id="line-124"></span><span class="annot"><a href="Web.Scotty.html#defaultHandler"><span class="hs-identifier hs-type">defaultHandler</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#ErrorHandler"><span class="hs-identifier hs-type">ErrorHandler</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-125"></span><span id="defaultHandler"><span class="annot"><span class="annottext">defaultHandler :: ErrorHandler IO -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#defaultHandler"><span class="hs-identifier hs-var hs-var">defaultHandler</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ErrorHandler IO -&gt; ScottyM ()
+forall (m :: * -&gt; *). Monad m =&gt; ErrorHandler m -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Trans.html#defaultHandler"><span class="hs-identifier hs-var">Trans.defaultHandler</span></a></span><span>
+</span><span id="line-126"></span><span>
+</span><span id="line-127"></span><span class="hs-comment">-- | Use given middleware. Middleware is nested such that the first declared</span><span>
+</span><span id="line-128"></span><span class="hs-comment">-- is the outermost middleware (it has first dibs on the request and last action</span><span>
+</span><span id="line-129"></span><span class="hs-comment">-- on the response). Every middleware is run on each request.</span><span>
+</span><span id="line-130"></span><span class="annot"><a href="Web.Scotty.html#middleware"><span class="hs-identifier hs-type">middleware</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Middleware</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-131"></span><span id="middleware"><span class="annot"><span class="annottext">middleware :: Middleware -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#middleware"><span class="hs-identifier hs-var hs-var">middleware</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Middleware -&gt; ScottyM ()
+forall (m :: * -&gt; *). Middleware -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Trans.html#middleware"><span class="hs-identifier hs-var">Trans.middleware</span></a></span><span>
+</span><span id="line-132"></span><span>
+</span><span id="line-133"></span><span class="hs-comment">-- | Nest a whole WAI application inside a Scotty handler.</span><span>
+</span><span id="line-134"></span><span class="hs-comment">-- Note: You will want to ensure that this route fully handles the response,</span><span>
+</span><span id="line-135"></span><span class="hs-comment">-- as there is no easy delegation as per normal Scotty actions.</span><span>
+</span><span id="line-136"></span><span class="hs-comment">-- Also, you will have to carefully ensure that you are expecting the correct routes,</span><span>
+</span><span id="line-137"></span><span class="hs-comment">-- this could require stripping the current prefix, or adding the prefix to your</span><span>
+</span><span id="line-138"></span><span class="hs-comment">-- application's handlers if it depends on them. One potential use-case for this</span><span>
+</span><span id="line-139"></span><span class="hs-comment">-- is hosting a web-socket handler under a specific route.</span><span>
+</span><span id="line-140"></span><span class="annot"><a href="Web.Scotty.html#nested"><span class="hs-identifier hs-type">nested</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Application</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-141"></span><span id="nested"><span class="annot"><span class="annottext">nested :: Application -&gt; ActionM ()
+</span><a href="Web.Scotty.html#nested"><span class="hs-identifier hs-var hs-var">nested</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Application -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; Application -&gt; ActionT m ()
+</span><a href="Web.Scotty.Action.html#nested"><span class="hs-identifier hs-var">Trans.nested</span></a></span><span>
+</span><span id="line-142"></span><span>
+</span><span id="line-143"></span><span class="hs-comment">-- | Set global size limit for the request body. Requests with body size exceeding the limit will not be</span><span>
+</span><span id="line-144"></span><span class="hs-comment">-- processed and an HTTP response 413 will be returned to the client. Size limit needs to be greater than 0, </span><span>
+</span><span id="line-145"></span><span class="hs-comment">-- otherwise the application will terminate on start. </span><span>
+</span><span id="line-146"></span><span class="annot"><a href="Web.Scotty.html#setMaxRequestBodySize"><span class="hs-identifier hs-type">setMaxRequestBodySize</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Kilobytes"><span class="hs-identifier hs-type">Kilobytes</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-147"></span><span id="setMaxRequestBodySize"><span class="annot"><span class="annottext">setMaxRequestBodySize :: Port -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#setMaxRequestBodySize"><span class="hs-identifier hs-var hs-var">setMaxRequestBodySize</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Port -&gt; ScottyM ()
+forall (m :: * -&gt; *). Port -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Trans.html#setMaxRequestBodySize"><span class="hs-identifier hs-var">Trans.setMaxRequestBodySize</span></a></span><span>
+</span><span id="line-148"></span><span>
+</span><span id="line-149"></span><span class="hs-comment">-- | Throw a &quot;500 Server Error&quot; 'StatusError', which can be caught with 'catch'.</span><span>
+</span><span id="line-150"></span><span class="hs-comment">--</span><span>
+</span><span id="line-151"></span><span class="hs-comment">-- Uncaught exceptions turn into HTTP 500 responses.</span><span>
+</span><span id="line-152"></span><span id="local-6989586621679122953"><span class="annot"><a href="Web.Scotty.html#raise"><span class="hs-identifier hs-type">raise</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122953"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-153"></span><span id="raise"><span class="annot"><span class="annottext">raise :: forall a. Text -&gt; ActionM a
+</span><a href="Web.Scotty.html#raise"><span class="hs-identifier hs-var hs-var">raise</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO a
+forall (m :: * -&gt; *) a. MonadIO m =&gt; Text -&gt; ActionT m a
+</span><a href="Web.Scotty.Trans.Lazy.html#raise"><span class="hs-identifier hs-var">Trans.raise</span></a></span><span>
+</span><span id="line-154"></span><span class="hs-pragma">{-# DEPRECATED</span><span> </span><span class="hs-pragma">raise</span><span> </span><span class="hs-pragma">&quot;Throw an exception instead&quot;</span><span> </span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-155"></span><span>
+</span><span id="line-156"></span><span class="hs-comment">-- | Throw a 'StatusError' exception that has an associated HTTP error code and can be caught with 'catch'.</span><span>
+</span><span id="line-157"></span><span class="hs-comment">--</span><span>
+</span><span id="line-158"></span><span class="hs-comment">-- Uncaught exceptions turn into HTTP responses corresponding to the given status.</span><span>
+</span><span id="line-159"></span><span id="local-6989586621679122958"><span class="annot"><a href="Web.Scotty.html#raiseStatus"><span class="hs-identifier hs-type">raiseStatus</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Status</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122958"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-160"></span><span id="raiseStatus"><span class="annot"><span class="annottext">raiseStatus :: forall a. Status -&gt; Text -&gt; ActionM a
+</span><a href="Web.Scotty.html#raiseStatus"><span class="hs-identifier hs-var hs-var">raiseStatus</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Status -&gt; Text -&gt; ActionT IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; Status -&gt; Text -&gt; ActionT m a
+</span><a href="Web.Scotty.Trans.Lazy.html#raiseStatus"><span class="hs-identifier hs-var">Trans.raiseStatus</span></a></span><span>
+</span><span id="line-161"></span><span class="hs-pragma">{-# DEPRECATED</span><span> </span><span class="hs-pragma">raiseStatus</span><span> </span><span class="hs-pragma">&quot;Use status, text, and finish instead&quot;</span><span> </span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-162"></span><span>
+</span><span id="line-163"></span><span class="hs-comment">-- | Throw an exception which can be caught within the scope of the current Action with 'catch'.</span><span>
+</span><span id="line-164"></span><span class="hs-comment">--</span><span>
+</span><span id="line-165"></span><span class="hs-comment">-- If the exception is not caught locally, another option is to implement a global 'Handler' (with 'defaultHandler') that defines its interpretation and a translation to HTTP error codes.</span><span>
+</span><span id="line-166"></span><span class="hs-comment">--</span><span>
+</span><span id="line-167"></span><span class="hs-comment">-- Uncaught exceptions turn into HTTP 500 responses.</span><span>
+</span><span id="line-168"></span><span id="local-6989586621679122962"><span id="local-6989586621679122964"><span class="annot"><a href="Web.Scotty.html#throw"><span class="hs-identifier hs-type">throw</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">E.Exception</span></span><span> </span><span class="annot"><a href="#local-6989586621679122962"><span class="hs-identifier hs-type">e</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679122962"><span class="hs-identifier hs-type">e</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122964"><span class="hs-identifier hs-type">a</span></a></span></span></span><span>
+</span><span id="line-169"></span><span id="throw"><span class="annot"><span class="annottext">throw :: forall e a. Exception e =&gt; e -&gt; ActionM a
+</span><a href="Web.Scotty.html#throw"><span class="hs-identifier hs-var hs-var">throw</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">e -&gt; ActionT IO a
+forall (m :: * -&gt; *) e a.
+(MonadIO m, Exception e) =&gt;
+e -&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#throw"><span class="hs-identifier hs-var">Trans.throw</span></a></span><span>
+</span><span id="line-170"></span><span>
+</span><span id="line-171"></span><span class="hs-comment">-- | Abort execution of this action and continue pattern matching routes.</span><span>
+</span><span id="line-172"></span><span class="hs-comment">-- Like an exception, any code after 'next' is not executed.</span><span>
+</span><span id="line-173"></span><span class="hs-comment">--</span><span>
+</span><span id="line-174"></span><span class="hs-comment">-- NB : Internally, this is implemented with an exception that can only be</span><span>
+</span><span id="line-175"></span><span class="hs-comment">-- caught by the library, but not by the user.</span><span>
+</span><span id="line-176"></span><span class="hs-comment">--</span><span>
+</span><span id="line-177"></span><span class="hs-comment">-- As an example, these two routes overlap. The only way the second one will</span><span>
+</span><span id="line-178"></span><span class="hs-comment">-- ever run is if the first one calls 'next'.</span><span>
+</span><span id="line-179"></span><span class="hs-comment">--</span><span>
+</span><span id="line-180"></span><span class="hs-comment">-- &gt; get &quot;/foo/:bar&quot; $ do</span><span>
+</span><span id="line-181"></span><span class="hs-comment">-- &gt;   w :: Text &lt;- pathParam &quot;bar&quot;</span><span>
+</span><span id="line-182"></span><span class="hs-comment">-- &gt;   unless (w == &quot;special&quot;) next</span><span>
+</span><span id="line-183"></span><span class="hs-comment">-- &gt;   text &quot;You made a request to /foo/special&quot;</span><span>
+</span><span id="line-184"></span><span class="hs-comment">-- &gt;</span><span>
+</span><span id="line-185"></span><span class="hs-comment">-- &gt; get &quot;/foo/:baz&quot; $ do</span><span>
+</span><span id="line-186"></span><span class="hs-comment">-- &gt;   w &lt;- pathParam &quot;baz&quot;</span><span>
+</span><span id="line-187"></span><span class="hs-comment">-- &gt;   text $ &quot;You made a request to: &quot; &lt;&gt; w</span><span>
+</span><span id="line-188"></span><span class="annot"><a href="Web.Scotty.html#next"><span class="hs-identifier hs-type">next</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-189"></span><span id="next"><span class="annot"><span class="annottext">next :: ActionM ()
+</span><a href="Web.Scotty.html#next"><span class="hs-identifier hs-var hs-var">next</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM ()
+forall (m :: * -&gt; *) a. Monad m =&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#next"><span class="hs-identifier hs-var">Trans.next</span></a></span><span>
+</span><span id="line-190"></span><span>
+</span><span id="line-191"></span><span class="hs-comment">-- | Abort execution of this action. Like an exception, any code after 'finish'</span><span>
+</span><span id="line-192"></span><span class="hs-comment">-- is not executed.</span><span>
+</span><span id="line-193"></span><span class="hs-comment">--</span><span>
+</span><span id="line-194"></span><span class="hs-comment">-- As an example only requests to @\/foo\/special@ will include in the response</span><span>
+</span><span id="line-195"></span><span class="hs-comment">-- content the text message.</span><span>
+</span><span id="line-196"></span><span class="hs-comment">--</span><span>
+</span><span id="line-197"></span><span class="hs-comment">-- &gt; get &quot;/foo/:bar&quot; $ do</span><span>
+</span><span id="line-198"></span><span class="hs-comment">-- &gt;   w :: Text &lt;- pathParam &quot;bar&quot;</span><span>
+</span><span id="line-199"></span><span class="hs-comment">-- &gt;   unless (w == &quot;special&quot;) finish</span><span>
+</span><span id="line-200"></span><span class="hs-comment">-- &gt;   text &quot;You made a request to /foo/special&quot;</span><span>
+</span><span id="line-201"></span><span class="hs-comment">--</span><span>
+</span><span id="line-202"></span><span class="hs-comment">-- /Since: 0.10.3/</span><span>
+</span><span id="line-203"></span><span id="local-6989586621679122972"><span class="annot"><a href="Web.Scotty.html#finish"><span class="hs-identifier hs-type">finish</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122972"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-204"></span><span id="finish"><span class="annot"><span class="annottext">finish :: forall a. ActionM a
+</span><a href="Web.Scotty.html#finish"><span class="hs-identifier hs-var hs-var">finish</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionT IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#finish"><span class="hs-identifier hs-var">Trans.finish</span></a></span><span>
+</span><span id="line-205"></span><span>
+</span><span id="line-206"></span><span class="hs-comment">-- | Catch an exception e.g. a 'StatusError' or a user-defined exception.</span><span>
+</span><span id="line-207"></span><span class="hs-comment">--</span><span>
+</span><span id="line-208"></span><span class="hs-comment">-- &gt; raise JustKidding `catch` (\msg -&gt; text msg)</span><span>
+</span><span id="line-209"></span><span id="local-6989586621679122974"><span id="local-6989586621679122975"><span class="annot"><a href="Web.Scotty.html#rescue"><span class="hs-identifier hs-type">rescue</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">E.Exception</span></span><span> </span><span class="annot"><a href="#local-6989586621679122974"><span class="hs-identifier hs-type">e</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122975"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679122974"><span class="hs-identifier hs-type">e</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122975"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122975"><span class="hs-identifier hs-type">a</span></a></span></span></span><span>
+</span><span id="line-210"></span><span id="rescue"><span class="annot"><span class="annottext">rescue :: forall e a.
+Exception e =&gt;
+ActionM a -&gt; (e -&gt; ActionM a) -&gt; ActionM a
+</span><a href="Web.Scotty.html#rescue"><span class="hs-identifier hs-var hs-var">rescue</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionT IO a -&gt; (e -&gt; ActionT IO a) -&gt; ActionT IO a
+forall (m :: * -&gt; *) e a.
+(MonadUnliftIO m, Exception e) =&gt;
+ActionT m a -&gt; (e -&gt; ActionT m a) -&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#rescue"><span class="hs-identifier hs-var">Trans.rescue</span></a></span><span>
+</span><span id="line-211"></span><span class="hs-pragma">{-# DEPRECATED</span><span> </span><span class="hs-pragma">rescue</span><span> </span><span class="hs-pragma">&quot;Use catch instead&quot;</span><span> </span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-212"></span><span>
+</span><span id="line-213"></span><span class="annot"><span class="hs-comment">-- | Like 'liftIO', but catch any IO exceptions and turn them into Scotty exceptions.</span></span><span>
+</span><span id="line-214"></span><span id="local-6989586621679122981"><span class="annot"><a href="Web.Scotty.html#liftAndCatchIO"><span class="hs-identifier hs-type">liftAndCatchIO</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><a href="#local-6989586621679122981"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122981"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-215"></span><span id="liftAndCatchIO"><span class="annot"><span class="annottext">liftAndCatchIO :: forall a. IO a -&gt; ActionM a
+</span><a href="Web.Scotty.html#liftAndCatchIO"><span class="hs-identifier hs-var hs-var">liftAndCatchIO</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">IO a -&gt; ActionT IO a
+forall (m :: * -&gt; *) a. MonadIO m =&gt; IO a -&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#liftAndCatchIO"><span class="hs-identifier hs-var">Trans.liftAndCatchIO</span></a></span><span>
+</span><span id="line-216"></span><span class="hs-pragma">{-# DEPRECATED</span><span> </span><span class="hs-pragma">liftAndCatchIO</span><span> </span><span class="hs-pragma">&quot;Use liftIO instead&quot;</span><span> </span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-217"></span><span>
+</span><span id="line-218"></span><span class="hs-comment">-- | Redirect to given URL. Like throwing an uncatchable exception. Any code after the call to redirect</span><span>
+</span><span id="line-219"></span><span class="hs-comment">-- will not be run.</span><span>
+</span><span id="line-220"></span><span class="hs-comment">--</span><span>
+</span><span id="line-221"></span><span class="hs-comment">-- &gt; redirect &quot;http://www.google.com&quot;</span><span>
+</span><span id="line-222"></span><span class="hs-comment">--</span><span>
+</span><span id="line-223"></span><span class="hs-comment">-- OR</span><span>
+</span><span id="line-224"></span><span class="hs-comment">--</span><span>
+</span><span id="line-225"></span><span class="hs-comment">-- &gt; redirect &quot;/foo/bar&quot;</span><span>
+</span><span id="line-226"></span><span id="local-6989586621679123199"><span class="annot"><a href="Web.Scotty.html#redirect"><span class="hs-identifier hs-type">redirect</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123199"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-227"></span><span id="redirect"><span class="annot"><span class="annottext">redirect :: forall a. Text -&gt; ActionM a
+</span><a href="Web.Scotty.html#redirect"><span class="hs-identifier hs-var hs-var">redirect</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO a
+forall (m :: * -&gt; *) a. Monad m =&gt; Text -&gt; ActionT m a
+</span><a href="Web.Scotty.Trans.Lazy.html#redirect"><span class="hs-identifier hs-var">Trans.redirect</span></a></span><span>
+</span><span id="line-228"></span><span>
+</span><span id="line-229"></span><span class="annot"><span class="hs-comment">-- | Get the 'Request' object.</span></span><span>
+</span><span id="line-230"></span><span class="annot"><a href="Web.Scotty.html#request"><span class="hs-identifier hs-type">request</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Request</span></span><span>
+</span><span id="line-231"></span><span id="request"><span class="annot"><span class="annottext">request :: ActionM Request
+</span><a href="Web.Scotty.html#request"><span class="hs-identifier hs-var hs-var">request</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM Request
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m Request
+</span><a href="Web.Scotty.Action.html#request"><span class="hs-identifier hs-var">Trans.request</span></a></span><span>
+</span><span id="line-232"></span><span>
+</span><span id="line-233"></span><span class="annot"><span class="hs-comment">-- | Get list of uploaded files.</span></span><span>
+</span><span id="line-234"></span><span class="annot"><a href="Web.Scotty.html#files"><span class="hs-identifier hs-type">files</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#File"><span class="hs-identifier hs-type">File</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-235"></span><span id="files"><span class="annot"><span class="annottext">files :: ActionM [File]
+</span><a href="Web.Scotty.html#files"><span class="hs-identifier hs-var hs-var">files</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM [File]
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m [File]
+</span><a href="Web.Scotty.Action.html#files"><span class="hs-identifier hs-var">Trans.files</span></a></span><span>
+</span><span id="line-236"></span><span>
+</span><span id="line-237"></span><span class="annot"><span class="hs-comment">-- | Get a request header. Header name is case-insensitive.</span></span><span>
+</span><span id="line-238"></span><span class="annot"><a href="Web.Scotty.html#header"><span class="hs-identifier hs-type">header</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-239"></span><span id="header"><span class="annot"><span class="annottext">header :: Text -&gt; ActionM (Maybe Text)
+</span><a href="Web.Scotty.html#header"><span class="hs-identifier hs-var hs-var">header</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionM (Maybe Text)
+forall (m :: * -&gt; *). Monad m =&gt; Text -&gt; ActionT m (Maybe Text)
+</span><a href="Web.Scotty.Trans.Lazy.html#header"><span class="hs-identifier hs-var">Trans.header</span></a></span><span>
+</span><span id="line-240"></span><span>
+</span><span id="line-241"></span><span class="annot"><span class="hs-comment">-- | Get all the request headers. Header names are case-insensitive.</span></span><span>
+</span><span id="line-242"></span><span class="annot"><a href="Web.Scotty.html#headers"><span class="hs-identifier hs-type">headers</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">)</span><span class="hs-special">]</span><span>
+</span><span id="line-243"></span><span id="headers"><span class="annot"><span class="annottext">headers :: ActionM [(Text, Text)]
+</span><a href="Web.Scotty.html#headers"><span class="hs-identifier hs-var hs-var">headers</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM [(Text, Text)]
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m [(Text, Text)]
+</span><a href="Web.Scotty.Trans.Lazy.html#headers"><span class="hs-identifier hs-var">Trans.headers</span></a></span><span>
+</span><span id="line-244"></span><span>
+</span><span id="line-245"></span><span class="annot"><span class="hs-comment">-- | Get the request body.</span></span><span>
+</span><span id="line-246"></span><span class="annot"><a href="Web.Scotty.html#body"><span class="hs-identifier hs-type">body</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">ByteString</span></span><span>
+</span><span id="line-247"></span><span id="body"><span class="annot"><span class="annottext">body :: ActionM ByteString
+</span><a href="Web.Scotty.html#body"><span class="hs-identifier hs-var hs-var">body</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM ByteString
+forall (m :: * -&gt; *). MonadIO m =&gt; ActionT m ByteString
+</span><a href="Web.Scotty.Action.html#body"><span class="hs-identifier hs-var">Trans.body</span></a></span><span>
+</span><span id="line-248"></span><span>
+</span><span id="line-249"></span><span class="hs-comment">-- | Get an IO action that reads body chunks</span><span>
+</span><span id="line-250"></span><span class="hs-comment">--</span><span>
+</span><span id="line-251"></span><span class="hs-comment">-- * This is incompatible with 'body' since 'body' consumes all chunks.</span><span>
+</span><span id="line-252"></span><span class="annot"><a href="Web.Scotty.html#bodyReader"><span class="hs-identifier hs-type">bodyReader</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BS.ByteString</span></span><span class="hs-special">)</span><span>
+</span><span id="line-253"></span><span id="bodyReader"><span class="annot"><span class="annottext">bodyReader :: ActionM (IO ByteString)
+</span><a href="Web.Scotty.html#bodyReader"><span class="hs-identifier hs-var hs-var">bodyReader</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM (IO ByteString)
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m (IO ByteString)
+</span><a href="Web.Scotty.Action.html#bodyReader"><span class="hs-identifier hs-var">Trans.bodyReader</span></a></span><span>
+</span><span id="line-254"></span><span>
+</span><span id="line-255"></span><span class="annot"><span class="hs-comment">-- | Parse the request body as a JSON object and return it. Raises an exception if parse is unsuccessful.</span></span><span>
+</span><span id="line-256"></span><span id="local-6989586621679122998"><span class="annot"><a href="Web.Scotty.html#jsonData"><span class="hs-identifier hs-type">jsonData</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FromJSON</span></span><span> </span><span class="annot"><a href="#local-6989586621679122998"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679122998"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-257"></span><span id="jsonData"><span class="annot"><span class="annottext">jsonData :: forall a. FromJSON a =&gt; ActionM a
+</span><a href="Web.Scotty.html#jsonData"><span class="hs-identifier hs-var hs-var">jsonData</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionT IO a
+forall a (m :: * -&gt; *). (FromJSON a, MonadIO m) =&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#jsonData"><span class="hs-identifier hs-var">Trans.jsonData</span></a></span><span>
+</span><span id="line-258"></span><span>
+</span><span id="line-259"></span><span class="hs-comment">-- | Get a parameter. First looks in captures, then form data, then query parameters.</span><span>
+</span><span id="line-260"></span><span class="hs-comment">--</span><span>
+</span><span id="line-261"></span><span class="hs-comment">-- * Raises an exception which can be caught by 'catch' if parameter is not found.</span><span>
+</span><span id="line-262"></span><span class="hs-comment">--</span><span>
+</span><span id="line-263"></span><span class="hs-comment">-- * If parameter is found, but 'parseParam' fails to parse to the correct type, 'next' is called.</span><span>
+</span><span id="line-264"></span><span class="hs-comment">--   This means captures are somewhat typed, in that a route won't match if a correctly typed</span><span>
+</span><span id="line-265"></span><span class="hs-comment">--   capture cannot be parsed.</span><span>
+</span><span id="line-266"></span><span id="local-6989586621679123003"><span class="annot"><a href="Web.Scotty.html#param"><span class="hs-identifier hs-type">param</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123003"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123003"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-267"></span><span id="param"><span class="annot"><span class="annottext">param :: forall a. Parsable a =&gt; Text -&gt; ActionM a
+</span><a href="Web.Scotty.html#param"><span class="hs-identifier hs-var hs-var">param</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO a
+forall a (m :: * -&gt; *).
+(Parsable a, MonadIO m) =&gt;
+Text -&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#param"><span class="hs-identifier hs-var">Trans.param</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO a) -&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-268"></span><span class="hs-pragma">{-# DEPRECATED</span><span> </span><span class="hs-pragma">param</span><span> </span><span class="hs-pragma">&quot;(#204) Not a good idea to treat all parameters identically. Use pathParam, formParam and queryParam instead. &quot;</span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-269"></span><span>
+</span><span id="line-270"></span><span class="hs-comment">-- | Synonym for 'pathParam'</span><span>
+</span><span id="line-271"></span><span class="hs-comment">--</span><span>
+</span><span id="line-272"></span><span class="hs-comment">-- /Since: 0.20/</span><span>
+</span><span id="line-273"></span><span id="local-6989586621679123217"><span class="annot"><a href="Web.Scotty.html#captureParam"><span class="hs-identifier hs-type">captureParam</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123217"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123217"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-274"></span><span id="captureParam"><span class="annot"><span class="annottext">captureParam :: forall a. Parsable a =&gt; Text -&gt; ActionM a
+</span><a href="Web.Scotty.html#captureParam"><span class="hs-identifier hs-var hs-var">captureParam</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO a
+forall a (m :: * -&gt; *).
+(Parsable a, MonadIO m) =&gt;
+Text -&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#captureParam"><span class="hs-identifier hs-var">Trans.captureParam</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO a) -&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-275"></span><span>
+</span><span id="line-276"></span><span class="hs-comment">-- | Get a path parameter.</span><span>
+</span><span id="line-277"></span><span class="hs-comment">--</span><span>
+</span><span id="line-278"></span><span class="hs-comment">-- * Raises an exception which can be caught by 'catch' if parameter is not found. If the exception is not caught, scotty will return a HTTP error code 500 (&quot;Internal Server Error&quot;) to the client.</span><span>
+</span><span id="line-279"></span><span class="hs-comment">--</span><span>
+</span><span id="line-280"></span><span class="hs-comment">-- * If the parameter is found, but 'parseParam' fails to parse to the correct type, 'next' is called.</span><span>
+</span><span id="line-281"></span><span class="hs-comment">--</span><span>
+</span><span id="line-282"></span><span class="hs-comment">-- /Since: 0.21/</span><span>
+</span><span id="line-283"></span><span id="local-6989586621679123222"><span class="annot"><a href="Web.Scotty.html#pathParam"><span class="hs-identifier hs-type">pathParam</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123222"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123222"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-284"></span><span id="pathParam"><span class="annot"><span class="annottext">pathParam :: forall a. Parsable a =&gt; Text -&gt; ActionM a
+</span><a href="Web.Scotty.html#pathParam"><span class="hs-identifier hs-var hs-var">pathParam</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO a
+forall a (m :: * -&gt; *).
+(Parsable a, MonadIO m) =&gt;
+Text -&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#pathParam"><span class="hs-identifier hs-var">Trans.pathParam</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO a) -&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-285"></span><span>
+</span><span id="line-286"></span><span class="hs-comment">-- | Get a form parameter.</span><span>
+</span><span id="line-287"></span><span class="hs-comment">--</span><span>
+</span><span id="line-288"></span><span class="hs-comment">-- * Raises an exception which can be caught by 'catch' if parameter is not found. If the exception is not caught, scotty will return a HTTP error code 400 (&quot;Bad Request&quot;) to the client.</span><span>
+</span><span id="line-289"></span><span class="hs-comment">--</span><span>
+</span><span id="line-290"></span><span class="hs-comment">-- * This function raises a code 400 also if the parameter is found, but 'parseParam' fails to parse to the correct type.</span><span>
+</span><span id="line-291"></span><span class="hs-comment">--</span><span>
+</span><span id="line-292"></span><span class="hs-comment">-- /Since: 0.20/</span><span>
+</span><span id="line-293"></span><span id="local-6989586621679123227"><span class="annot"><a href="Web.Scotty.html#formParam"><span class="hs-identifier hs-type">formParam</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123227"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123227"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-294"></span><span id="formParam"><span class="annot"><span class="annottext">formParam :: forall a. Parsable a =&gt; Text -&gt; ActionM a
+</span><a href="Web.Scotty.html#formParam"><span class="hs-identifier hs-var hs-var">formParam</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO a
+forall a (m :: * -&gt; *).
+(Parsable a, MonadIO m) =&gt;
+Text -&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#formParam"><span class="hs-identifier hs-var">Trans.formParam</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO a) -&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-295"></span><span>
+</span><span id="line-296"></span><span class="hs-comment">-- | Get a query parameter.</span><span>
+</span><span id="line-297"></span><span class="hs-comment">--</span><span>
+</span><span id="line-298"></span><span class="hs-comment">-- * Raises an exception which can be caught by 'catch' if parameter is not found. If the exception is not caught, scotty will return a HTTP error code 400 (&quot;Bad Request&quot;) to the client.</span><span>
+</span><span id="line-299"></span><span class="hs-comment">--</span><span>
+</span><span id="line-300"></span><span class="hs-comment">-- * This function raises a code 400 also if the parameter is found, but 'parseParam' fails to parse to the correct type.</span><span>
+</span><span id="line-301"></span><span class="hs-comment">--</span><span>
+</span><span id="line-302"></span><span class="hs-comment">-- /Since: 0.20/</span><span>
+</span><span id="line-303"></span><span id="local-6989586621679123232"><span class="annot"><a href="Web.Scotty.html#queryParam"><span class="hs-identifier hs-type">queryParam</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123232"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123232"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-304"></span><span id="queryParam"><span class="annot"><span class="annottext">queryParam :: forall a. Parsable a =&gt; Text -&gt; ActionM a
+</span><a href="Web.Scotty.html#queryParam"><span class="hs-identifier hs-var hs-var">queryParam</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO a
+forall a (m :: * -&gt; *).
+(Parsable a, MonadIO m) =&gt;
+Text -&gt; ActionT m a
+</span><a href="Web.Scotty.Action.html#queryParam"><span class="hs-identifier hs-var">Trans.queryParam</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO a) -&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-305"></span><span>
+</span><span id="line-306"></span><span>
+</span><span id="line-307"></span><span class="hs-comment">-- | Look up a path parameter. Returns 'Nothing' if the parameter is not found or cannot be parsed at the right type.</span><span>
+</span><span id="line-308"></span><span class="hs-comment">--</span><span>
+</span><span id="line-309"></span><span class="hs-comment">-- NB : Doesn't throw exceptions. In particular, route pattern matching will not continue, so developers</span><span>
+</span><span id="line-310"></span><span class="hs-comment">-- must 'raiseStatus' or 'throw' to signal something went wrong.</span><span>
+</span><span id="line-311"></span><span class="hs-comment">--</span><span>
+</span><span id="line-312"></span><span class="hs-comment">-- /Since: 0.21/</span><span>
+</span><span id="line-313"></span><span id="local-6989586621679123016"><span class="annot"><a href="Web.Scotty.html#pathParamMaybe"><span class="hs-identifier hs-type">pathParamMaybe</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123016"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679123016"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-314"></span><span id="pathParamMaybe"><span class="annot"><span class="annottext">pathParamMaybe :: forall a. Parsable a =&gt; Text -&gt; ActionM (Maybe a)
+</span><a href="Web.Scotty.html#pathParamMaybe"><span class="hs-identifier hs-var hs-var">pathParamMaybe</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO (Maybe a)
+forall a (m :: * -&gt; *).
+(Parsable a, Monad m) =&gt;
+Text -&gt; ActionT m (Maybe a)
+</span><a href="Web.Scotty.Action.html#pathParamMaybe"><span class="hs-identifier hs-var">Trans.pathParamMaybe</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO (Maybe a))
+-&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO (Maybe a)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-315"></span><span>
+</span><span id="line-316"></span><span class="hs-comment">-- | Synonym for 'pathParamMaybe'</span><span>
+</span><span id="line-317"></span><span class="hs-comment">--</span><span>
+</span><span id="line-318"></span><span class="hs-comment">-- /Since: 0.21/</span><span>
+</span><span id="line-319"></span><span id="local-6989586621679123241"><span class="annot"><a href="Web.Scotty.html#captureParamMaybe"><span class="hs-identifier hs-type">captureParamMaybe</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123241"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679123241"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-320"></span><span id="captureParamMaybe"><span class="annot"><span class="annottext">captureParamMaybe :: forall a. Parsable a =&gt; Text -&gt; ActionM (Maybe a)
+</span><a href="Web.Scotty.html#captureParamMaybe"><span class="hs-identifier hs-var hs-var">captureParamMaybe</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO (Maybe a)
+forall a (m :: * -&gt; *).
+(Parsable a, Monad m) =&gt;
+Text -&gt; ActionT m (Maybe a)
+</span><a href="Web.Scotty.Action.html#pathParamMaybe"><span class="hs-identifier hs-var">Trans.pathParamMaybe</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO (Maybe a))
+-&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO (Maybe a)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-321"></span><span>
+</span><span id="line-322"></span><span class="hs-comment">-- | Look up a form parameter. Returns 'Nothing' if the parameter is not found or cannot be parsed at the right type.</span><span>
+</span><span id="line-323"></span><span class="hs-comment">--</span><span>
+</span><span id="line-324"></span><span class="hs-comment">-- NB : Doesn't throw exceptions, so developers must 'raiseStatus' or 'throw' to signal something went wrong.</span><span>
+</span><span id="line-325"></span><span class="hs-comment">--</span><span>
+</span><span id="line-326"></span><span class="hs-comment">-- /Since: 0.21/</span><span>
+</span><span id="line-327"></span><span id="local-6989586621679123245"><span class="annot"><a href="Web.Scotty.html#formParamMaybe"><span class="hs-identifier hs-type">formParamMaybe</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123245"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679123245"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-328"></span><span id="formParamMaybe"><span class="annot"><span class="annottext">formParamMaybe :: forall a. Parsable a =&gt; Text -&gt; ActionM (Maybe a)
+</span><a href="Web.Scotty.html#formParamMaybe"><span class="hs-identifier hs-var hs-var">formParamMaybe</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO (Maybe a)
+forall a (m :: * -&gt; *).
+(Parsable a, Monad m) =&gt;
+Text -&gt; ActionT m (Maybe a)
+</span><a href="Web.Scotty.Action.html#formParamMaybe"><span class="hs-identifier hs-var">Trans.formParamMaybe</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO (Maybe a))
+-&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO (Maybe a)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-329"></span><span>
+</span><span id="line-330"></span><span class="hs-comment">-- | Look up a query parameter. Returns 'Nothing' if the parameter is not found or cannot be parsed at the right type.</span><span>
+</span><span id="line-331"></span><span class="hs-comment">--</span><span>
+</span><span id="line-332"></span><span class="hs-comment">-- NB : Doesn't throw exceptions, so developers must 'raiseStatus' or 'throw' to signal something went wrong.</span><span>
+</span><span id="line-333"></span><span class="hs-comment">--</span><span>
+</span><span id="line-334"></span><span class="hs-comment">-- /Since: 0.21/</span><span>
+</span><span id="line-335"></span><span id="local-6989586621679123250"><span class="annot"><a href="Web.Scotty.html#queryParamMaybe"><span class="hs-identifier hs-type">queryParamMaybe</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Web.Scotty.Action.html#Parsable"><span class="hs-identifier hs-type">Trans.Parsable</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679123250"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="annot"><a href="#local-6989586621679123250"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-336"></span><span id="queryParamMaybe"><span class="annot"><span class="annottext">queryParamMaybe :: forall a. Parsable a =&gt; Text -&gt; ActionM (Maybe a)
+</span><a href="Web.Scotty.html#queryParamMaybe"><span class="hs-identifier hs-var hs-var">queryParamMaybe</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionT IO (Maybe a)
+forall a (m :: * -&gt; *).
+(Parsable a, Monad m) =&gt;
+Text -&gt; ActionT m (Maybe a)
+</span><a href="Web.Scotty.Action.html#queryParamMaybe"><span class="hs-identifier hs-var">Trans.queryParamMaybe</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; ActionT IO (Maybe a))
+-&gt; (Text -&gt; Text) -&gt; Text -&gt; ActionT IO (Maybe a)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">toStrict</span></span><span>
+</span><span id="line-337"></span><span>
+</span><span id="line-338"></span><span>
+</span><span id="line-339"></span><span>
+</span><span id="line-340"></span><span>
+</span><span id="line-341"></span><span class="annot"><span class="hs-comment">-- | Get all parameters from path, form and query (in that order).</span></span><span>
+</span><span id="line-342"></span><span class="annot"><a href="Web.Scotty.html#params"><span class="hs-identifier hs-type">params</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-343"></span><span id="params"><span class="annot"><span class="annottext">params :: ActionM [Param]
+</span><a href="Web.Scotty.html#params"><span class="hs-identifier hs-var hs-var">params</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM [Param]
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m [Param]
+</span><a href="Web.Scotty.Action.html#params"><span class="hs-identifier hs-var">Trans.params</span></a></span><span>
+</span><span id="line-344"></span><span class="hs-pragma">{-# DEPRECATED</span><span> </span><span class="hs-pragma">params</span><span> </span><span class="hs-pragma">&quot;(#204) Not a good idea to treat all parameters identically. Use pathParams, formParams and queryParams instead. &quot;</span><span class="hs-pragma">#-}</span><span>
+</span><span id="line-345"></span><span>
+</span><span id="line-346"></span><span class="annot"><span class="hs-comment">-- | Synonym for 'pathParams'</span></span><span>
+</span><span id="line-347"></span><span class="annot"><a href="Web.Scotty.html#captureParams"><span class="hs-identifier hs-type">captureParams</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-348"></span><span id="captureParams"><span class="annot"><span class="annottext">captureParams :: ActionM [Param]
+</span><a href="Web.Scotty.html#captureParams"><span class="hs-identifier hs-var hs-var">captureParams</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM [Param]
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m [Param]
+</span><a href="Web.Scotty.Action.html#captureParams"><span class="hs-identifier hs-var">Trans.captureParams</span></a></span><span>
+</span><span id="line-349"></span><span class="annot"><span class="hs-comment">-- | Get path parameters</span></span><span>
+</span><span id="line-350"></span><span class="annot"><a href="Web.Scotty.html#pathParams"><span class="hs-identifier hs-type">pathParams</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-351"></span><span id="pathParams"><span class="annot"><span class="annottext">pathParams :: ActionM [Param]
+</span><a href="Web.Scotty.html#pathParams"><span class="hs-identifier hs-var hs-var">pathParams</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM [Param]
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m [Param]
+</span><a href="Web.Scotty.Action.html#pathParams"><span class="hs-identifier hs-var">Trans.pathParams</span></a></span><span>
+</span><span id="line-352"></span><span class="annot"><span class="hs-comment">-- | Get form parameters</span></span><span>
+</span><span id="line-353"></span><span class="annot"><a href="Web.Scotty.html#formParams"><span class="hs-identifier hs-type">formParams</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-354"></span><span id="formParams"><span class="annot"><span class="annottext">formParams :: ActionM [Param]
+</span><a href="Web.Scotty.html#formParams"><span class="hs-identifier hs-var hs-var">formParams</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM [Param]
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m [Param]
+</span><a href="Web.Scotty.Action.html#formParams"><span class="hs-identifier hs-var">Trans.formParams</span></a></span><span>
+</span><span id="line-355"></span><span class="annot"><span class="hs-comment">-- | Get query parameters</span></span><span>
+</span><span id="line-356"></span><span class="annot"><a href="Web.Scotty.html#queryParams"><span class="hs-identifier hs-type">queryParams</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-357"></span><span id="queryParams"><span class="annot"><span class="annottext">queryParams :: ActionM [Param]
+</span><a href="Web.Scotty.html#queryParams"><span class="hs-identifier hs-var hs-var">queryParams</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM [Param]
+forall (m :: * -&gt; *). Monad m =&gt; ActionT m [Param]
+</span><a href="Web.Scotty.Action.html#queryParams"><span class="hs-identifier hs-var">Trans.queryParams</span></a></span><span>
+</span><span id="line-358"></span><span>
+</span><span id="line-359"></span><span>
+</span><span id="line-360"></span><span class="annot"><span class="hs-comment">-- | Set the HTTP response status. Default is 200.</span></span><span>
+</span><span id="line-361"></span><span class="annot"><a href="Web.Scotty.html#status"><span class="hs-identifier hs-type">status</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Status</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-362"></span><span id="status"><span class="annot"><span class="annottext">status :: Status -&gt; ActionM ()
+</span><a href="Web.Scotty.html#status"><span class="hs-identifier hs-var hs-var">status</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Status -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; Status -&gt; ActionT m ()
+</span><a href="Web.Scotty.Action.html#status"><span class="hs-identifier hs-var">Trans.status</span></a></span><span>
+</span><span id="line-363"></span><span>
+</span><span id="line-364"></span><span class="annot"><span class="hs-comment">-- | Add to the response headers. Header names are case-insensitive.</span></span><span>
+</span><span id="line-365"></span><span class="annot"><a href="Web.Scotty.html#addHeader"><span class="hs-identifier hs-type">addHeader</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-366"></span><span id="addHeader"><span class="annot"><span class="annottext">addHeader :: Text -&gt; Text -&gt; ActionM ()
+</span><a href="Web.Scotty.html#addHeader"><span class="hs-identifier hs-var hs-var">addHeader</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; Text -&gt; Text -&gt; ActionT m ()
+</span><a href="Web.Scotty.Trans.Lazy.html#addHeader"><span class="hs-identifier hs-var">Trans.addHeader</span></a></span><span>
+</span><span id="line-367"></span><span>
+</span><span id="line-368"></span><span class="hs-comment">-- | Set one of the response headers. Will override any previously set value for that header.</span><span>
+</span><span id="line-369"></span><span class="hs-comment">-- Header names are case-insensitive.</span><span>
+</span><span id="line-370"></span><span class="annot"><a href="Web.Scotty.html#setHeader"><span class="hs-identifier hs-type">setHeader</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-371"></span><span id="setHeader"><span class="annot"><span class="annottext">setHeader :: Text -&gt; Text -&gt; ActionM ()
+</span><a href="Web.Scotty.html#setHeader"><span class="hs-identifier hs-var hs-var">setHeader</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; Text -&gt; Text -&gt; ActionT m ()
+</span><a href="Web.Scotty.Trans.Lazy.html#setHeader"><span class="hs-identifier hs-var">Trans.setHeader</span></a></span><span>
+</span><span id="line-372"></span><span>
+</span><span id="line-373"></span><span class="hs-comment">-- | Set the body of the response to the given 'Text' value. Also sets \&quot;Content-Type\&quot;</span><span>
+</span><span id="line-374"></span><span class="hs-comment">-- header to \&quot;text/plain; charset=utf-8\&quot; if it has not already been set.</span><span>
+</span><span id="line-375"></span><span class="annot"><a href="Web.Scotty.html#text"><span class="hs-identifier hs-type">text</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-376"></span><span id="text"><span class="annot"><span class="annottext">text :: Text -&gt; ActionM ()
+</span><a href="Web.Scotty.html#text"><span class="hs-identifier hs-var hs-var">text</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; Text -&gt; ActionT m ()
+</span><a href="Web.Scotty.Trans.Lazy.html#text"><span class="hs-identifier hs-var">Trans.text</span></a></span><span>
+</span><span id="line-377"></span><span>
+</span><span id="line-378"></span><span class="hs-comment">-- | Set the body of the response to the given 'Text' value. Also sets \&quot;Content-Type\&quot;</span><span>
+</span><span id="line-379"></span><span class="hs-comment">-- header to \&quot;text/html; charset=utf-8\&quot; if it has not already been set.</span><span>
+</span><span id="line-380"></span><span class="annot"><a href="Web.Scotty.html#html"><span class="hs-identifier hs-type">html</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-381"></span><span id="html"><span class="annot"><span class="annottext">html :: Text -&gt; ActionM ()
+</span><a href="Web.Scotty.html#html"><span class="hs-identifier hs-var hs-var">html</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; Text -&gt; ActionT m ()
+</span><a href="Web.Scotty.Trans.Lazy.html#html"><span class="hs-identifier hs-var">Trans.html</span></a></span><span>
+</span><span id="line-382"></span><span>
+</span><span id="line-383"></span><span class="hs-comment">-- | Send a file as the response. Doesn't set the \&quot;Content-Type\&quot; header, so you probably</span><span>
+</span><span id="line-384"></span><span class="hs-comment">-- want to do that on your own with 'setHeader'.</span><span>
+</span><span id="line-385"></span><span class="annot"><a href="Web.Scotty.html#file"><span class="hs-identifier hs-type">file</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FilePath</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-386"></span><span id="file"><span class="annot"><span class="annottext">file :: FilePath -&gt; ActionM ()
+</span><a href="Web.Scotty.html#file"><span class="hs-identifier hs-var hs-var">file</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">FilePath -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; FilePath -&gt; ActionT m ()
+</span><a href="Web.Scotty.Action.html#file"><span class="hs-identifier hs-var">Trans.file</span></a></span><span>
+</span><span id="line-387"></span><span>
+</span><span id="line-388"></span><span class="hs-comment">-- | Set the body of the response to the JSON encoding of the given value. Also sets \&quot;Content-Type\&quot;</span><span>
+</span><span id="line-389"></span><span class="hs-comment">-- header to \&quot;application/json; charset=utf-8\&quot; if it has not already been set.</span><span>
+</span><span id="line-390"></span><span id="local-6989586621679123030"><span class="annot"><a href="Web.Scotty.html#json"><span class="hs-identifier hs-type">json</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ToJSON</span></span><span> </span><span class="annot"><a href="#local-6989586621679123030"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679123030"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span></span><span>
+</span><span id="line-391"></span><span id="json"><span class="annot"><span class="annottext">json :: forall a. ToJSON a =&gt; a -&gt; ActionM ()
+</span><a href="Web.Scotty.html#json"><span class="hs-identifier hs-var hs-var">json</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; ActionM ()
+forall a (m :: * -&gt; *). (ToJSON a, MonadIO m) =&gt; a -&gt; ActionT m ()
+</span><a href="Web.Scotty.Action.html#json"><span class="hs-identifier hs-var">Trans.json</span></a></span><span>
+</span><span id="line-392"></span><span>
+</span><span id="line-393"></span><span class="hs-comment">-- | Set the body of the response to a StreamingBody. Doesn't set the</span><span>
+</span><span id="line-394"></span><span class="hs-comment">-- \&quot;Content-Type\&quot; header, so you probably want to do that on your</span><span>
+</span><span id="line-395"></span><span class="hs-comment">-- own with 'setHeader'.</span><span>
+</span><span id="line-396"></span><span class="annot"><a href="Web.Scotty.html#stream"><span class="hs-identifier hs-type">stream</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StreamingBody</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-397"></span><span id="stream"><span class="annot"><span class="annottext">stream :: StreamingBody -&gt; ActionM ()
+</span><a href="Web.Scotty.html#stream"><span class="hs-identifier hs-var hs-var">stream</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">StreamingBody -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; StreamingBody -&gt; ActionT m ()
+</span><a href="Web.Scotty.Action.html#stream"><span class="hs-identifier hs-var">Trans.stream</span></a></span><span>
+</span><span id="line-398"></span><span>
+</span><span id="line-399"></span><span class="hs-comment">-- | Set the body of the response to the given 'BL.ByteString' value. Doesn't set the</span><span>
+</span><span id="line-400"></span><span class="hs-comment">-- \&quot;Content-Type\&quot; header, so you probably want to do that on your own with 'setHeader'.</span><span>
+</span><span id="line-401"></span><span class="annot"><a href="Web.Scotty.html#raw"><span class="hs-identifier hs-type">raw</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ByteString</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-402"></span><span id="raw"><span class="annot"><span class="annottext">raw :: ByteString -&gt; ActionM ()
+</span><a href="Web.Scotty.html#raw"><span class="hs-identifier hs-var hs-var">raw</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; ActionM ()
+forall (m :: * -&gt; *). MonadIO m =&gt; ByteString -&gt; ActionT m ()
+</span><a href="Web.Scotty.Action.html#raw"><span class="hs-identifier hs-var">Trans.raw</span></a></span><span>
+</span><span id="line-403"></span><span>
+</span><span id="line-404"></span><span>
+</span><span id="line-405"></span><span class="hs-comment">-- | Access the HTTP 'Status' of the Response</span><span>
+</span><span id="line-406"></span><span class="hs-comment">--</span><span>
+</span><span id="line-407"></span><span class="hs-comment">-- /Since: 0.21/</span><span>
+</span><span id="line-408"></span><span class="annot"><a href="Web.Scotty.html#getResponseStatus"><span class="hs-identifier hs-type">getResponseStatus</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Status</span></span><span>
+</span><span id="line-409"></span><span id="getResponseStatus"><span class="annot"><span class="annottext">getResponseStatus :: ActionM Status
+</span><a href="Web.Scotty.html#getResponseStatus"><span class="hs-identifier hs-var hs-var">getResponseStatus</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM Status
+forall (m :: * -&gt; *). MonadIO m =&gt; ActionT m Status
+</span><a href="Web.Scotty.Action.html#getResponseStatus"><span class="hs-identifier hs-var">Trans.getResponseStatus</span></a></span><span>
+</span><span id="line-410"></span><span class="hs-comment">-- | Access the HTTP headers of the Response</span><span>
+</span><span id="line-411"></span><span class="hs-comment">--</span><span>
+</span><span id="line-412"></span><span class="hs-comment">-- /Since: 0.21/</span><span>
+</span><span id="line-413"></span><span class="annot"><a href="Web.Scotty.html#getResponseHeaders"><span class="hs-identifier hs-type">getResponseHeaders</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">ResponseHeaders</span></span><span>
+</span><span id="line-414"></span><span id="getResponseHeaders"><span class="annot"><span class="annottext">getResponseHeaders :: ActionM ResponseHeaders
+</span><a href="Web.Scotty.html#getResponseHeaders"><span class="hs-identifier hs-var hs-var">getResponseHeaders</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM ResponseHeaders
+forall (m :: * -&gt; *). MonadIO m =&gt; ActionT m ResponseHeaders
+</span><a href="Web.Scotty.Action.html#getResponseHeaders"><span class="hs-identifier hs-var">Trans.getResponseHeaders</span></a></span><span>
+</span><span id="line-415"></span><span class="hs-comment">-- | Access the content of the Response</span><span>
+</span><span id="line-416"></span><span class="hs-comment">--</span><span>
+</span><span id="line-417"></span><span class="hs-comment">-- /Since: 0.21/</span><span>
+</span><span id="line-418"></span><span class="annot"><a href="Web.Scotty.html#getResponseContent"><span class="hs-identifier hs-type">getResponseContent</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Content"><span class="hs-identifier hs-type">Content</span></a></span><span>
+</span><span id="line-419"></span><span id="getResponseContent"><span class="annot"><span class="annottext">getResponseContent :: ActionM Content
+</span><a href="Web.Scotty.html#getResponseContent"><span class="hs-identifier hs-var hs-var">getResponseContent</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM Content
+forall (m :: * -&gt; *). MonadIO m =&gt; ActionT m Content
+</span><a href="Web.Scotty.Action.html#getResponseContent"><span class="hs-identifier hs-var">Trans.getResponseContent</span></a></span><span>
+</span><span id="line-420"></span><span>
+</span><span id="line-421"></span><span>
+</span><span id="line-422"></span><span class="annot"><span class="hs-comment">-- | get = 'addroute' 'GET'</span></span><span>
+</span><span id="line-423"></span><span class="annot"><a href="Web.Scotty.html#get"><span class="hs-identifier hs-type">get</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-424"></span><span id="get"><span class="annot"><span class="annottext">get :: RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#get"><span class="hs-identifier hs-var hs-var">get</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+RoutePattern -&gt; ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#get"><span class="hs-identifier hs-var">Trans.get</span></a></span><span>
+</span><span id="line-425"></span><span>
+</span><span id="line-426"></span><span class="annot"><span class="hs-comment">-- | post = 'addroute' 'POST'</span></span><span>
+</span><span id="line-427"></span><span class="annot"><a href="Web.Scotty.html#post"><span class="hs-identifier hs-type">post</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-428"></span><span id="post"><span class="annot"><span class="annottext">post :: RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#post"><span class="hs-identifier hs-var hs-var">post</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+RoutePattern -&gt; ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#post"><span class="hs-identifier hs-var">Trans.post</span></a></span><span>
+</span><span id="line-429"></span><span>
+</span><span id="line-430"></span><span class="annot"><span class="hs-comment">-- | put = 'addroute' 'PUT'</span></span><span>
+</span><span id="line-431"></span><span class="annot"><a href="Web.Scotty.html#put"><span class="hs-identifier hs-type">put</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-432"></span><span id="put"><span class="annot"><span class="annottext">put :: RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#put"><span class="hs-identifier hs-var hs-var">put</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+RoutePattern -&gt; ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#put"><span class="hs-identifier hs-var">Trans.put</span></a></span><span>
+</span><span id="line-433"></span><span>
+</span><span id="line-434"></span><span class="annot"><span class="hs-comment">-- | delete = 'addroute' 'DELETE'</span></span><span>
+</span><span id="line-435"></span><span class="annot"><a href="Web.Scotty.html#delete"><span class="hs-identifier hs-type">delete</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-436"></span><span id="delete"><span class="annot"><span class="annottext">delete :: RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#delete"><span class="hs-identifier hs-var hs-var">delete</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+RoutePattern -&gt; ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#delete"><span class="hs-identifier hs-var">Trans.delete</span></a></span><span>
+</span><span id="line-437"></span><span>
+</span><span id="line-438"></span><span class="annot"><span class="hs-comment">-- | patch = 'addroute' 'PATCH'</span></span><span>
+</span><span id="line-439"></span><span class="annot"><a href="Web.Scotty.html#patch"><span class="hs-identifier hs-type">patch</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-440"></span><span id="patch"><span class="annot"><span class="annottext">patch :: RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#patch"><span class="hs-identifier hs-var hs-var">patch</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+RoutePattern -&gt; ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#patch"><span class="hs-identifier hs-var">Trans.patch</span></a></span><span>
+</span><span id="line-441"></span><span>
+</span><span id="line-442"></span><span class="annot"><span class="hs-comment">-- | options = 'addroute' 'OPTIONS'</span></span><span>
+</span><span id="line-443"></span><span class="annot"><a href="Web.Scotty.html#options"><span class="hs-identifier hs-type">options</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-444"></span><span id="options"><span class="annot"><span class="annottext">options :: RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#options"><span class="hs-identifier hs-var hs-var">options</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+RoutePattern -&gt; ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#options"><span class="hs-identifier hs-var">Trans.options</span></a></span><span>
+</span><span id="line-445"></span><span>
+</span><span id="line-446"></span><span class="annot"><span class="hs-comment">-- | Add a route that matches regardless of the HTTP verb.</span></span><span>
+</span><span id="line-447"></span><span class="annot"><a href="Web.Scotty.html#matchAny"><span class="hs-identifier hs-type">matchAny</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-448"></span><span id="matchAny"><span class="annot"><span class="annottext">matchAny :: RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#matchAny"><span class="hs-identifier hs-var hs-var">matchAny</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+RoutePattern -&gt; ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#matchAny"><span class="hs-identifier hs-var">Trans.matchAny</span></a></span><span>
+</span><span id="line-449"></span><span>
+</span><span id="line-450"></span><span class="hs-comment">-- | Specify an action to take if nothing else is found. Note: this _always_ matches,</span><span>
+</span><span id="line-451"></span><span class="hs-comment">-- so should generally be the last route specified.</span><span>
+</span><span id="line-452"></span><span class="annot"><a href="Web.Scotty.html#notFound"><span class="hs-identifier hs-type">notFound</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-453"></span><span id="notFound"><span class="annot"><span class="annottext">notFound :: ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#notFound"><span class="hs-identifier hs-var hs-var">notFound</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#notFound"><span class="hs-identifier hs-var">Trans.notFound</span></a></span><span>
+</span><span id="line-454"></span><span>
+</span><span id="line-455"></span><span class="annot"><span class="hs-comment">{- | Define a route with a 'StdMethod', a route pattern representing the path spec,
+and an 'Action' which may modify the response.
+
+&gt; get &quot;/&quot; $ text &quot;beam me up!&quot;
+
+The path spec can include values starting with a colon, which are interpreted
+as /captures/. These are parameters that can be looked up with 'pathParam'.
+
+&gt;&gt;&gt; :{
+let server = S.get &quot;/foo/:bar&quot; (S.pathParam &quot;bar&quot; &gt;&gt;= S.text)
+ in do
+      withScotty server $ curl &quot;http://localhost:3000/foo/something&quot;
+:}
+&quot;something&quot;
+-}</span></span><span>
+</span><span id="line-470"></span><span class="annot"><a href="Web.Scotty.html#addroute"><span class="hs-identifier hs-type">addroute</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StdMethod</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ActionM"><span class="hs-identifier hs-type">ActionM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.html#ScottyM"><span class="hs-identifier hs-type">ScottyM</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-471"></span><span id="addroute"><span class="annot"><span class="annottext">addroute :: StdMethod -&gt; RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+</span><a href="Web.Scotty.html#addroute"><span class="hs-identifier hs-var hs-var">addroute</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">StdMethod -&gt; RoutePattern -&gt; ActionM () -&gt; ScottyM ()
+forall (m :: * -&gt; *).
+MonadUnliftIO m =&gt;
+StdMethod -&gt; RoutePattern -&gt; ActionT m () -&gt; ScottyT m ()
+</span><a href="Web.Scotty.Route.html#addroute"><span class="hs-identifier hs-var">Trans.addroute</span></a></span><span>
+</span><span id="line-472"></span><span>
+</span><span id="line-473"></span><span>
+</span><span id="line-474"></span><span class="annot"><span class="hs-comment">{- | Match requests using a regular expression.
+Named captures are not yet supported.
+
+&gt;&gt;&gt; :{
+let server = S.get (S.regex &quot;^/f(.*)r$&quot;) $ do
+                cap &lt;- S.pathParam &quot;1&quot;
+                S.text cap
+ in do
+      withScotty server $ curl &quot;http://localhost:3000/foo/bar&quot;
+:}
+&quot;oo/ba&quot;
+-}</span></span><span>
+</span><span id="line-486"></span><span class="annot"><a href="Web.Scotty.html#regex"><span class="hs-identifier hs-type">regex</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span>
+</span><span id="line-487"></span><span id="regex"><span class="annot"><span class="annottext">regex :: FilePath -&gt; RoutePattern
+</span><a href="Web.Scotty.html#regex"><span class="hs-identifier hs-var hs-var">regex</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">FilePath -&gt; RoutePattern
+</span><a href="Web.Scotty.Route.html#regex"><span class="hs-identifier hs-var">Trans.regex</span></a></span><span>
+</span><span id="line-488"></span><span>
+</span><span id="line-489"></span><span class="hs-comment">-- | Standard Sinatra-style route. Named captures are prepended with colons.</span><span>
+</span><span id="line-490"></span><span class="hs-comment">--   This is the default route type generated by OverloadedString routes. i.e.</span><span>
+</span><span id="line-491"></span><span class="hs-comment">--</span><span>
+</span><span id="line-492"></span><span class="hs-comment">-- &gt; get (capture &quot;/foo/:bar&quot;) $ ...</span><span>
+</span><span id="line-493"></span><span class="hs-comment">--</span><span>
+</span><span id="line-494"></span><span class="hs-comment">--   and</span><span>
+</span><span id="line-495"></span><span class="hs-comment">--</span><span>
+</span><span id="line-496"></span><span class="hs-comment">-- &gt; {-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-497"></span><span class="hs-comment">-- &gt; ...</span><span>
+</span><span id="line-498"></span><span class="hs-comment">-- &gt; get &quot;/foo/:bar&quot; $ ...</span><span>
+</span><span id="line-499"></span><span class="hs-comment">--</span><span>
+</span><span id="line-500"></span><span class="hs-comment">--   are equivalent.</span><span>
+</span><span id="line-501"></span><span class="annot"><a href="Web.Scotty.html#capture"><span class="hs-identifier hs-type">capture</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span>
+</span><span id="line-502"></span><span id="capture"><span class="annot"><span class="annottext">capture :: FilePath -&gt; RoutePattern
+</span><a href="Web.Scotty.html#capture"><span class="hs-identifier hs-var hs-var">capture</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">FilePath -&gt; RoutePattern
+</span><a href="Web.Scotty.Route.html#capture"><span class="hs-identifier hs-var">Trans.capture</span></a></span><span>
+</span><span id="line-503"></span><span>
+</span><span id="line-504"></span><span>
+</span><span id="line-505"></span><span class="annot"><span class="hs-comment">{- | Build a route based on a function which can match using the entire 'Request' object.
+'Nothing' indicates the route does not match. A 'Just' value indicates
+a successful match, optionally returning a list of key-value pairs accessible by 'param'.
+
+&gt;&gt;&gt; :{
+let server = S.get (function $ \req -&gt; Just [(&quot;version&quot;, T.pack $ show $ W.httpVersion req)]) $ do
+                v &lt;- S.pathParam &quot;version&quot;
+                S.text v
+ in do
+      withScotty server $ curl &quot;http://localhost:3000/&quot;
+:}
+&quot;HTTP/1.1&quot;
+-}</span></span><span>
+</span><span id="line-518"></span><span class="annot"><a href="Web.Scotty.html#function"><span class="hs-identifier hs-type">function</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Request</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Web.Scotty.Internal.Types.html#Param"><span class="hs-identifier hs-type">Param</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span>
+</span><span id="line-519"></span><span id="function"><span class="annot"><span class="annottext">function :: (Request -&gt; Maybe [Param]) -&gt; RoutePattern
+</span><a href="Web.Scotty.html#function"><span class="hs-identifier hs-var hs-var">function</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Request -&gt; Maybe [Param]) -&gt; RoutePattern
+</span><a href="Web.Scotty.Route.html#function"><span class="hs-identifier hs-var">Trans.function</span></a></span><span>
+</span><span id="line-520"></span><span>
+</span><span id="line-521"></span><span class="annot"><span class="hs-comment">-- | Build a route that requires the requested path match exactly, without captures.</span></span><span>
+</span><span id="line-522"></span><span class="annot"><a href="Web.Scotty.html#literal"><span class="hs-identifier hs-type">literal</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Web.Scotty.Internal.Types.html#RoutePattern"><span class="hs-identifier hs-type">RoutePattern</span></a></span><span>
+</span><span id="line-523"></span><span id="literal"><span class="annot"><span class="annottext">literal :: FilePath -&gt; RoutePattern
+</span><a href="Web.Scotty.html#literal"><span class="hs-identifier hs-var hs-var">literal</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">FilePath -&gt; RoutePattern
+</span><a href="Web.Scotty.Route.html#literal"><span class="hs-identifier hs-var">Trans.literal</span></a></span><span>
+</span><span id="line-524"></span><span>
+</span><span id="line-525"></span><span>
+</span><span id="line-526"></span><span>
+</span><span id="line-527"></span><span>
+</span><span id="line-528"></span></pre></body></html>

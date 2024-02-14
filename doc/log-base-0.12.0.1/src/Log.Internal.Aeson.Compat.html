@@ -1,0 +1,50 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE CPP #-}</span><span>
+</span><span id="line-2"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Log.Internal.Aeson.Compat</span><span>
+</span><span id="line-3"></span><span>  </span><span class="hs-special">(</span><span> </span><span class="hs-keyword">module</span><span> </span><span class="annot"><span class="hs-identifier">Map</span></span><span class="hs-cpp">
+#if !MIN_VERSION_aeson(2,0,1)
+</span><span>  </span><span class="hs-special">,</span><span> </span><span class="hs-identifier">KeyMap</span><span class="hs-cpp">
+#endif
+</span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Aeson.Compat.html#fromText"><span class="hs-identifier">fromText</span></a></span><span>
+</span><span id="line-8"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Log.Internal.Aeson.Compat.html#doName"><span class="hs-identifier">doName</span></a></span><span>
+</span><span id="line-9"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-10"></span><span>
+</span><span id="line-11"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span class="hs-cpp">
+
+#if MIN_VERSION_aeson(2,0,1)
+</span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson.KeyMap</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Map</span></span><span> </span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Aeson.Key</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">K</span></span><span>
+</span><span id="line-16"></span><span>
+</span><span id="line-17"></span><span class="annot"><a href="Log.Internal.Aeson.Compat.html#fromText"><span class="hs-identifier hs-type">fromText</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">K.Key</span></span><span>
+</span><span id="line-18"></span><span id="fromText"><span class="annot"><span class="annottext">fromText :: Text -&gt; Key
+</span><a href="Log.Internal.Aeson.Compat.html#fromText"><span class="hs-identifier hs-var hs-var">fromText</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Key
+</span><span class="hs-identifier hs-var">K.fromText</span></span><span>
+</span><span id="line-19"></span><span>
+</span><span id="line-20"></span><span id="local-6989586621679094514"><span class="annot"><a href="Log.Internal.Aeson.Compat.html#doName"><span class="hs-identifier hs-type">doName</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monad</span></span><span> </span><span class="annot"><a href="#local-6989586621679094514"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679094514"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">K.Key</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679094514"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">K.Key</span></span></span><span>
+</span><span id="line-21"></span><span id="doName"><span class="annot"><span class="annottext">doName :: forall (m :: * -&gt; *). Monad m =&gt; (Text -&gt; m Text) -&gt; Key -&gt; m Key
+</span><a href="Log.Internal.Aeson.Compat.html#doName"><span class="hs-identifier hs-var hs-var">doName</span></a></span></span><span> </span><span id="local-6989586621679094533"><span class="annot"><span class="annottext">Text -&gt; m Text
+</span><a href="#local-6989586621679094533"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Key) -&gt; m Text -&gt; m Key
+forall a b. (a -&gt; b) -&gt; m a -&gt; m b
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; Key
+</span><span class="hs-identifier hs-var">K.fromText</span></span><span> </span><span class="annot"><span class="annottext">(m Text -&gt; m Key) -&gt; (Key -&gt; m Text) -&gt; Key -&gt; m Key
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Text -&gt; m Text
+</span><a href="#local-6989586621679094533"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; m Text) -&gt; (Key -&gt; Text) -&gt; Key -&gt; m Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Key -&gt; Text
+</span><span class="hs-identifier hs-var">K.toText</span></span><span class="hs-cpp">
+
+#else
+</span><span>
+</span><span id="line-25"></span><span class="hs-keyword">import</span><span> </span><span class="hs-identifier">Data.HashMap.Strict</span><span> </span><span class="hs-keyword">as</span><span> </span><span class="hs-identifier">Map</span><span>
+</span><span id="line-26"></span><span>
+</span><span id="line-27"></span><span class="hs-keyword">type</span><span> </span><span class="hs-identifier">KeyMap</span><span> </span><span class="hs-identifier">a</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-identifier">Map.HashMap</span><span> </span><span class="hs-identifier">Text</span><span> </span><span class="hs-identifier">a</span><span>
+</span><span id="line-28"></span><span>
+</span><span id="line-29"></span><span class="hs-identifier">fromText</span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-identifier">Text</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier">Text</span><span>
+</span><span id="line-30"></span><span class="hs-identifier">fromText</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-identifier">id</span><span>
+</span><span id="line-31"></span><span>
+</span><span id="line-32"></span><span class="hs-identifier">doName</span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="hs-identifier">Text</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier">m</span><span> </span><span class="hs-identifier">Text</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier">Text</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier">m</span><span> </span><span class="hs-identifier">Text</span><span>
+</span><span id="line-33"></span><span class="hs-identifier">doName</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-identifier">id</span><span class="hs-cpp">
+
+#endif
+</span></pre></body></html>
