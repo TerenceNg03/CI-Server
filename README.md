@@ -23,6 +23,23 @@ $ sudo apt install maven
 
 ### Running the Server
 
+If you don't have a domain available, you can use ngrok to create a temporary domain for testing purposes. Note that ngrok is not mandatory for setting up the webhook, but it can be helpful for testing your webhook locally. You can download ngrok from [ngrok.com](https://ngrok.com/).
+
+After installing ngrok (if desired) or obtaining a domain:
+
+1. Create a Webhook on Your Repository Using Your Desired Domain.
+2. In the Repository, Navigate to Settings > Webhooks -> Click "Add Webhook".
+3. Configure the Fields:
+   - Payload URL: https://YOURDOMAINNAME.ngrok-free.app
+   - Content Type: `application/json`
+4. Add the Webhook.
+
+If you are using ngrok, the tunnel can be started with the following commands:
+
+```sh
+ngrok http --domain=YOURDOMAINNAME.ngrok-free.app 8888
+```
+
 The server needs a config file to run (an example config file can be found at `/server/config-example.yaml`). With Stack installed and your working directory set to `/server`, the following commands can be run:
 
 ```sh
